@@ -27,6 +27,7 @@ The shape of the surface, before we type a line:
               deposit(wallet_id, body)
                         ▼
             executor.execute(
+                None,
                 WalletDepositMoneyAction,
                 WalletDepositMoneyAction.Params(wallet_id, amount, recipient))
                         ▼
@@ -256,6 +257,7 @@ class DepositRequest(BaseModel):
 def deposit(wallet_id: UUID, body: DepositRequest, service: Service) -> WalletResponse:
     return WalletResponse.of(
         service.executor.execute(
+            None,
             WalletDepositMoneyAction,
             WalletDepositMoneyAction.Params(
                 wallet_id=ShardedId[Wallet](wallet_id),
@@ -279,6 +281,7 @@ class DepositRequest(BaseModel):
 async def deposit(wallet_id: UUID, body: DepositRequest, service: Service) -> WalletResponse:
     return WalletResponse.of(
         await service.executor.execute(
+            None,
             WalletDepositMoneyAction,
             WalletDepositMoneyAction.Params(
                 wallet_id=ShardedId[Wallet](wallet_id),
@@ -388,6 +391,7 @@ falsy verdict fails, so a `lambda` cannot pass by accident. When plain `assert` 
 
 ```python
 staged = run_action(
+    None,
     WalletDepositMoneyAction(clock, wallet_repository),
     WalletDepositMoneyAction.Params(wallet_id=..., amount=Decimal("50.00"), recipient="ada@example.com"),
 )
@@ -401,6 +405,7 @@ assert staged.emitted(WalletMoneyDepositedEvent)[0].amount == Decimal("50.00")
 
 ```python
 staged = await async_run_action(
+    None,
     WalletDepositMoneyAction(clock, wallet_repository),
     WalletDepositMoneyAction.Params(wallet_id=..., amount=Decimal("50.00"), recipient="ada@example.com"),
 )

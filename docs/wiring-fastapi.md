@@ -132,6 +132,7 @@ See [The transaction manager](database/transaction-manager.md#repository-writes-
 def open_wallet(body: OpenWalletRequest, service: Service) -> WalletResponse:
     return WalletResponse.of(
         service.executor.execute(
+            None,
             WalletCreateAction,
             WalletCreateAction.Params(owner_id=body.owner_id, currency=body.currency,
                              initial_balance=body.initial_balance),
@@ -146,6 +147,7 @@ def open_wallet(body: OpenWalletRequest, service: Service) -> WalletResponse:
 async def open_wallet(body: OpenWalletRequest, service: Service) -> WalletResponse:
     return WalletResponse.of(
         await service.executor.execute(
+            None,
             WalletCreateAction,
             WalletCreateAction.Params(owner_id=body.owner_id, currency=body.currency,
                              initial_balance=body.initial_balance),
@@ -252,7 +254,7 @@ if lease is None:
     raise HTTPException(status_code=503, detail="that wallet is busy; retry",
                         headers={"Retry-After": "1"})
 with lease:
-    return WalletResponse.of(service.executor.execute(WalletDepositMoneyAction, params))
+    return WalletResponse.of(service.executor.execute(None, WalletDepositMoneyAction, params))
 ```
 
 **Async**
@@ -263,7 +265,7 @@ if lease is None:
     raise HTTPException(status_code=503, detail="that wallet is busy; retry",
                         headers={"Retry-After": "1"})
 async with lease:
-    return WalletResponse.of(await service.executor.execute(WalletDepositMoneyAction, params))
+    return WalletResponse.of(await service.executor.execute(None, WalletDepositMoneyAction, params))
 ```
 
 Three things here.

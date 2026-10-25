@@ -169,6 +169,7 @@ in both modes, so the 503 handler is unchanged.
 async def deposit(wallet_id: UUID, body: DepositRequest, service: Service) -> WalletResponse:
     return WalletResponse.of(
         await service.executor.execute(
+            None,
             WalletDepositMoneyAction,
             WalletDepositMoneyAction.Params(wallet_id=ShardedId[Wallet](wallet_id), amount=body.amount,
                           recipient=body.recipient),
@@ -189,7 +190,7 @@ if lease is None:
     raise HTTPException(status_code=503, detail="that wallet is busy; retry",
                         headers={"Retry-After": "1"})
 async with lease:
-    return WalletResponse.of(await service.executor.execute(WalletDepositMoneyAction, params))
+    return WalletResponse.of(await service.executor.execute(None, WalletDepositMoneyAction, params))
 ```
 
 A second deposit on the same wallet waits its turn on the event loop, without blocking it, and
@@ -213,7 +214,7 @@ class WalletMoneyDepositedEventHandler(AsyncEventHandler[WalletMoneyDepositedEve
         return WalletMoneyDepositedEvent
 
     async def handle(self, envelope: EventEnvelope[WalletMoneyDepositedEvent]) -> None:
-        await self.executor.execute(CreateNotificationAction, CreateNotificationAction.Params(...))
+        await self.executor.execute(None, CreateNotificationAction, CreateNotificationAction.Params(...))
 ```
 
 ## 8. Run it, with the same cap at the door

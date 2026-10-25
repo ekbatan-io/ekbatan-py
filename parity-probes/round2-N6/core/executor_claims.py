@@ -15,10 +15,10 @@ from ekbatan.clock import SystemClock
 svc = service()
 ex, wallet_repository, reg = svc.executor, svc.wallet_repository, svc.registry
 clock = SystemClock()
-w = ex.execute(WalletCreateAction, OpenWalletParams(owner_id=uuid4(), currency="EUR", opening_balance=Decimal("100")))
+w = ex.execute(None, WalletCreateAction, OpenWalletParams(owner_id=uuid4(), currency="EUR", opening_balance=Decimal("100")))
 
 probe("action.mdx:57 execute(an instance) 'no registry is needed'",
-      lambda: ex.execute(WalletDepositMoneyAction(wallet_repository, clock), DepositParams(wallet_id=w.id, amount=Decimal(1), recipient="x")))
+      lambda: ex.execute(None, WalletDepositMoneyAction(wallet_repository, clock), DepositParams(wallet_id=w.id, amount=Decimal(1), recipient="x")))
 
 def add_returns():
     p = ActionPlan(clock)
@@ -51,13 +51,13 @@ ex2 = ActionExecutor(namespace="com.example.n6", registry=reg,
                      actions=ActionRegistry.builder().with_action(NoopAction(clock)).with_action(ScalarAction(clock)).with_action(WhoAction(clock)).build(),
                      events=EVENTS)
 def sentinel():
-    ex2.execute(NoopAction, None)
+    ex2.execute(None, NoopAction, None)
     with reg.default.connection() as c:
         rows = c.execute(select(EVENTS.c.action_name, EVENTS.c.event_type, EVENTS.c.action_params).where(EVENTS.c.action_name.like("%Noop%"))).all()
     return [tuple(r) for r in rows]
 probe("action-plan.mdx:96 no change still writes one sentinel row, event_type null", sentinel)
-probe("action.mdx:46 bare scalar params refused", lambda: ex2.execute(ScalarAction, "hello"))
-probe("action.mdx:117 principal kwarg passed to perform", lambda: ex2.execute(WhoAction, None, principal="ada"))
+probe("action.mdx:46 bare scalar params refused", lambda: ex2.execute(None, ScalarAction, "hello"))
+probe("action.mdx:117 principal kwarg passed to perform", lambda: ex2.execute("ada", WhoAction, None))
 probe("action.mdx:121 events table has no principal column", lambda: [c.name for c in EVENTS.c if "princ" in c.name])
 probe("action-executor.mdx:118 hyphen in namespace refused", lambda: ActionExecutor(namespace="my-service", registry=reg, repositories=[wallet_repository]))
 probe("action-executor.mdx:65 registry=None refused", lambda: ActionExecutor(namespace="a.b", registry=None, repositories=[wallet_repository]))
@@ -65,12 +65,12 @@ probe("action-executor.mdx:60 repositories=None refused", lambda: ActionExecutor
 def no_events_kw():
     e = ActionExecutor(namespace="com.example.noevents", registry=reg, repositories=[wallet_repository],
                        actions=[WalletCreateAction(clock)])
-    e.execute(WalletCreateAction, OpenWalletParams(owner_id=uuid4(), currency="EUR", opening_balance=Decimal("1")))
+    e.execute(None, WalletCreateAction, OpenWalletParams(owner_id=uuid4(), currency="EUR", opening_balance=Decimal("1")))
     with reg.default.connection() as c:
         return c.execute(select(func.count()).select_from(EVENTS).where(EVENTS.c.namespace == "com.example.noevents")).scalar()
 probe("action-executor.mdx:58 events left out -> default persister writes framework events table", no_events_kw)
 def unknown_repo():
     e = ActionExecutor(namespace="com.example.x", registry=reg, repositories=[svc.notification_repository], actions=[WalletCreateAction(clock)])
-    e.execute(WalletCreateAction, OpenWalletParams(owner_id=uuid4(), currency="EUR", opening_balance=Decimal("1")))
+    e.execute(None, WalletCreateAction, OpenWalletParams(owner_id=uuid4(), currency="EUR", opening_balance=Decimal("1")))
 probe("action-executor.mdx:57 a staged type with no repository: names type and lists registered", unknown_repo)
 svc.close()

@@ -2,7 +2,7 @@
 layout: ../../layouts/DocLayout.astro
 title: ActionExecutor
 activeSection: reference
-lead: "The framework's main entry point. Runs actions atomically against the configured shards — application code calls executor.execute(MyAction, params) and never touches an action directly."
+lead: "The framework's main entry point. Runs actions atomically against the configured shards — application code calls executor.execute(principal, MyAction, params) and never touches an action directly."
 ---
 
 import ModeTabs from "../../components/ModeTabs.astro";
@@ -170,7 +170,7 @@ executor = ActionExecutor(
     clock=clock,
 )
 
-wallet = executor.execute(WalletDepositMoneyAction, params)
+wallet = executor.execute(None, WalletDepositMoneyAction, params)
 ```
 
 </div>
@@ -185,7 +185,7 @@ executor = AsyncActionExecutor(
     clock=clock,
 )
 
-wallet = await executor.execute(WalletDepositMoneyAction, params)
+wallet = await executor.execute(None, WalletDepositMoneyAction, params)
 ```
 
 </div>

@@ -84,7 +84,7 @@ def a1_a2(tm, widgets, ex) -> None:
     try:
         with tm.transaction() as t:
             t.execute(text("insert into side_rows values (1, 'outer')"))
-            created["w"] = ex.execute(WidgetCreateAction, CreateParams(shard=DEFAULT_SHARD, name="a1", color="red"))
+            created["w"] = ex.execute(None, WidgetCreateAction, CreateParams(shard=DEFAULT_SHARD, name="a1", color="red"))
             p("a1.action_row_visible_outside_while_outer_open", yn(widget_count(f"id = '{wid(created['w'])}'") == 1))
             raise Boom("outer fails")
     except Boom:
@@ -96,7 +96,7 @@ def a1_a2(tm, widgets, ex) -> None:
     with tm.transaction() as t:
         t.execute(text("insert into side_rows values (2, 'outer')"))
         try:
-            ex.execute(ThrowAction, CreateParams(shard=DEFAULT_SHARD, name="a2", color="red"))
+            ex.execute(None, ThrowAction, CreateParams(shard=DEFAULT_SHARD, name="a2", color="red"))
             p("a2.action_error", "none")
         except Exception as e:  # noqa: BLE001
             p("a2.action_error_message", str(e))
@@ -115,7 +115,7 @@ def a3(tm, widgets, ex, clock) -> None:
         p("a3.repo_find_in_outer_sees_outer_row", yn(widgets.find_by_id(w.id.value) is not None))
         p("a3.repo_tx_db_else_db_sees_outer_row", yn(_tx_else_count(widgets, w) == 1))
         try:
-            ex.execute(WidgetRenameAction, RenameParams(id=w.id.value, name="renamed"))
+            ex.execute(None, WidgetRenameAction, RenameParams(id=w.id.value, name="renamed"))
             p("a3.action_sees_outer_row", "yes")
         except Exception as e:  # noqa: BLE001
             p("a3.action_sees_outer_row", "no: " + type(e).__name__)
@@ -133,13 +133,13 @@ def _tx_else_count(widgets, w) -> int:
 
 
 def a4(tm, widgets, ex) -> None:
-    w = ex.execute(WidgetCreateAction, CreateParams(shard=DEFAULT_SHARD, name="a4", color="red"))
+    w = ex.execute(None, WidgetCreateAction, CreateParams(shard=DEFAULT_SHARD, name="a4", color="red"))
     err = {}
     t0 = time.monotonic()
     with tm.transaction() as t:
         t.execute(text(f"update widgets set color = 'locked' where id = '{wid(w)}'"))
         try:
-            ex.execute(WidgetRenameAction, RenameParams(id=w.id.value, name="a4-renamed"))
+            ex.execute(None, WidgetRenameAction, RenameParams(id=w.id.value, name="a4-renamed"))
             err["e"] = None
         except Exception as e:  # noqa: BLE001
             err["e"] = e
@@ -161,7 +161,7 @@ def a5() -> None:
     t0 = time.monotonic()
     with tm.transaction():
         try:
-            ex.execute(WidgetCreateAction, CreateParams(shard=DEFAULT_SHARD, name="a5", color="red"))
+            ex.execute(None, WidgetCreateAction, CreateParams(shard=DEFAULT_SHARD, name="a5", color="red"))
             p("a5.action_inside_outer_on_pool_of_one", "ran")
         except Exception as e:  # noqa: BLE001
             p("a5.action_inside_outer_on_pool_of_one", "failed")
@@ -193,7 +193,7 @@ def a6(D_: str) -> None:
             n = len(calls)
             with tm.transaction() as t:
                 t.execute(text(f"insert into side_rows values ({600 + n}, 'handler')"))
-                ex.execute(WidgetCreateAction, CreateParams(shard=DEFAULT_SHARD, name=f"a6-from-handler-{n}", color="red"))
+                ex.execute(None, WidgetCreateAction, CreateParams(shard=DEFAULT_SHARD, name=f"a6-from-handler-{n}", color="red"))
                 if n == 1:
                     raise Boom("first attempt fails after its own work")
 
@@ -201,7 +201,7 @@ def a6(D_: str) -> None:
     conf = LocalEventHandlerConfig.defaults()
     fan = EventFanoutJob.builder().registry(reg).handlers(handlers).events(__import__("common").EVENTS).notifications(NOTIFS).config(conf).clock(clock).build()
     hand = EventHandlingJob.builder().registry(reg).handlers(handlers).notifications(NOTIFS).config(conf).clock(clock).build()
-    ex.execute(WidgetCreateAction, CreateParams(shard=DEFAULT_SHARD, name="a6", color="red"))
+    ex.execute(None, WidgetCreateAction, CreateParams(shard=DEFAULT_SHARD, name="a6", color="red"))
     fan.fanout.drain_once()
     hand.dispatch.drain_once()
     p("a6.handler_saw_ambient_tx", yn(calls[0] is not None))
@@ -233,7 +233,7 @@ def a7(tm, ex) -> None:
                 seen["ambient"] = tm.current()
                 with tm.transaction() as t:
                     t.execute(text("insert into side_rows values (700, 'job')"))
-                    ex.execute(WidgetCreateAction, CreateParams(shard=DEFAULT_SHARD, name="a7-from-job", color="red"))
+                    ex.execute(None, WidgetCreateAction, CreateParams(shard=DEFAULT_SHARD, name="a7-from-job", color="red"))
                     raise Boom("job fails after the action")
             finally:
                 done.set()
@@ -271,7 +271,7 @@ def a8(tm, ex) -> None:
     lease = locks.acquire("n5-key", timedelta(seconds=30))
     with tm.transaction() as t:
         t.execute(text("insert into side_rows values (800, 'locked')"))
-        w = ex.execute(WidgetCreateAction, CreateParams(shard=DEFAULT_SHARD, name="a8", color="red"))
+        w = ex.execute(None, WidgetCreateAction, CreateParams(shard=DEFAULT_SHARD, name="a8", color="red"))
         again = locks.try_acquire("n5-key", timedelta(0), timedelta(seconds=30))
         p("a8.reentrant_in_nested_scope", yn(again is not None))
         if again is not None:

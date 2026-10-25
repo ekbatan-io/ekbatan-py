@@ -315,7 +315,7 @@ class ReadOwnAction(Action[NoParams, str]):
 class OuterAction(Action[NoParams, Wallet]):
     def perform(self, principal, params):
         mine = self.plan.add(new_wallet(GLOBAL))
-        inner = executor.execute(CreateAction, CountryParams("DE"), principal=principal)
+        inner = executor.execute(principal, CreateAction, CountryParams("DE"))
         INNER_ID[0] = inner.id
         p("s29.outer_plan_still_has_its_add", len(self.plan.additions(Wallet)))
         raise RuntimeError(f"outer fails after inner {mine.id}")
@@ -512,7 +512,7 @@ def probe() -> None:
 
     # S1 add
     truncate()
-    created = executor.execute(CreateAction, CountryParams("DE"), principal=alice)
+    created = executor.execute(alice, CreateAction, CountryParams("DE"))
     p("s1.result_version", created.version)
     p("s1.result_events_attached", len(created.events))
     p("s1.wallets_global", wallet_repository(GLOBAL))
@@ -524,7 +524,7 @@ def probe() -> None:
     p("s1.row.model_id_is_wallet_id", str(created.id.value) == r1["model_id"])
     p("s1.principal_seen", SEEN[0])
     p("s1.db_version", scalar(GLOBAL, "select version from wallets"))
-    executor.execute(CreateAction, CountryParams("DE"), principal=None)
+    executor.execute(None, CreateAction, CountryParams("DE"))
     p("s40.null_principal_seen", SEEN[0])
     p("s40.outbox_has_principal_column", scalar(
         GLOBAL,
@@ -533,10 +533,10 @@ def probe() -> None:
 
     # S2 update
     truncate()
-    w2 = executor.execute(CreateAction, CountryParams("DE"), principal=alice)
+    w2 = executor.execute(alice, CreateAction, CountryParams("DE"))
     before_updated = scalar(GLOBAL, "select updated_date::text from wallets")
     truncate_events(GLOBAL)
-    dep = executor.execute(DepositAction, IdParams(w2.id.value), principal=alice)
+    dep = executor.execute(alice, DepositAction, IdParams(w2.id.value))
     p("s2.result_version", dep.version)
     with engines[GLOBAL].connect() as c:
         wr = c.execute(text("select version, balance::text, updated_date::text from wallets")).one()
@@ -551,7 +551,7 @@ def probe() -> None:
 
     # S3 create + deposit composed before staging
     truncate()
-    executor.execute(CreateAndDepositAction, NoParams(), principal=alice)
+    executor.execute(alice, CreateAndDepositAction, NoParams())
     r3 = rows(GLOBAL)
     p("s3.event_types_in_insert_order", [r["event_type"] for r in r3])
     p("s3.db_version", scalar(GLOBAL, "select version from wallets"))
@@ -559,9 +559,9 @@ def probe() -> None:
 
     # S4 update with no new event
     truncate()
-    w4 = executor.execute(CreateAction, CountryParams("DE"), principal=alice)
+    w4 = executor.execute(alice, CreateAction, CountryParams("DE"))
     truncate_events(GLOBAL)
-    t4 = executor.execute(TouchAction, IdParams(w4.id.value), principal=alice)
+    t4 = executor.execute(alice, TouchAction, IdParams(w4.id.value))
     r4 = rows(GLOBAL)
     p("s4.outbox_rows", len(r4))
     p("s4.event_type", r4[0]["event_type"])
@@ -573,7 +573,7 @@ def probe() -> None:
 
     # S5 empty plan
     truncate()
-    res5 = executor.execute(NothingAction, NoParams(), principal=alice)
+    res5 = executor.execute(alice, NothingAction, NoParams())
     p("s5.result", res5)
     p("s5.outbox_global", outbox(GLOBAL))
     p("s5.outbox_mexico", outbox(MEXICO))
@@ -582,7 +582,7 @@ def probe() -> None:
     # S6 perform throws
     truncate()
     ATTEMPTS[0] = 0
-    e6 = catching(lambda: executor.execute(ThrowAction, "runtime", principal=alice))
+    e6 = catching(lambda: executor.execute(alice, ThrowAction, "runtime"))
     p("s6.caller_exception", err(e6))
     p("s6.same_instance", e6 is THROWN[0])
     p("s6.attempts", ATTEMPTS[0])
@@ -591,17 +591,17 @@ def probe() -> None:
 
     # S7 perform throws StaleRecord directly
     ATTEMPTS[0] = 0
-    e7 = catching(lambda: executor.execute(ThrowAction, "stale", principal=alice))
+    e7 = catching(lambda: executor.execute(alice, ThrowAction, "stale"))
     p("s7.caller_exception", err(e7))
     p("s7.attempts", ATTEMPTS[0])
 
     # S8 optimistic-lock conflict in persist, default retry
     truncate()
-    w8 = executor.execute(CreateAction, CountryParams("DE"), principal=alice)
+    w8 = executor.execute(alice, CreateAction, CountryParams("DE"))
     truncate_events(GLOBAL)
     ATTEMPTS[0] = 0
     t0 = time.monotonic()
-    e8 = catching(lambda: executor.execute(StaleUpdateAction, IdParams(w8.id.value), principal=alice))
+    e8 = catching(lambda: executor.execute(alice, StaleUpdateAction, IdParams(w8.id.value)))
     ms = (time.monotonic() - t0) * 1000
     p("s8.caller_exception", err(e8))
     p("s8.attempts", ATTEMPTS[0])
@@ -612,8 +612,12 @@ def probe() -> None:
 
     # S9 noRetry
     ATTEMPTS[0] = 0
-    e9 = catching(lambda: executor.execute(StaleUpdateAction, IdParams(w8.id.value),
-                                           principal=alice, config=no_retry))
+    e9 = catching(lambda: executor.execute(
+        alice,
+        StaleUpdateAction,
+        IdParams(w8.id.value),
+        config=no_retry,
+    ))
     p("s9.caller_exception", err(e9))
     p("s9.attempts", ATTEMPTS[0])
 
@@ -621,26 +625,30 @@ def probe() -> None:
     ATTEMPTS[0] = 0
     three = (ExecutionConfiguration.builder()
              .with_retry(RetryConfig(on=StaleRecordError, max_retries=3, delay=0)).build())
-    catching(lambda: executor.execute(StaleUpdateAction, IdParams(w8.id.value),
-                                      principal=alice, config=three))
+    catching(lambda: executor.execute(
+        alice,
+        StaleUpdateAction,
+        IdParams(w8.id.value),
+        config=three,
+    ))
     p("s10.attempts", ATTEMPTS[0])
 
     # S11 exact class match
     probe_cfg = (ExecutionConfiguration.builder()
                  .with_retry(RetryConfig(on=ProbeEx, max_retries=2, delay=0)).build())
     ATTEMPTS[0] = 0
-    catching(lambda: executor.execute(ThrowAction, "probe", principal=alice, config=probe_cfg))
+    catching(lambda: executor.execute(alice, ThrowAction, "probe", config=probe_cfg))
     p("s11.exact_attempts", ATTEMPTS[0])
     ATTEMPTS[0] = 0
-    catching(lambda: executor.execute(ThrowAction, "probesub", principal=alice, config=probe_cfg))
+    catching(lambda: executor.execute(alice, ThrowAction, "probesub", config=probe_cfg))
     p("s11.subclass_attempts", ATTEMPTS[0])
     ATTEMPTS[0] = 0
-    catching(lambda: executor.execute(ThrowAction, "stale", principal=alice, config=probe_cfg))
+    catching(lambda: executor.execute(alice, ThrowAction, "stale", config=probe_cfg))
     p("s11.default_dropped_when_other_added", ATTEMPTS[0])
 
     # S12 cause chain
     ATTEMPTS[0] = 0
-    e12 = catching(lambda: executor.execute(ThrowAction, "wrapped", principal=alice))
+    e12 = catching(lambda: executor.execute(alice, ThrowAction, "wrapped"))
     p("s12.attempts", ATTEMPTS[0])
     p("s12.caller_exception", err(e12))
 
@@ -648,7 +656,7 @@ def probe() -> None:
     truncate()
     ATTEMPTS[0] = 0
     STAGED_IDS.clear()
-    w13 = executor.execute(FreshPlanAction, NoParams(), principal=alice)
+    w13 = executor.execute(alice, FreshPlanAction, NoParams())
     p("s13.attempts", ATTEMPTS[0])
     p("s13.wallets", wallet_repository(GLOBAL))
     p("s13.result_is_second_attempt", w13.id.value == STAGED_IDS[1])
@@ -656,7 +664,7 @@ def probe() -> None:
 
     # S14 cross-shard rejected
     truncate()
-    e14 = catching(lambda: executor.execute(TwoShardAction, CountryParams("mx-first"), principal=alice))
+    e14 = catching(lambda: executor.execute(alice, TwoShardAction, CountryParams("mx-first")))
     p("s14.caller_exception", err(e14))
     if isinstance(e14, CrossShardError):
         p("s14.active_shard", sh(e14.active_shard))
@@ -670,7 +678,7 @@ def probe() -> None:
     truncate()
     spy = SpyPersister(SingleTableJsonEventPersister(registry, EVENTS))
     spy_exec = build_executor(actions, outbox_persister=spy)
-    spy_exec.execute(TwoShardAction, CountryParams("mx-first"), principal=alice, config=cross)
+    spy_exec.execute(alice, TwoShardAction, CountryParams("mx-first"), config=cross)
     p("s15.commit_order", spy.order)
     p("s15.wallets_global", wallet_repository(GLOBAL))
     p("s15.wallets_mexico", wallet_repository(MEXICO))
@@ -687,7 +695,7 @@ def probe() -> None:
 
     # S16 partial commit, no retry
     truncate()
-    mx16 = executor.execute(CreateAction, CountryParams("MX"), principal=alice)
+    mx16 = executor.execute(alice, CreateAction, CountryParams("MX"))
     insert_mx = ("insert into wallets (id, version, state, owner_id, currency, balance,"
                  " created_date, updated_date) values (cast(:id as uuid), 1, 'OPENED',"
                  " gen_random_uuid(), 'MXN', 1, now(), now())")
@@ -696,8 +704,12 @@ def probe() -> None:
         c.execute(text(insert_mx), {"id": str(mx16.id.value)})
     ATTEMPTS[0] = 0
     no_retry_cross = ExecutionConfiguration.no_retry(allow_cross_shard=True)
-    e16 = catching(lambda: executor.execute(PartialAction, IdParams(mx16.id.value),
-                                            principal=alice, config=no_retry_cross))
+    e16 = catching(lambda: executor.execute(
+        alice,
+        PartialAction,
+        IdParams(mx16.id.value),
+        config=no_retry_cross,
+    ))
     p("s16.caller_exception", err(e16))
     p("s16.attempts", ATTEMPTS[0])
     p("s16.wallets_global", wallet_repository(GLOBAL))
@@ -710,8 +722,12 @@ def probe() -> None:
     with engines[MEXICO].begin() as c:
         c.execute(text(insert_mx), {"id": str(mx16.id.value)})
     ATTEMPTS[0] = 0
-    e17 = catching(lambda: executor.execute(PartialAction, IdParams(mx16.id.value),
-                                            principal=alice, config=cross))
+    e17 = catching(lambda: executor.execute(
+        alice,
+        PartialAction,
+        IdParams(mx16.id.value),
+        config=cross,
+    ))
     p("s17.caller_exception", err(e17))
     p("s17.attempts", ATTEMPTS[0])
     p("s17.wallets_global", wallet_repository(GLOBAL))
@@ -719,18 +735,18 @@ def probe() -> None:
 
     # S18 unknown shard falls back to default
     truncate()
-    executor.execute(CreateAction, CountryParams("AU"), principal=alice)
+    executor.execute(alice, CreateAction, CountryParams("AU"))
     p("s18.wallets_global", wallet_repository(GLOBAL))
     p("s18.outbox_global", outbox(GLOBAL))
     p("s18.outbox_mexico", outbox(MEXICO))
 
     # S19 unregistered action
-    e19 = catching(lambda: executor.execute(OuterB.UnregisteredAction, NoParams(), principal=alice))
+    e19 = catching(lambda: executor.execute(alice, OuterB.UnregisteredAction, NoParams()))
     p("s19.caller_exception", err(e19))
 
     # S20 null params
     truncate()
-    e20 = catching(lambda: executor.execute(NullParamsAction, None, principal=alice))
+    e20 = catching(lambda: executor.execute(alice, NullParamsAction, None))
     p("s20.caller_exception", err(e20))
     p("s20.wallets", wallet_repository(GLOBAL))
     p("s20.outbox", outbox(GLOBAL))
@@ -739,7 +755,7 @@ def probe() -> None:
 
     # S21 scalar params
     truncate()
-    e21 = catching(lambda: executor.execute(ScalarParamsAction, "MX", principal=alice))
+    e21 = catching(lambda: executor.execute(alice, ScalarParamsAction, "MX"))
     p("s21.caller_exception", err(e21))
     p("s21.wallets", wallet_repository(GLOBAL))
 
@@ -747,31 +763,31 @@ def probe() -> None:
     for kind in ("add-add", "add-update", "update-update"):
         truncate()
         ATTEMPTS[0] = 0
-        e = catching(lambda kind=kind: executor.execute(DoubleStageAction, kind, principal=alice))
+        e = catching(lambda kind=kind: executor.execute(alice, DoubleStageAction, kind))
         p(f"s23.{kind}.caller_exception", err(e))
         p(f"s23.{kind}.attempts", ATTEMPTS[0])
         p(f"s23.{kind}.wallets", wallet_repository(GLOBAL))
 
     # S26 event simple-name collision
     truncate()
-    e26a = catching(lambda: executor.execute(DupEventAction, CountryParams("a"), principal=alice))
-    e26b = catching(lambda: executor.execute(DupEventAction, CountryParams("b"), principal=alice))
+    e26a = catching(lambda: executor.execute(alice, DupEventAction, CountryParams("a")))
+    e26b = catching(lambda: executor.execute(alice, DupEventAction, CountryParams("b")))
     p("s26.first", err(e26a))
     p("s26.second", err(e26b))
     p("s26.wallets", wallet_repository(GLOBAL))
-    e26c = catching(lambda: executor.execute(DupEventAction, CountryParams("a"), principal=alice))
+    e26c = catching(lambda: executor.execute(alice, DupEventAction, CountryParams("a")))
     p("s26.first_again", err(e26c))
 
     # S27 transaction visibility
     truncate()
     spy.order.clear()
-    spy_exec.execute(CreateAction, CountryParams("DE"), principal=alice)
+    spy_exec.execute(alice, CreateAction, CountryParams("DE"))
     p("s27.during_other_connection_sees_wallet", spy.during_other)
     p("s27.during_in_transaction_sees_wallet", spy.during_tx)
     p("s27.after_other_connection_sees_wallet", wallet_repository(GLOBAL))
     truncate()
     spy.fail = True
-    e27 = catching(lambda: spy_exec.execute(CreateAction, CountryParams("DE"), principal=alice))
+    e27 = catching(lambda: spy_exec.execute(alice, CreateAction, CountryParams("DE")))
     spy.fail = False
     p("s27.persister_failure_exception", err(e27))
     p("s27.persister_failure_wallets", wallet_repository(GLOBAL))
@@ -779,11 +795,11 @@ def probe() -> None:
 
     # S28 a read inside perform does not see the staged add
     truncate()
-    p("s28.read_sees_staged", executor.execute(ReadOwnAction, NoParams(), principal=alice))
+    p("s28.read_sees_staged", executor.execute(alice, ReadOwnAction, NoParams()))
 
     # S29 nested execute
     truncate()
-    e29 = catching(lambda: executor.execute(OuterAction, NoParams(), principal=alice))
+    e29 = catching(lambda: executor.execute(alice, OuterAction, NoParams()))
     p("s29.outer_exception", err(e29))
     p("s29.wallets", wallet_repository(GLOBAL))
     p("s29.inner_wallet_committed", wallet_repo.find_by_id(INNER_ID[0].value) is not None)
@@ -791,17 +807,17 @@ def probe() -> None:
 
     # S30 plan outside execution and on another thread
     p("s30.plan_outside_execute", err(catching(lambda: PlanProbeAction(clock).expose_plan())))
-    p("s30.plan_on_new_thread", executor.execute(PlanProbeAction, NoParams(), principal=alice))
+    p("s30.plan_on_new_thread", executor.execute(alice, PlanProbeAction, NoParams()))
 
     # S31 concurrency: two deposits on one wallet
     truncate()
-    w31 = executor.execute(CreateAction, CountryParams("DE"), principal=alice)
+    w31 = executor.execute(alice, CreateAction, CountryParams("DE"))
     ATTEMPTS[0] = 0
     errs: list[str] = []
 
     def deposit():
         try:
-            executor.execute(LatchDepositAction, IdParams(w31.id.value), principal=alice)
+            executor.execute(alice, LatchDepositAction, IdParams(w31.id.value))
         except Exception as e:  # noqa: BLE001
             errs.append(err(e))
 
@@ -819,7 +835,7 @@ def probe() -> None:
     truncate()
     fixed = VirtualClock(datetime(2026, 1, 1, 10, 0, 0, 123456, tzinfo=UTC))
     fixed_exec = build_executor(ActionRegistry([NothingAction(fixed)]), exec_clock=fixed)
-    fixed_exec.execute(NothingAction, NoParams(), principal=alice)
+    fixed_exec.execute(alice, NothingAction, NoParams())
     r32 = rows(GLOBAL)[0]
     p("s32.started_date", r32["started"])
     p("s32.completion_date", r32["completed"])
@@ -830,9 +846,9 @@ def probe() -> None:
 
     # S33 duplicate primary key
     truncate()
-    w33 = executor.execute(CreateAction, CountryParams("DE"), principal=alice)
+    w33 = executor.execute(alice, CreateAction, CountryParams("DE"))
     ATTEMPTS[0] = 0
-    e33 = catching(lambda: executor.execute(ReAddAction, IdParams(w33.id.value), principal=alice))
+    e33 = catching(lambda: executor.execute(alice, ReAddAction, IdParams(w33.id.value)))
     p("s33.caller_exception", err(e33))
     p("s33.attempts", ATTEMPTS[0])
 
@@ -866,18 +882,18 @@ def probe() -> None:
     other_repo = NotificationRepository(Notification, NOTIFICATIONS, registry, clock=clock)
     other_exec = build_executor(actions, repos=[other_repo])
     truncate()
-    e38 = catching(lambda: other_exec.execute(CreateAction, CountryParams("DE"), principal=alice))
+    e38 = catching(lambda: other_exec.execute(alice, CreateAction, CountryParams("DE")))
     p("s38.unknown_type_exception", err(e38))
     p("s38.outbox", outbox(GLOBAL))
 
     # S42 grouping order: update staged before add
     truncate()
-    w42 = executor.execute(CreateAction, CountryParams("DE"), principal=alice)
+    w42 = executor.execute(alice, CreateAction, CountryParams("DE"))
     truncate_events(GLOBAL)
-    executor.execute(UpdateThenAddAction, IdParams(w42.id.value), principal=alice)
+    executor.execute(alice, UpdateThenAddAction, IdParams(w42.id.value))
     p("s42.event_types_in_insert_order", [r["event_type"] for r in rows(GLOBAL)])
     truncate()
-    ids = executor.execute(ThreeAddsAction, NoParams(), principal=alice)
+    ids = executor.execute(alice, ThreeAddsAction, NoParams())
     got = [r["model_id"] for r in rows(GLOBAL)]
     p("s42.three_adds_insert_order_is_staging_order", got == ids)
 
@@ -886,7 +902,7 @@ def probe() -> None:
 
     def outer_tx():
         with registry.manager(GLOBAL).transaction():
-            executor.execute(CreateAction, CountryParams("DE"), principal=alice)
+            executor.execute(alice, CreateAction, CountryParams("DE"))
             raise RuntimeError("caller rolls back")
 
     e43 = catching(outer_tx)

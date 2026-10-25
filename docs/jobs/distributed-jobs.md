@@ -22,7 +22,7 @@ class WalletStipendJob(DistributedJob):
 
     def execute(self, context: ExecutionContext) -> None:
         for wallet in self.wallet_repository.find_open_with_balance_below(THRESHOLD):
-            self.executor.execute(WalletDepositMoneyAction, WalletDepositMoneyAction.Params(...))
+            self.executor.execute(None, WalletDepositMoneyAction, WalletDepositMoneyAction.Params(...))
 ```
 
 **Async**
@@ -47,7 +47,7 @@ class WalletStipendJob(DistributedJob):
 
     async def pay(self) -> None:
         for wallet in await self.wallet_repository.find_open_with_balance_below(THRESHOLD):
-            await self.executor.execute(WalletDepositMoneyAction, WalletDepositMoneyAction.Params(...))
+            await self.executor.execute(None, WalletDepositMoneyAction, WalletDepositMoneyAction.Params(...))
 ```
 
 Nothing about being a job makes the work special. It goes through an ordinary action, so the

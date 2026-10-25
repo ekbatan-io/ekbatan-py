@@ -113,7 +113,8 @@ sides. Ordered by surprise, highest first.
 - **Could match Java?** partly. Under gevent it already behaves like Java. Under asyncio only an async surface would.
 - **Surprise:** medium
 
-### `execute` takes the principal last, as a keyword, and the principal is a plain string
+### `execute` takes the principal last, as a keyword, and the principal is a plain string - order matched (2026-10-25)
+- **Order matched (`EKB-0556`, the user's decision 2026-10-25):** `execute(principal, action, params, config=None)` - the principal first, positionally, `None` allowed; the action, its params, and Java's overload's configuration after it. A call in the old order - the action first - is refused with a `TypeError` that names Java's order; the old keyword `principal=` is refused by Python itself, the parameter being positional-only. `run_action` / `async_run_action` take the principal first too. The principal stays a `str | None`: Python has no standard `Principal`, and Java's code only ever reads `getName()`.
 - **What:** Java: `execute(principal, DepositMoneyAction.class, params)`. Python:
   `execute(DepositMoneyAction, params, principal="alice")`. The principal is optional and is
   `str | None`, not a `java.security.Principal`. `perform(self, principal, params)` and
@@ -220,7 +221,7 @@ sides. Ordered by surprise, highest first.
 - **Surprise:** low
 
 ### Parameterless actions take `None`, and `None` is stored as `{}`
-- **What:** `execute(SomeAction, None)` is how you run an action with no parameters, and the
+- **What:** `execute(principal, SomeAction, None)` is how you run an action with no parameters, and the
   outbox stores `action_params = {}`. Java refuses a null params object.
 - **Python:** `src/ekbatan/action/outbox.py:394-412`
 - **Java:** `SingleTableJsonEventPersister.java:141-147` (`:142-146`, `isInstanceOf(ObjectNode)` refuses null)
@@ -294,7 +295,7 @@ sides. Ordered by surprise, highest first.
 - **Surprise:** low
 
 ### Python-only test and plan helpers, and a plan you read differently
-- **What:** `run_action(action, params)` returns a `StagedWork` (Python only). `current_plan()`
+- **What:** `run_action(principal, action, params)` returns a `StagedWork` (Python only). `current_plan()`
   is a public function that any code can call (Java's `plan()` is `protected` on the action).
   `ActionPlan(clock)` needs a clock. `plan.additions(Wallet)` returns a list where Java returns a
   map keyed by id. "Has changes" is `bool(plan)`, not `hasChanges()`.

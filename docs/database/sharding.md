@@ -427,15 +427,23 @@ Refused by default. `CrossShardError` names the two shards involved.
 **Sync**
 
 ```python
-executor.execute(TransferAction, params,
-                 config=ExecutionConfiguration(allow_cross_shard=True))
+executor.execute(
+    None,
+    TransferAction,
+    params,
+    config=ExecutionConfiguration(allow_cross_shard=True),
+)
 ```
 
 **Async**
 
 ```python
-await executor.execute(TransferAction, params,
-                       config=ExecutionConfiguration(allow_cross_shard=True))
+await executor.execute(
+    None,
+    TransferAction,
+    params,
+    config=ExecutionConfiguration(allow_cross_shard=True),
+)
 ```
 
 With it on: one transaction per shard, each committing independently, and the action's outbox row

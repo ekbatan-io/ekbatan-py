@@ -259,13 +259,13 @@ def probe(urls) -> None:
 
     # e2 a direct update with a stale version
     truncate()
-    w = executor.execute(CreateAction, CountryParams("DE"), principal="alice")
+    w = executor.execute("alice", CreateAction, CountryParams("DE"))
     repo.update(w.deposit(Decimal("1")))
     report("e2.update_stale", catching(lambda: repo.update(w.deposit(Decimal("2")))))
 
     # e3 unregistered action
     report("e3.unregistered", catching(
-        lambda: executor.execute(UnregisteredAction, NoParams(), principal="alice")))
+        lambda: executor.execute("alice", UnregisteredAction, NoParams())))
 
     # e4 the plan reached outside an execution
     report("e4.plan_outside", catching(lambda: PlanLeakAction(clock).leak()))
@@ -273,7 +273,7 @@ def probe(urls) -> None:
     # e5 cross-shard refused
     truncate()
     report("e5.cross_shard", catching(
-        lambda: executor.execute(TwoShardAction, NoParams(), principal="alice")))
+        lambda: executor.execute("alice", TwoShardAction, NoParams())))
 
     # e6 unknown shard with policy FAIL, through execute
     fail_registry = DatabaseRegistry.from_config(sharding(urls, "fail"))
@@ -282,21 +282,21 @@ def probe(urls) -> None:
     fail_exec = build_executor(fail_registry, fail_repo, ActionRegistry([CreateAction(clock)]))
     truncate()
     report("e6.fail_policy_execute", catching(
-        lambda: fail_exec.execute(CreateAction, CountryParams("AU"), principal="alice")))
+        lambda: fail_exec.execute("alice", CreateAction, CountryParams("AU"))))
     p("e6.wallets_global", count(GLOBAL, "wallets"))
     fail_registry.close()
 
     # e9 duplicate primary key through execute
     truncate()
     FIXED_ID[0] = ShardedId[Wallet].generate(GLOBAL)
-    executor.execute(FixedIdAction, NoParams(), principal="alice")
+    executor.execute("alice", FixedIdAction, NoParams())
     report("e9.duplicate_key", catching(
-        lambda: executor.execute(FixedIdAction, NoParams(), principal="alice")))
+        lambda: executor.execute("alice", FixedIdAction, NoParams())))
 
     # e10 params the JSON writer cannot write
     truncate()
     report("e10.unwritable_params", catching(
-        lambda: executor.execute(BadParamsAction, BadParams(Opaque()), principal="alice")))
+        lambda: executor.execute("alice", BadParamsAction, BadParams(Opaque()))))
     p("e10.wallets", count(GLOBAL, "wallets"))
     p("e10.outbox", count(GLOBAL, "eventlog.events"))
     with engines[GLOBAL].connect() as c:
@@ -304,7 +304,7 @@ def probe(urls) -> None:
     p("e10.stored_params", [s.split(" at 0x")[0] + (" at 0x...>" if " at 0x" in s else "")
                             for s in stored])
     truncate()
-    executor.execute(BadParamsAction, BadParams(Money()), principal="alice")
+    executor.execute("alice", BadParamsAction, BadParams(Money()))
     with engines[GLOBAL].connect() as c:
         stored = c.execute(text("SELECT action_params::text FROM eventlog.events")).scalars().all()
     p("e10b.plain_class_with_public_fields.stored_params",
@@ -314,8 +314,12 @@ def probe(urls) -> None:
     cfg = (ExecutionConfiguration.builder().no_retry()
            .with_retry(RetryConfig(on=E.EkbatanError, max_retries=2, delay=0.001)).build())
     ATTEMPTS[0] = 0
-    t12 = catching(lambda: executor.execute(StaleThrowAction, NoParams(), principal="alice",
-                                            config=cfg))
+    t12 = catching(lambda: executor.execute(
+        "alice",
+        StaleThrowAction,
+        NoParams(),
+        config=cfg,
+    ))
     p("e12.policy_on_base_class.attempts", ATTEMPTS[0])
     p("e12.policy_on_base_class.type", name(t12))
 

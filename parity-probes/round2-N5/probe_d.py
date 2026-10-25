@@ -133,7 +133,7 @@ def main() -> None:
     time.sleep(2)
     p("d1.connections_open_2s_after_start", conns() - base)
     t1 = time.monotonic()
-    app.ex.execute(WidgetCreateAction, CreateParams(shard=DEFAULT_SHARD, name="d1", color="red"), principal="tester")
+    app.ex.execute("tester", WidgetCreateAction, CreateParams(shard=DEFAULT_SHARD, name="d1", color="red"))
     while "d1" not in seen and time.monotonic() - t1 < 20:
         time.sleep(0.02)
     p("d1.action_to_handler", ("within " + ("3s" if time.monotonic() - t1 < 3 else "20s")) if "d1" in seen else "never")
@@ -161,7 +161,7 @@ def main() -> None:
     p("d2.start", f"{outcome} after {secs(time.monotonic() - t4)}")
     t5 = time.monotonic()
     try:
-        bad.ex.execute(WidgetCreateAction, CreateParams(shard=DEFAULT_SHARD, name="d2", color="red"), principal="tester")
+        bad.ex.execute("tester", WidgetCreateAction, CreateParams(shard=DEFAULT_SHARD, name="d2", color="red"))
         p("d2.action", "ran")
     except Exception as e:  # noqa: BLE001
         m = chain(e)

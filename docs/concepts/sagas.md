@@ -127,6 +127,7 @@ class TransferInitiatedEventHandler(EventHandler[TransferInitiatedEvent]):
     def handle(self, envelope: EventEnvelope[TransferInitiatedEvent]) -> None:
         event = envelope.event
         self.executor.execute(
+            None,
             CompleteTransferAction,
             CompleteTransferParams(
                 transfer_id=event.transfer_id,
@@ -156,6 +157,7 @@ class TransferInitiatedEventHandler(AsyncEventHandler[TransferInitiatedEvent]):
     async def handle(self, envelope: EventEnvelope[TransferInitiatedEvent]) -> None:
         event = envelope.event
         await self.executor.execute(
+            None,
             CompleteTransferAction,
             CompleteTransferParams(
                 transfer_id=event.transfer_id,

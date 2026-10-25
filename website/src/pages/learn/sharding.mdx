@@ -199,6 +199,7 @@ carries its own outbox, and an event is written to the database whose row it des
 
 ```python
 mx = service.executor.execute(
+    None,
     WalletCreateAction,
     WalletCreateAction.Params(owner_id=uuid4(), currency="MXN", country_code="MX", initial_balance=Decimal(0)),
 )
@@ -210,6 +211,7 @@ print(mx.id.shard)          # 1:0 - the bits are in the id
 
 ```python
 mx = await service.executor.execute(
+    None,
     WalletCreateAction,
     WalletCreateAction.Params(owner_id=uuid4(), currency="MXN", country_code="MX", initial_balance=Decimal(0)),
 )
@@ -241,14 +243,14 @@ Asking for it anyway is refused:
 <div slot="sync">
 
 ```python
-executor.execute(TransferAction, params)      # raises CrossShardError
+executor.execute(None, TransferAction, params)      # raises CrossShardError
 ```
 
 </div>
 <div slot="async">
 
 ```python
-await executor.execute(TransferAction, params)      # raises CrossShardError
+await executor.execute(None, TransferAction, params)      # raises CrossShardError
 ```
 
 </div>
@@ -261,6 +263,7 @@ You have two honest answers. Opt in per call, and accept that each shard commits
 
 ```python
 executor.execute(
+    None,
     TransferAction,
     params,
     config=ExecutionConfiguration(allow_cross_shard=True),
@@ -272,6 +275,7 @@ executor.execute(
 
 ```python
 await executor.execute(
+    None,
     TransferAction,
     params,
     config=ExecutionConfiguration(allow_cross_shard=True),

@@ -441,16 +441,24 @@ Refused by default. `CrossShardError` names the two shards involved.
 <div slot="sync">
 
 ```python
-executor.execute(TransferAction, params,
-                 config=ExecutionConfiguration(allow_cross_shard=True))
+executor.execute(
+    None,
+    TransferAction,
+    params,
+    config=ExecutionConfiguration(allow_cross_shard=True),
+)
 ```
 
 </div>
 <div slot="async">
 
 ```python
-await executor.execute(TransferAction, params,
-                       config=ExecutionConfiguration(allow_cross_shard=True))
+await executor.execute(
+    None,
+    TransferAction,
+    params,
+    config=ExecutionConfiguration(allow_cross_shard=True),
+)
 ```
 
 </div>

@@ -90,15 +90,23 @@ already committed stay committed, and the framework logs that loudly, naming the
 **Sync**
 
 ```python
-executor.execute(TransferAction, params,
-                 config=ExecutionConfiguration(allow_cross_shard=True))
+executor.execute(
+    None,
+    TransferAction,
+    params,
+    config=ExecutionConfiguration(allow_cross_shard=True),
+)
 ```
 
 **Async**
 
 ```python
-await executor.execute(TransferAction, params,
-                       config=ExecutionConfiguration(allow_cross_shard=True))
+await executor.execute(
+    None,
+    TransferAction,
+    params,
+    config=ExecutionConfiguration(allow_cross_shard=True),
+)
 ```
 
 Prefer opting in **per call**, so the risk is visible at the call site. An executor-wide default

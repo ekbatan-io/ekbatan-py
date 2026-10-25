@@ -64,7 +64,7 @@ class WalletDepositMoneyAction(Action["WalletDepositMoneyAction.Params", Wallet]
         return self.plan.update(wallet.deposit(params.amount))
 
 
-wallet = executor.execute(WalletDepositMoneyAction, params)
+wallet = executor.execute(None, WalletDepositMoneyAction, params)
 ```
 
 **Async**
@@ -76,7 +76,7 @@ class WalletDepositMoneyAction(AsyncAction["WalletDepositMoneyAction.Params", Wa
         return self.plan.update(wallet.deposit(params.amount))
 
 
-wallet = await executor.execute(WalletDepositMoneyAction, params)
+wallet = await executor.execute(None, WalletDepositMoneyAction, params)
 ```
 
 ## What always runs on threads

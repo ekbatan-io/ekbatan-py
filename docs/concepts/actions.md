@@ -11,7 +11,7 @@ by the framework, never by your code.
 ## The two-phase lifecycle
 
 ```
-        executor.execute(WalletDepositMoneyAction, params)
+   executor.execute(principal, WalletDepositMoneyAction, params)
                               │
    ┌─── Phase 1 - perform()   (no transaction yet) ─────────────┐
    │   read from repositories                                   │
@@ -95,6 +95,7 @@ Calling it:
 
 ```python
 wallet = executor.execute(
+    None,
     WalletDepositMoneyAction,
     WalletDepositMoneyAction.Params(wallet_id=wallet_id, amount=Decimal("25.50")),
 )
@@ -104,6 +105,7 @@ wallet = executor.execute(
 
 ```python
 wallet = await executor.execute(
+    None,
     WalletDepositMoneyAction,
     WalletDepositMoneyAction.Params(wallet_id=wallet_id, amount=Decimal("25.50")),
 )
@@ -193,7 +195,7 @@ a real problem. Tune it per call:
 config = ExecutionConfiguration(
     retry_configs=(RetryConfig(on=StaleRecordError, max_retries=3, delay=0.05),)
 )
-executor.execute(WalletDepositMoneyAction, params, config=config)
+executor.execute(None, WalletDepositMoneyAction, params, config=config)
 ```
 
 **Async**
@@ -202,7 +204,7 @@ executor.execute(WalletDepositMoneyAction, params, config=config)
 config = ExecutionConfiguration(
     retry_configs=(RetryConfig(on=StaleRecordError, max_retries=3, delay=0.05),)
 )
-await executor.execute(WalletDepositMoneyAction, params, config=config)
+await executor.execute(None, WalletDepositMoneyAction, params, config=config)
 ```
 
 `ExecutionConfiguration.no_retry()` is the other end: a failure reaches the caller unchanged, for
@@ -235,15 +237,23 @@ An action whose changes span shards raises `CrossShardError`. Opt in per call:
 **Sync**
 
 ```python
-executor.execute(TransferAction, params,
-                 config=ExecutionConfiguration(allow_cross_shard=True))
+executor.execute(
+    None,
+    TransferAction,
+    params,
+    config=ExecutionConfiguration(allow_cross_shard=True),
+)
 ```
 
 **Async**
 
 ```python
-await executor.execute(TransferAction, params,
-                       config=ExecutionConfiguration(allow_cross_shard=True))
+await executor.execute(
+    None,
+    TransferAction,
+    params,
+    config=ExecutionConfiguration(allow_cross_shard=True),
+)
 ```
 
 With it enabled, each shard gets its own transaction and commits independently - there is no

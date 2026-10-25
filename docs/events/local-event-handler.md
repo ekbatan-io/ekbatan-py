@@ -501,14 +501,14 @@ A handler may instead take the executor and start another action:
 
 ```python
 def handle(self, envelope: EventEnvelope[TransferInitiatedEvent]) -> None:
-    self.executor.execute(CompleteTransferAction, params)
+    self.executor.execute(None, CompleteTransferAction, params)
 ```
 
 **Async**
 
 ```python
 async def handle(self, envelope: EventEnvelope[TransferInitiatedEvent]) -> None:
-    await self.executor.execute(CompleteTransferAction, params)
+    await self.executor.execute(None, CompleteTransferAction, params)
 ```
 
 This is the **only** legitimate place one action chains off another's effect. The source action

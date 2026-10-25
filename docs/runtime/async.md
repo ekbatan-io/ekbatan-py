@@ -86,7 +86,7 @@ executor = AsyncActionExecutor(
     clock=clock,
 )
 
-wallet = await executor.execute(WalletDepositMoneyAction, params)
+wallet = await executor.execute(None, WalletDepositMoneyAction, params)
 await registry.aclose()                     # or: async with registry: ...
 ```
 
@@ -232,7 +232,7 @@ from ekbatan.aio.locks import AsyncPostgresKeyedLockProvider
 locks = AsyncPostgresKeyedLockProvider.builder().data_source(AsyncDataSource.from_config(lock_config)).build()
 
 async with locks.acquire(f"wallet:{wallet_id}", timedelta(seconds=30)):
-    wallet = await executor.execute(WalletDepositMoneyAction, params)
+    wallet = await executor.execute(None, WalletDepositMoneyAction, params)
 
 lease = await locks.try_acquire(key, max_wait=timedelta(seconds=5), max_hold=timedelta(seconds=30))
 if lease is None:
@@ -279,7 +279,7 @@ class WalletMoneyDepositedEventHandler(AsyncEventHandler[WalletMoneyDepositedEve
         return WalletMoneyDepositedEvent
 
     async def handle(self, envelope: EventEnvelope[WalletMoneyDepositedEvent]) -> None:
-        await self.executor.execute(CreateNotificationAction, CreateNotificationAction.Params(...))
+        await self.executor.execute(None, CreateNotificationAction, CreateNotificationAction.Params(...))
 ```
 
 Dispatch runs an async handler on its **handler loop** - one event loop on a thread of its own,
@@ -334,7 +334,7 @@ class WalletStipendJob(DistributedJob):
 
     async def pay(self) -> None:
         for wallet in await self.wallet_repository.find_open_below(Decimal("100.00")):
-            await self.executor.execute(WalletDepositMoneyAction, WalletDepositMoneyAction.Params(...))
+            await self.executor.execute(None, WalletDepositMoneyAction, WalletDepositMoneyAction.Params(...))
 
 
 loop = HandlerLoop(name="worker-loop")
@@ -362,7 +362,7 @@ two pools, and **one transaction cannot span them**. Never call the sync API fro
 ## Testing an async action
 
 ```python
-staged = await async_run_action(WalletDepositMoneyAction(clock, wallet_repository), params)
+staged = await async_run_action(None, WalletDepositMoneyAction(clock, wallet_repository), params)
 assert staged.updated(Wallet)[0].balance == Decimal("150.00")
 
 checked = await AsyncActionSpec.of(WalletDepositMoneyAction(clock, wallet_repository)).execute(params)

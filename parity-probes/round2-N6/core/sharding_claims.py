@@ -99,9 +99,9 @@ class TouchBoth(Action[TwoParams, None]):
         self.plan.update(self.wallet_repository.get_by_id(params.a.value).deposit(Decimal(1)))
         self.plan.update(self.wallet_repository.get_by_id(params.b.value).deposit(Decimal(1)))
 ex = ActionExecutor(namespace="com.example.n6", registry=reg, repositories=[repo], actions=[TouchBoth(repo, clock)], events=EVENTS)
-probe("sharding.md:389 cross-shard refused, naming two shards", lambda: ex.execute(TouchBoth, TwoParams(a=g.id, b=m.id)))
+probe("sharding.md:389 cross-shard refused, naming two shards", lambda: ex.execute(None, TouchBoth, TwoParams(a=g.id, b=m.id)))
 logbuf.truncate(0); logbuf.seek(0)
-ex.execute(TouchBoth, TwoParams(a=g.id, b=m.id), config=ExecutionConfiguration(allow_cross_shard=True))
+ex.execute(None, TouchBoth, TwoParams(a=g.id, b=m.id), config=ExecutionConfiguration(allow_cross_shard=True))
 def outbox_each():
     out = {}
     for s in reg.shards:
@@ -119,7 +119,7 @@ class BreakSecond(TouchBoth):
             c.exec_driver_sql("ALTER TABLE wallets RENAME TO wallets_gone")
 ex2 = ActionExecutor(namespace="com.example.n6", registry=reg, repositories=[repo], actions=[BreakSecond(repo, clock)], events=EVENTS)
 logbuf.truncate(0); logbuf.seek(0)
-probe("partial cross-shard failure raises", lambda: ex2.execute(BreakSecond, TwoParams(a=g.id, b=m.id), config=ExecutionConfiguration.no_retry(allow_cross_shard=True)))
+probe("partial cross-shard failure raises", lambda: ex2.execute(None, BreakSecond, TwoParams(a=g.id, b=m.id), config=ExecutionConfiguration.no_retry(allow_cross_shard=True)))
 print("PROBE action.mdx:187 partial-failure log levels:", [l[:200] for l in logbuf.getvalue().splitlines() if "shard" in l.lower()][:6])
 
 # ids sort as Java's UUID.compareTo (signed halves)

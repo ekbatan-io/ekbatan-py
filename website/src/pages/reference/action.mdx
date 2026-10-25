@@ -37,7 +37,7 @@ plan, the clock and everything below are the same. An executor runs one kind onl
 refuses an `AsyncAction`, and the async one refuses an `Action`.
 
 `P` is the parameter type, `R` what the action returns. Both are held to at the call site:
-`executor.execute(WalletDepositMoneyAction, WalletDepositMoneyAction.Params(...))` returns a `Wallet` with no cast, and
+`executor.execute(principal, WalletDepositMoneyAction, WalletDepositMoneyAction.Params(...))` returns a `Wallet` with no cast, and
 passing the wrong parameter object is a type error rather than a runtime one.
 
 There is no abstract base to satisfy beyond `perform`. No decorator, no registration marker,
@@ -102,7 +102,7 @@ actions = (
 )
 ```
 
-That is what lets `executor.execute(WalletDepositMoneyAction, params)` take the **class** — the
+That is what lets `executor.execute(principal, WalletDepositMoneyAction, params)` take the **class** — the
 registry is the map from class to constructed instance. Pass an instance directly and no registry
 is needed, which is the form a test usually wants.
 
@@ -114,7 +114,7 @@ on where it was declared.
 ## The two-phase lifecycle
 
 ```
-executor.execute(WalletDepositMoneyAction, params)
+executor.execute(principal, WalletDepositMoneyAction, params)
          │
          ▼
 ┌─ Phase 1 — perform() — no transaction ───────────────────┐
@@ -174,7 +174,7 @@ A test that freezes one and not the other asserts on two different instants.
 Your logic. Read what you need, build the new immutable objects, stage them, return the result.
 It must be free of side effects you would not want repeated — a retry replays it whole.
 
-`principal` is whoever the caller named — `executor.execute(action, params, principal="ada")` —
+`principal` is whoever the caller named — `executor.execute("ada", WalletDepositMoneyAction, params)`, first, in Java's order —
 and `None` when nobody did. It is a parameter rather than ambient state: a helper that needs it
 is passed it, like any other value.
 
@@ -204,7 +204,7 @@ The default is one retry after 100 ms, on `StaleRecordError`.
 config = ExecutionConfiguration(
     retry_configs=(RetryConfig(on=StaleRecordError, max_retries=3, delay=0.05),)
 )
-executor.execute(WalletDepositMoneyAction, params, config=config)
+executor.execute(None, WalletDepositMoneyAction, params, config=config)
 ```
 
 </div>
@@ -214,7 +214,7 @@ executor.execute(WalletDepositMoneyAction, params, config=config)
 config = ExecutionConfiguration(
     retry_configs=(RetryConfig(on=StaleRecordError, max_retries=3, delay=0.05),)
 )
-await executor.execute(WalletDepositMoneyAction, params, config=config)
+await executor.execute(None, WalletDepositMoneyAction, params, config=config)
 ```
 
 </div>
@@ -242,6 +242,7 @@ By default an action's staged changes must all route to one shard; one that span
 
 ```python
 executor.execute(
+    None,
     TransferAction,
     params,
     config=ExecutionConfiguration(allow_cross_shard=True),
@@ -253,6 +254,7 @@ executor.execute(
 
 ```python
 await executor.execute(
+    None,
     TransferAction,
     params,
     config=ExecutionConfiguration(allow_cross_shard=True),

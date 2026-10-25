@@ -103,11 +103,15 @@ def q(sql):
 # --- outbox row (outbox.md:81 default persister, :103-107 JSON; model-event.mdx serialisation) ---
 ex = make_executor(with_events=False)  # outbox.md:81 - no events= at all
 wid = ShardedId[Wallet].random()
-ex.execute(WalletCreateAction, CreateWalletParams(owner_id=uuid4(), currency="EUR",
-                                                  initial_balance=Decimal("100.00"), wallet_id=wid))
+ex.execute(
+    None,
+    WalletCreateAction,
+    CreateWalletParams(owner_id=uuid4(), currency="EUR",
+                                                  initial_balance=Decimal("100.00"), wallet_id=wid),
+)
 clock.advance(timedelta(seconds=5)) if hasattr(clock, "advance") else None
-ex.execute(WalletDepositMoneyAction, DepositParams(wallet_id=wid, amount=Decimal("10.50"), recipient="a@b"))
-ex.execute(NotifyAction, NotifyParams(wallet_id=wid, kind="k", recipient="r"))
+ex.execute(None, WalletDepositMoneyAction, DepositParams(wallet_id=wid, amount=Decimal("10.50"), recipient="a@b"))
+ex.execute(None, NotifyAction, NotifyParams(wallet_id=wid, kind="k", recipient="r"))
 rows = q("SELECT action_name, event_type, payload, action_params, delivered, id, event_date FROM events ORDER BY event_date, action_name")
 for r in rows:
     p(f"outbox.row.{r[0]}", f"type={r[1]} payload={r[2]} params={r[3]} delivered={r[4]} id={r[5]!r}")

@@ -47,7 +47,7 @@ class NoPerform(Action[None, None]):
 
 check("repository_without_to_row_from_row", lambda: NoMapping(None, None, None))
 check("builder_unknown_field_setter", lambda: Wallet.builder().no_such_field(1))
-check("perform_not_overridden", lambda: run_action(NoPerform(SystemClock()), None))
+check("perform_not_overridden", lambda: run_action(None, NoPerform(SystemClock()), None))
 check("backoff_zero_attempts", lambda: backoff(0, timedelta(minutes=5)))
 check("streaming_from_row_missing_columns", lambda: ActionEvent.from_row({"id": 1}))
 check("plan_outside_execution", lambda: NoPerform(SystemClock()).plan)

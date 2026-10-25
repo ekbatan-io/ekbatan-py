@@ -72,11 +72,15 @@ executor.execute(principal, WalletDepositMoneyAction.class, params);
 ```
 
 ```python
-executor.execute(WalletDepositMoneyAction, WalletDepositMoneyAction.Params(...), principal="alice")
+executor.execute("alice", WalletDepositMoneyAction, WalletDepositMoneyAction.Params(...))
 ```
 
 The registry is the only way in, in both ports: a caller holding the executor runs an action
 without holding what it was built with, and everything a service can do is listed in one place.
+
+The arguments are in Java's order too, the principal first (`EKB-0556`, Dracula 68): it used to
+come last, as an optional keyword. A call in the old order - the action first - would hand the
+action class in as the principal, so it is refused with a `TypeError` that names Java's order.
 
 This port used to accept an instance as well, for tests. Measured before removing it, that form
 ran an action that had never been registered. An instance is refused
@@ -1409,7 +1413,7 @@ read, and `ActionEvent.action_params` is a mapping in both ports.
 
 Where they differ is `None`. Java refuses it too, because an action there always takes a params
 object, so a null reaching the check means somebody made a mistake. Here
-`executor.execute(SomeAction(), None)` is simply how a parameterless action is invoked, so `None`
+`executor.execute(principal, SomeAction, None)` is simply how a parameterless action is invoked, so `None`
 is normalised to `{}` rather than refused.
 
 The rule that makes both coherent: `None` means "no parameters" and has an unambiguous

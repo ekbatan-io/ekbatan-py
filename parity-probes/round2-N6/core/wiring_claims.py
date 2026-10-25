@@ -21,7 +21,7 @@ probe("wiring.md:246 PostgresKeyedLockProvider(engine) positional", lambda: Post
 probe("wiring.md:258 job_registry().workers exists", lambda: hasattr(job_registry(), "workers"))
 probe("wiring.md:307 duplicate action registration refused", lambda: ActionRegistry.builder().with_action(WalletCreateAction(running)).with_action(WalletCreateAction(running)).build())
 probe("wiring.md:307 duplicate repository registration refused", lambda: RepositoryRegistry.builder().with_model_repository(svc.wallet_repository).with_model_repository(svc.wallet_repository).build())
-probe("wiring.md:299 unregistered action fails at execute with a clear error", lambda: ActionExecutor(namespace="a.b", registry=reg, repositories=[svc.wallet_repository], events=EVENTS).execute(WalletCreateAction, None))
+probe("wiring.md:299 unregistered action fails at execute with a clear error", lambda: ActionExecutor(namespace="a.b", registry=reg, repositories=[svc.wallet_repository], events=EVENTS).execute(None, WalletCreateAction, None))
 probe("wiring.md:192 with_model_repository on an entity repo refused", lambda: RepositoryRegistry.builder().with_model_repository(svc.notification_repository).build())
 svc.close()
 svc2 = service()

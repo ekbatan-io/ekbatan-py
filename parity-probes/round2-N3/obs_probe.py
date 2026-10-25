@@ -316,37 +316,37 @@ def main() -> None:
         created: list[Any] = [None]
 
         def a1():
-            created[0] = executor.execute(CreateAction, CountryParams("DE"), principal=alice)
+            created[0] = executor.execute(alice, CreateAction, CountryParams("DE"))
 
         scenario("a1_success", a1)
-        scenario("a1b_no_principal", lambda: executor.execute(CreateAction, CountryParams("DE")))
+        scenario("a1b_no_principal", lambda: executor.execute(None, CreateAction, CountryParams("DE")))
 
         def a2():
             ATTEMPTS[0] = 0
-            executor.execute(FreshPlanAction, NoParams(), principal=alice)
+            executor.execute(alice, FreshPlanAction, NoParams())
 
         scenario("a2_retry_then_success", a2)
-        scenario("a3_perform_fails", lambda: executor.execute(FailAction, NoParams(), principal=alice))
+        scenario("a3_perform_fails", lambda: executor.execute(alice, FailAction, NoParams()))
         wid = created[0].id.value
         scenario(
             "a4_persist_fails_no_retry",
-            lambda: executor.execute(StaleUpdateAction, IdParams(wid), principal=alice, config=no_retry),
+            lambda: executor.execute(alice, StaleUpdateAction, IdParams(wid), config=no_retry),
         )
         scenario(
             "a5_retries_exhausted",
-            lambda: executor.execute(StaleUpdateAction, IdParams(wid), principal=alice, config=one_retry),
+            lambda: executor.execute(alice, StaleUpdateAction, IdParams(wid), config=one_retry),
         )
         scenario(
             "a6_cross_shard_allowed",
-            lambda: executor.execute(TwoShardAction, NoParams(), principal=alice, config=cross),
+            lambda: executor.execute(alice, TwoShardAction, NoParams(), config=cross),
         )
-        scenario("a7_cross_shard_rejected", lambda: executor.execute(TwoShardAction, NoParams(), principal=alice))
-        mx = executor.execute(CreateAction, CountryParams("MX"), principal=alice)
+        scenario("a7_cross_shard_rejected", lambda: executor.execute(alice, TwoShardAction, NoParams()))
+        mx = executor.execute(alice, CreateAction, CountryParams("MX"))
         scenario(
             "a8_partial_commit",
-            lambda: executor.execute(PartialAction, IdParams(mx.id.value), principal=alice, config=no_retry_cross),
+            lambda: executor.execute(alice, PartialAction, IdParams(mx.id.value), config=no_retry_cross),
         )
-        scenario("a9_unknown_shard", lambda: executor.execute(CreateAction, CountryParams("AU"), principal=alice))
+        scenario("a9_unknown_shard", lambda: executor.execute(alice, CreateAction, CountryParams("AU")))
         scenario("a10_repo_add_all", lambda: wallet_repo.add_all([new_wallet(GLOBAL), new_wallet(GLOBAL)]))
         scenario(
             "a11_repo_add_all_no_result",

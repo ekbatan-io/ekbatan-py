@@ -91,7 +91,7 @@ def main() -> None:
     fan = EventFanoutJob.builder().registry(reg).handlers(handlers).events(EVENTS).notifications(NOTIFS).config(conf).clock(clock).build()
     hand = EventHandlingJob.builder().registry(reg).handlers(handlers).notifications(NOTIFS).config(conf).clock(clock).build()
 
-    w = ex.execute(WidgetCreateAction, CreateParams(shard=S1, name="b1", color="red"))
+    w = ex.execute(None, WidgetCreateAction, CreateParams(shard=S1, name="b1", color="red"))
     p("b1.id_shard", sh(read_shard(w.id.value)))
     p("b1.widgets_shard0/shard1", counts("widgets"))
     p("b1.events_shard0/shard1", counts("eventlog.events"))
@@ -107,7 +107,7 @@ def main() -> None:
     p("b1.after_retry.notification_on_shard1", scalar(R1, "select concat(state, '/', attempts) from eventlog.event_notifications"))
     p("b1.handler_calls", ",".join(calls))
 
-    w5 = ex.execute(WidgetCreateAction, CreateParams(shard=S5, name="b2", color="red"))
+    w5 = ex.execute(None, WidgetCreateAction, CreateParams(shard=S5, name="b2", color="red"))
     i5 = str(w5.id.value)
     p("b2.id_shard", sh(read_shard(w5.id.value)))
     p("b2.widget_in_shard0/shard1", f"{scalar(R0, "select count(*) from widgets where name = 'b2'")}/{scalar(R1, "select count(*) from widgets where name = 'b2'")}")
@@ -121,7 +121,7 @@ def main() -> None:
 
     freg, frepo, fex = sharded("fail", clock)
     try:
-        fex.execute(WidgetCreateAction, CreateParams(shard=S5, name="b3", color="red"))
+        fex.execute(None, WidgetCreateAction, CreateParams(shard=S5, name="b3", color="red"))
         p("b3.write_unknown_shard", "written")
     except Exception as e:  # noqa: BLE001
         p("b3.write_unknown_shard", "refused")

@@ -286,6 +286,7 @@ FastAPI lifespan, or at the top and bottom of a worker's `main()`, never at impo
 
 ```python
 wallet = executor.execute(
+    None,
     WalletDepositMoneyAction,
     WalletDepositMoneyAction.Params(wallet_id=wallet_id, amount=Decimal("25.50")),
 )
@@ -295,6 +296,7 @@ wallet = executor.execute(
 
 ```python
 wallet = await executor.execute(
+    None,
     WalletDepositMoneyAction,
     WalletDepositMoneyAction.Params(wallet_id=wallet_id, amount=Decimal("25.50")),
 )
@@ -339,7 +341,7 @@ falsy verdict fails, so neither can pass by accident. When plain `assert` reads 
 **Sync**
 
 ```python
-staged = run_action(WalletDepositMoneyAction(clock, wallet_repository), WalletDepositMoneyAction.Params(wallet_id=..., amount=Decimal("50.00")))
+staged = run_action(None, WalletDepositMoneyAction(clock, wallet_repository), WalletDepositMoneyAction.Params(wallet_id=..., amount=Decimal("50.00")))
 
 assert staged.result.balance == Decimal("150.00")
 assert staged.emitted(WalletMoneyDepositedEvent)[0].amount == Decimal("50.00")
@@ -348,7 +350,7 @@ assert staged.emitted(WalletMoneyDepositedEvent)[0].amount == Decimal("50.00")
 **Async**
 
 ```python
-staged = await async_run_action(WalletDepositMoneyAction(clock, wallet_repository), WalletDepositMoneyAction.Params(wallet_id=..., amount=Decimal("50.00")))
+staged = await async_run_action(None, WalletDepositMoneyAction(clock, wallet_repository), WalletDepositMoneyAction.Params(wallet_id=..., amount=Decimal("50.00")))
 
 assert staged.result.balance == Decimal("150.00")
 assert staged.emitted(WalletMoneyDepositedEvent)[0].amount == Decimal("50.00")

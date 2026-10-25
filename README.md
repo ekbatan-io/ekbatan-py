@@ -50,7 +50,7 @@ class WalletDepositMoneyAction(Action["WalletDepositMoneyAction.Params", Wallet]
 **The executor opens one transaction, writes the rows and their events, and commits.**
 
 ```python
-executor.execute(deposit_money_action, WalletDepositMoneyAction.Params(wallet_id=..., amount=Decimal("50.00"), ...))
+executor.execute(principal, WalletDepositMoneyAction, WalletDepositMoneyAction.Params(wallet_id=..., amount=Decimal("50.00"), ...))
 ```
 
 That is the whole surface for the common case. There is no transaction to open, nothing to
@@ -259,7 +259,7 @@ An action's business logic needs no database. `ActionSpec` runs one against a ba
 Or, as plain data, with `run_action`:
 
 ```python
-staged = run_action(WalletDepositMoneyAction(wallet_repository), WalletDepositMoneyAction.Params(amount=Decimal("50.00"), ...))
+staged = run_action(None, WalletDepositMoneyAction(wallet_repository), WalletDepositMoneyAction.Params(amount=Decimal("50.00"), ...))
 
 assert staged.result.balance == Decimal("150.00")
 assert staged.emitted(WalletMoneyDepositedEvent)[0].amount == Decimal("50.00")

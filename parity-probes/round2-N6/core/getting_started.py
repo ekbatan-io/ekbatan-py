@@ -79,7 +79,7 @@ probe("README:236 assert_emitted(WalletMoneyDepositedEvent, 1)", lambda: (Action
     .assert_emitted(WalletMoneyDepositedEvent, 1)
     .assert_no_additions()) and "passed")
 def ra():
-    staged = run_action(WalletDepositMoneyAction(FakeRepo(), clock), DepositParams(wallet_id=w.id, amount=Decimal("50.00")))
+    staged = run_action(None, WalletDepositMoneyAction(FakeRepo(), clock), DepositParams(wallet_id=w.id, amount=Decimal("50.00")))
     assert staged.result.balance == Decimal("150.00")
     assert staged.emitted(WalletMoneyDepositedEvent)[0].amount == Decimal("50.00")
     assert staged.updated(Wallet) == [staged.result]
@@ -91,7 +91,7 @@ probe("README:15 Model[UUID, WalletState] subscript", lambda: Model[UUID, Wallet
 # README:116 'a change is evolve(..., emit=...)'
 probe("README:116 model.evolve(balance=..., emit=event)", lambda: w.evolve(balance=Decimal("1"), emit=WalletMoneyDepositedEvent(model_id=str(w.id), amount=Decimal(1), new_balance=Decimal(1))).events)
 svc.close()
-staged = run_action(WalletDepositMoneyAction(FakeRepo(), clock), DepositParams(wallet_id=w.id, amount=Decimal("50.00")))
+staged = run_action(None, WalletDepositMoneyAction(FakeRepo(), clock), DepositParams(wallet_id=w.id, amount=Decimal("50.00")))
 u = staged.updated(Wallet)
 print("PROBE README:244 updated len:", len(u), "same object as result:", u and u[0] is staged.result, "equal:", u and u[0] == staged.result)
 if u:

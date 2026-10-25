@@ -10,7 +10,7 @@ from ekbatan import DatabaseRegistry, ExecutionConfiguration, DEFAULT_RETRIES
 svc = service()
 ex, wallet_repository, reg = svc.executor, svc.wallet_repository, svc.registry
 tm = reg.default
-w = ex.execute(WalletCreateAction, OpenWalletParams(owner_id=uuid4(), currency="EUR", opening_balance=Decimal("100")))
+w = ex.execute(None, WalletCreateAction, OpenWalletParams(owner_id=uuid4(), currency="EUR", opening_balance=Decimal("100")))
 
 # actions.md:53 "plan.update returns the row ... stamped, version already moved"
 def stamped():
@@ -48,7 +48,7 @@ def action_in_tx():
     class Boom(Exception): pass
     try:
         with tm.transaction():
-            ex.execute(WalletDepositMoneyAction, DepositParams(wallet_id=w.id, amount=Decimal("5"), recipient="x"))
+            ex.execute(None, WalletDepositMoneyAction, DepositParams(wallet_id=w.id, amount=Decimal("5"), recipient="x"))
             raise Boom()
     except Boom:
         pass

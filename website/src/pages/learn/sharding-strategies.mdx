@@ -123,6 +123,7 @@ Shards that already committed stay committed, and the framework logs that loudly
 
 ```python
 executor.execute(
+    None,
     TransferAction,
     params,
     config=ExecutionConfiguration(allow_cross_shard=True),
@@ -134,6 +135,7 @@ executor.execute(
 
 ```python
 await executor.execute(
+    None,
     TransferAction,
     params,
     config=ExecutionConfiguration(allow_cross_shard=True),

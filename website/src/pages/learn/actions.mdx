@@ -16,7 +16,7 @@ single transaction, flush every staged change, write the outbox rows and commit.
 ## The two-phase lifecycle
 
 ```
-        executor.execute(WalletDepositMoneyAction, params)
+   executor.execute(principal, WalletDepositMoneyAction, params)
                               │
    ┌─── Phase 1 - perform()   (no transaction yet) ─────────────┐
    │   read from repositories                                   │
@@ -120,6 +120,7 @@ Calling it:
 
 ```python
 wallet = executor.execute(
+    None,
     WalletDepositMoneyAction,
     WalletDepositMoneyAction.Params(wallet_id=wallet_id, amount=Decimal("25.50")),
 )
@@ -130,6 +131,7 @@ wallet = executor.execute(
 
 ```python
 wallet = await executor.execute(
+    None,
     WalletDepositMoneyAction,
     WalletDepositMoneyAction.Params(wallet_id=wallet_id, amount=Decimal("25.50")),
 )
@@ -237,7 +239,7 @@ a real problem.
 config = ExecutionConfiguration(
     retry_configs=(RetryConfig(on=StaleRecordError, max_retries=3, delay=0.05),)
 )
-executor.execute(WalletDepositMoneyAction, params, config=config)
+executor.execute(None, WalletDepositMoneyAction, params, config=config)
 ```
 
 </div>
@@ -247,7 +249,7 @@ executor.execute(WalletDepositMoneyAction, params, config=config)
 config = ExecutionConfiguration(
     retry_configs=(RetryConfig(on=StaleRecordError, max_retries=3, delay=0.05),)
 )
-await executor.execute(WalletDepositMoneyAction, params, config=config)
+await executor.execute(None, WalletDepositMoneyAction, params, config=config)
 ```
 
 </div>
@@ -303,6 +305,7 @@ between `perform()` and the commit rather than half way through writing.
 
 ```python
 executor.execute(
+    None,
     TransferAction,
     params,
     config=ExecutionConfiguration(allow_cross_shard=True),
@@ -314,6 +317,7 @@ executor.execute(
 
 ```python
 await executor.execute(
+    None,
     TransferAction,
     params,
     config=ExecutionConfiguration(allow_cross_shard=True),

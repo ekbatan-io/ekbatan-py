@@ -150,7 +150,7 @@ def write() -> None:
     truncate(RAW, D)
     clock = VirtualClock(T1)
     reg, repo, ex = build(clock)
-    ex.execute(PriceAction, price_params(), principal="tester")
+    ex.execute("tester", PriceAction, price_params())
     k = f"c.{D}.python_wrote."
     p(k + "payload_text", scalar(RAW, f"select {json_text('payload')} from eventlog.events where event_type = 'PricedEvent'"))
     p(k + "params_text", scalar(RAW, f"select {json_text('action_params')} from eventlog.events where event_type = 'PricedEvent'"))

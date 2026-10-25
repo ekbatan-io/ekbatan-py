@@ -157,6 +157,7 @@ The caller invokes the action through the executor:
 
 ```python
 wallet = executor.execute(
+    None,
     WalletDepositMoneyAction,
     WalletDepositMoneyAction.Params(wallet_id=wallet_id, amount=Decimal("25.50")),
 )
@@ -167,6 +168,7 @@ wallet = executor.execute(
 
 ```python
 wallet = await executor.execute(
+    None,
     WalletDepositMoneyAction,
     WalletDepositMoneyAction.Params(wallet_id=wallet_id, amount=Decimal("25.50")),
 )
