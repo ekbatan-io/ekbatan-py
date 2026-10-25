@@ -280,6 +280,10 @@ The base reads the rule off the dataclass's own annotations, so there is no null
 in each model, and none to forget for a field added later. Every other rule goes in
 `validate()`.
 
+The annotations have to be readable while the program runs. A type imported only under
+`if TYPE_CHECKING:` is not, and creating such an object is refused with a `TypeError` that
+names it, rather than leaving the class's fields unchecked.
+
 ## `validate()`: the model's own rules
 
 Every model and every entity defines `validate()`. It is the one place for the rules a model has

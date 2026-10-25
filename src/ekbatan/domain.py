@@ -356,6 +356,11 @@ def _required(target: type) -> tuple[str, ...]:
     counterpart, because Python's absence *is* ``None`` rather than a wrapper that can itself
     be missing.
 
+    The annotations have to be readable while the program runs. One that is not - a type
+    imported only under ``TYPE_CHECKING``, a class its module never imports - is refused with a
+    ``TypeError`` naming it, rather than leaving every field of the class unchecked in silence:
+    nothing else would ever say so, since the class and the type checker are both content.
+
     Cached per class: this is read on every construction, and the answer cannot change.
     """
     cached = _REQUIRED.get(target)
@@ -363,9 +368,13 @@ def _required(target: type) -> tuple[str, ...]:
         return cached
     try:
         hints = typing.get_type_hints(target)
-    except Exception:  # an annotation naming something only importable under TYPE_CHECKING
-        _REQUIRED[target] = ()
-        return ()
+    except Exception as error:  # a name the class's module cannot see at run time
+        raise TypeError(
+            f"{target.__qualname__}'s field types cannot be read ({type(error).__name__}: "
+            f"{error}). They say which fields may not hold None, so they have to be readable "
+            f"while the program runs: import the name where the class is written, not only "
+            f"under TYPE_CHECKING."
+        ) from error
     names = []
     for declared in dataclasses.fields(target):
         hint = hints.get(declared.name)

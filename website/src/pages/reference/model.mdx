@@ -109,6 +109,10 @@ you declare**. `owner_id: UUID` is required; `note: str | None` is not.
 The base reads the rule off the dataclass's own annotations, so there is no null check to write
 in each model, and none to forget for a field added later.
 
+The annotations have to be readable while the program runs. A type imported only under
+`if TYPE_CHECKING:` is not, and creating such an object is refused with a `TypeError` that
+names it, rather than leaving the class's fields unchecked.
+
 `events` is excluded from equality. Two readers of one database row are looking at the same
 wallet whether or not one of them is mid-change.
 

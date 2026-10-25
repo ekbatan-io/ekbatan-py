@@ -10,10 +10,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import Enum
-from typing import Self
+from typing import TYPE_CHECKING, Self
 from uuid import UUID, uuid4
 
 import pytest
+
+if TYPE_CHECKING:
+    # For the type checker only - so it does not exist while the tests run. See
+    # test_a_class_whose_field_types_cannot_be_read_is_refused.
+    from fractions import Fraction
 
 from ekbatan.domain import Entity, EntityBuilder, GenericState, Model, ModelBuilder, ModelEvent
 from ekbatan.errors import EkbatanError, ValidationError
@@ -453,6 +458,28 @@ def test_an_optional_field_accepts_none_and_a_required_one_does_not():
 
     with pytest.raises(ValidationError, match="label cannot be null"):
         Tagged(**common, label=None)
+
+
+def test_a_class_whose_field_types_cannot_be_read_is_refused():
+    """The None checks are read off the annotations, so a name the class's module cannot see
+    while the program runs - here one imported only under TYPE_CHECKING - is refused when the
+    class is first made, naming it. It used to switch every None check of the class off, the
+    base's included, without a word."""
+
+    @dataclass(frozen=True, kw_only=True)
+    class Unreadable(Wallet):
+        ratio: Fraction | None = None
+
+    with pytest.raises(TypeError, match=r"Unreadable's field types cannot be read .*Fraction"):
+        Unreadable(
+            id=ShardedId[Wallet].random(),
+            state=WalletState.OPENED,
+            version=1,
+            created_date=NOW,
+            owner_id=None,  # refused, were the checks on
+            currency="EUR",
+            balance=Decimal("1.00"),
+        )
 
 
 @pytest.mark.parametrize(

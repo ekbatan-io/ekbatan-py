@@ -216,7 +216,8 @@ Checked by running (2026-10-12, scratch scripts, SQLite file database): findings
 - **Could match Java?** yes - remove the default (with the cost that every call passes it).
 - **Surprise:** medium
 
-### 13. Every field that isn't `X | None` is checked for `None` automatically
+### 13. Every field that isn't `X | None` is checked for `None` automatically - settled by the user (2026-10-25)
+- **Settled by the user (2026-10-25)**: the automatic check stays. The quiet switch-off described below is gone (`EKB-0546`): a class whose type hints cannot be read is refused with a `TypeError` naming the name, at its first construction. Run before the fix: a class with `owner: str` and a `Decimal` imported only under `TYPE_CHECKING` got no `None` checks at all.
 - **What:** On construction, any field whose type isn't `X | None` raises
   `ValidationError("balance cannot be null")` if given `None`, including the application's own
   fields. Java checks only the base fields plus what each model's constructor checks itself. If
