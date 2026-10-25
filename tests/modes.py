@@ -105,12 +105,14 @@ def stager_twin(sync_action: type) -> type:
         return perform(self, principal, params)
 
     made = type(
-        f"Async{sync_action.__name__}",
+        # Named as the sync action is: an action's name is its class name - what action_name
+        # holds - so a twin's rows read as its sync twin's. The qualname says which it is.
+        sync_action.__name__,
         (sync_action, AsyncAction),
         {
             "perform": awaited,
-            "name": property(lambda self: sync_action.__name__),
             "__module__": sync_action.__module__,
+            "__qualname__": f"Async{sync_action.__qualname__}",
         },
     )
     TWINS[sync_action] = made

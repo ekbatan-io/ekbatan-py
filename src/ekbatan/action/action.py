@@ -59,13 +59,24 @@ def current_plan() -> ActionPlan:
 
 class _ActionCore[P, R]:
     """What every action is, whatever its ``perform`` waits on - shared by :class:`Action` and
-    ``ekbatan.aio``'s ``AsyncAction``: the clock, the name, the ambient plan.
+    ``ekbatan.aio``'s ``AsyncAction``: the clock and the ambient plan.
 
     The two differ in one line, whether ``perform`` is a coroutine, so that line is all each
     of them adds.
     """
 
     __slots__ = ("clock",)
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        # An action's name is its class name, as Java's is `actionClass.getSimpleName()`, with no
+        # way to change it: it is what `action_name` holds on every outbox row and what the logs
+        # and traces say. An override wrote rows under one name while the class had another.
+        if "name" in cls.__dict__:
+            raise TypeError(
+                f"{cls.__qualname__} overrides name: an action's name is its class name, as in "
+                f"Java - it is what action_name holds. To change it, rename the class."
+            )
 
     def __init__(self, clock: Clock) -> None:
         """Take the clock the executor was built with, and nothing else time-related.
@@ -84,17 +95,11 @@ class _ActionCore[P, R]:
         self.clock = clock
 
     @property
-    def name(self) -> str:
-        """What lands in ``action_name``. Override only to keep a name stable across a
-        rename - it is written into every row this action has ever produced."""
-        return type(self).__name__
-
-    @property
     def plan(self) -> ActionPlan:
         return current_plan()
 
     def __repr__(self) -> str:
-        return f"{self.name}()"
+        return f"{type(self).__name__}()"
 
 
 class Action[P, R](_ActionCore[P, R]):

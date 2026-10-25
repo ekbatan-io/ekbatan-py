@@ -37,7 +37,6 @@ from conftest import GLOBAL, MEXICO, NOT_UNDER_GEVENT, _registry, under_gevent
 from ekbatan import Action
 from ekbatan.action import ActionExecutor, ExecutionConfiguration
 from ekbatan.aio import (
-    AsyncAction,
     AsyncActionExecutor,
     AsyncDatabaseRegistry,
 )
@@ -48,6 +47,7 @@ from fixtures.actions import (
     AsyncWalletCreateAction,
     AsyncWalletDepositMoneyAction,
     AsyncWalletDepositThenFailAction,
+    TwinAction,
     WalletCloseAction,
     WalletCreateAction,
     WalletDepositMoneyAction,
@@ -112,15 +112,11 @@ class BumpThenDepositAction(Action[WalletDepositMoneyAction.Params, Wallet]):
         return self.plan.update(wallet.deposit(params.amount))
 
 
-class AsyncBumpThenDepositAction(AsyncAction[WalletDepositMoneyAction.Params, Wallet]):
+class AsyncBumpThenDepositAction(TwinAction[WalletDepositMoneyAction.Params, Wallet]):
     def __init__(self, wallet_repository: Any, clock: Any) -> None:
         super().__init__(clock)
         self.wallet_repository = wallet_repository
         self.attempts = 0
-
-    @property
-    def name(self) -> str:
-        return "BumpThenDepositAction"
 
     async def perform(
         self, principal: str | None, params: WalletDepositMoneyAction.Params
@@ -141,14 +137,10 @@ class DeleteWalletAction(Action[WalletCloseAction.Params, Wallet]):
         return self.plan.update(self.wallet_repository.get_by_id(params.wallet_id.value).delete())
 
 
-class AsyncDeleteWalletAction(AsyncAction[WalletCloseAction.Params, Wallet]):
+class AsyncDeleteWalletAction(TwinAction[WalletCloseAction.Params, Wallet]):
     def __init__(self, wallet_repository: Any, clock: Any) -> None:
         super().__init__(clock)
         self.wallet_repository = wallet_repository
-
-    @property
-    def name(self) -> str:
-        return "DeleteWalletAction"
 
     async def perform(self, principal: str | None, params: WalletCloseAction.Params) -> Wallet:
         return self.plan.update(

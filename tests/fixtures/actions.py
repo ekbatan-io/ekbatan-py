@@ -157,11 +157,13 @@ class WalletDepositThenFailAction(Action[WalletDepositMoneyAction.Params, Wallet
 
 
 class TwinAction[P, R](AsyncAction[P, R]):
-    """An async twin, named as its sync twin is: the class name without ``Async``."""
+    """An async twin, named as its sync twin is: the class name without ``Async``. Set on the
+    class itself, since an action's name is its class name - what ``action_name`` holds - so a
+    twin's rows read as its sync twin's do."""
 
-    @property
-    def name(self) -> str:
-        return type(self).__name__.removeprefix("Async")
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        cls.__name__ = cls.__name__.removeprefix("Async")
 
 
 @twin(WalletCreateAction)

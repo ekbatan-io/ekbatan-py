@@ -16,12 +16,12 @@ from ekbatan import (
     ExecutionConfiguration,
     ShardIdentifier,
 )
-from ekbatan.aio import AsyncAction
 from ekbatan.domain import ModelEvent
 from ekbatan.errors import CrossShardError, StaleRecordError, ValidationError
 from ekbatan.ids import Id, ShardedId
 from ekbatan.repository import AbstractRepository
 from fixtures.actions import (
+    TwinAction,
     WalletCreateAction,
     WalletDepositMoneyAction,
 )
@@ -62,16 +62,12 @@ class FlakyDepositAction(Action[WalletDepositMoneyAction.Params, Wallet]):
 
 
 @twin(FlakyDepositAction)
-class AsyncFlakyDepositAction(AsyncAction[WalletDepositMoneyAction.Params, Wallet]):
+class AsyncFlakyDepositAction(TwinAction[WalletDepositMoneyAction.Params, Wallet]):
     def __init__(self, wallet_repository: Any, clock: Clock, failures: int = 1) -> None:
         super().__init__(clock)
         self.wallet_repository = wallet_repository
         self.remaining = failures
         self.attempts = 0
-
-    @property
-    def name(self) -> str:
-        return "FlakyDepositAction"
 
     async def perform(
         self, principal: str | None, params: WalletDepositMoneyAction.Params
@@ -491,14 +487,10 @@ class CreateOnGlobalThenFailOnMexicoAction(Action[StaleOnMexico, None]):
 
 
 @twin(CreateOnGlobalThenFailOnMexicoAction)
-class AsyncCreateOnGlobalThenFailOnMexicoAction(AsyncAction[StaleOnMexico, None]):
+class AsyncCreateOnGlobalThenFailOnMexicoAction(TwinAction[StaleOnMexico, None]):
     def __init__(self, wallet_repository: Any, clock: Clock) -> None:
         super().__init__(clock)
         self.wallet_repository = wallet_repository
-
-    @property
-    def name(self) -> str:
-        return "CreateOnGlobalThenFailOnMexicoAction"
 
     async def perform(self, principal: str | None, params: StaleOnMexico) -> None:
         self.plan.add(

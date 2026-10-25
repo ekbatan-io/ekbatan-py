@@ -506,7 +506,7 @@ class ActionExecutor(_ExecutorCore):
         """
         refuse_on_an_event_loop("the sync ActionExecutor.execute")
         running, policy = self._running(action, config)
-        name = running.name
+        name = type(running).__name__
         retried = 0
 
         with self._started(name, principal) as execution:

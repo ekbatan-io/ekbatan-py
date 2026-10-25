@@ -124,9 +124,10 @@ sides. Ordered by surprise, highest first.
 - **Could match Java?** partly. The order could match, but a required first positional principal is unusual in Python. A `Principal` protocol with `.name` could be added.
 - **Surprise:** medium
 
-### An action can rename itself in the outbox by overriding `name`
-- **What:** `Action.name` is a property that defaults to the class name, and the executor writes
-  whatever it returns into `action_name` and the logs. In Java the name is always
+### An action can rename itself in the outbox by overriding `name` - matched (2026-10-25)
+- **Matched (`EKB-0555`, the user's decision 2026-10-25):** the executor writes the action's class name into `action_name`, the logs and the traces, as Java's `actionClass.getSimpleName()`. The `name` property is removed, and a subclass that defines `name` is refused with a `TypeError` where it is defined - as an event's `event_type` override is (#70). The suite's async twins, which used the override to read as their sync twins, are now named as the sync class itself.
+- **What (before `EKB-0555`):** an action's `name` was a property that defaulted to the class name,
+  and the executor wrote whatever it returned into `action_name` and the logs. In Java the name is always
   `actionClass.getSimpleName()` and cannot be overridden.
 - **Python:** `src/ekbatan/action/action.py:77-81`, used at `src/ekbatan/action/executor.py:299`
 - **Java:** `ActionExecutor.java:186`

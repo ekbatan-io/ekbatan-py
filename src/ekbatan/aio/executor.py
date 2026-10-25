@@ -86,7 +86,7 @@ class AsyncActionExecutor(_ExecutorCore):
     ) -> R:
         """Run one unit of work and commit what it staged."""
         running, policy = self._running(action, config)
-        name = running.name
+        name = type(running).__name__
         retried = 0
 
         with self._started(name, principal) as execution:
