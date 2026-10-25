@@ -55,13 +55,12 @@ from ekbatan.ids import ShardedId  # noqa: E402
 from ekbatan.migrations import migrate  # noqa: E402
 from ekbatan.persistence import DatabaseRegistry  # noqa: E402
 from fixtures.actions import (  # noqa: E402
-    AsyncDepositMoneyAction,
-    DepositMoneyAction,
-    DepositParams,
+    AsyncWalletDepositMoneyAction,
+    WalletDepositMoneyAction,
 )
 from fixtures.domain import NOW, Wallet  # noqa: E402
 from fixtures.repositories import AsyncWalletRepository, WalletRepository  # noqa: E402
-from fixtures.schema import EVENTS, WALLETS  # noqa: E402
+from fixtures.schema import WALLETS  # noqa: E402
 
 TICK = 0.010
 
@@ -113,7 +112,9 @@ async def drive(n: int, total: int, one: Any, wallets: list[Wallet]) -> dict[str
     async def worker(wallet: Wallet) -> None:
         nonlocal timed_out
         for _ in range(each):
-            params = DepositParams(wallet_id=wallet.id, amount=Decimal("1"), recipient="x")
+            params = WalletDepositMoneyAction.Params(
+                wallet_id=wallet.id, amount=Decimal("1"), recipient="x"
+            )
             t0 = time.perf_counter()
             try:
                 await one(params)
@@ -122,7 +123,8 @@ async def drive(n: int, total: int, one: Any, wallets: list[Wallet]) -> dict[str
                 continue
             latencies.append(time.perf_counter() - t0)
 
-    stop, beat = asyncio.Event(), {}
+    stop = asyncio.Event()
+    beat: dict[str, float] = {}
     pulse = asyncio.create_task(heartbeat(stop, beat))
     gc.collect()
     t0 = time.perf_counter()
@@ -155,8 +157,7 @@ async def run_sync(
         namespace="bench.wallet",
         registry=registry,
         repositories=[repo],
-        actions=[DepositMoneyAction(repo, clock)],
-        events=EVENTS,
+        actions=[WalletDepositMoneyAction(repo, clock)],
         clock=clock,
     )
     asyncio.get_running_loop().set_default_executor(ThreadPoolExecutor(threads))
@@ -164,8 +165,8 @@ async def run_sync(
     # On a worker thread, as every sync call here is: the sync API is refused on the loop's own.
     await asyncio.to_thread(repo.add_all_no_result, wallets)
 
-    async def one(params: DepositParams) -> None:
-        await asyncio.to_thread(executor.execute, None, DepositMoneyAction, params)
+    async def one(params: WalletDepositMoneyAction.Params) -> None:
+        await asyncio.to_thread(executor.execute, None, WalletDepositMoneyAction, params)
 
     await drive(min(10, max(levels)), 100, one, wallets)  # warm the pool and the caches
     try:
@@ -184,15 +185,14 @@ async def run_async(
         namespace="bench.wallet",
         registry=registry,
         repositories=[repo],
-        actions=[AsyncDepositMoneyAction(repo, clock)],
-        events=EVENTS,
+        actions=[AsyncWalletDepositMoneyAction(repo, clock)],
         clock=clock,
     )
     wallets = fresh_wallets(max(levels))
     await repo.add_all_no_result(wallets)
 
-    async def one(params: DepositParams) -> None:
-        await executor.execute(None, AsyncDepositMoneyAction, params)
+    async def one(params: WalletDepositMoneyAction.Params) -> None:
+        await executor.execute(None, AsyncWalletDepositMoneyAction, params)
 
     await drive(min(10, max(levels)), 100, one, wallets)
     try:
