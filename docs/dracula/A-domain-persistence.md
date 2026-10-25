@@ -289,7 +289,8 @@ counter shows one run with it). The text below is the finding as it was.
 - **Could match Java?** partly - names could end in `Exception`, but Python style says `Error`.
 - **Surprise:** medium
 
-### 18. `unknown_shard_policy` is a string, not an enum
+### 18. `unknown_shard_policy` is a string, not an enum - matched (2026-10-25)
+- **Matched (`EKB-0552`, the user's decision 2026-10-25):** an `UnknownShardPolicy` enum (`USE_DEFAULT_SHARD`, `FAIL`), as Java's, exported from `ekbatan`; `ShardingConfig`, the registry and both builders take it, and a string in code is refused with a `TypeError`. A config file's word is read by `UnknownShardPolicy.from_` (`from` is a Python keyword), as Java's `@JsonCreator from(String)`. The entry below was also out of date on one point: a mistyped string was already refused at run time, not only by a type checker.
 - **What:** `DatabaseRegistry(..., unknown_shard_policy="fail")` or `"use_default_shard"`. Java
   has an `UnknownShardPolicy` enum (`USE_DEFAULT_SHARD`, `FAIL`). There is nothing to import, and a
   typo is caught only by a type checker.

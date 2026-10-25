@@ -32,7 +32,7 @@ from ekbatan.locks import (
 from ekbatan.locks.redis import DEFAULT_NAMESPACE, RedisKeyedLockProvider
 from ekbatan.migrations import YoyoMigrator
 from ekbatan.persistence import DatabaseRegistry, DataSource, TransactionManager
-from ekbatan.sharding import ShardIdentifier
+from ekbatan.sharding import ShardIdentifier, UnknownShardPolicy
 from ekbatan.streaming import ActionEvent
 from fixtures.domain import WalletMoneyDepositedEvent
 from fixtures.handlers import RecordingHandler
@@ -180,8 +180,11 @@ def test_with_group_adds_one_and_groups_replaces_them():
 
 def test_the_unknown_shard_policy_defaults_and_can_be_set():
     builder = ShardingConfig.builder().default_shard(FIRST).with_group(a_group())
-    assert builder.build().unknown_shard_policy == "use_default_shard"
-    assert builder.unknown_shard_policy("fail").build().unknown_shard_policy == "fail"
+    assert builder.build().unknown_shard_policy is UnknownShardPolicy.USE_DEFAULT_SHARD
+    assert (
+        builder.unknown_shard_policy(UnknownShardPolicy.FAIL).build().unknown_shard_policy
+        is UnknownShardPolicy.FAIL
+    )
 
 
 def test_a_layout_without_a_default_shard_is_refused():
@@ -259,11 +262,11 @@ def test_the_unknown_shard_policy_none_means_the_default():
     with (
         DatabaseRegistry.builder()
         .with_database(a_manager(FIRST))
-        .with_unknown_shard_policy("fail")
+        .with_unknown_shard_policy(UnknownShardPolicy.FAIL)
         .with_unknown_shard_policy(None)
         .build()
     ) as registry:
-        assert registry.unknown_shard_policy == "use_default_shard"
+        assert registry.unknown_shard_policy is UnknownShardPolicy.USE_DEFAULT_SHARD
 
 
 def test_a_registry_with_no_database_is_refused():
@@ -552,3 +555,10 @@ def test_with_sharding_config_adds_a_target_per_member_named_as_java_names_them(
 def test_a_none_target_is_refused_where_it_is_added():
     with pytest.raises(ValidationError, match="target is required"):
         YoyoMigrator.builder().with_target(None)  # type: ignore[arg-type]
+
+
+def test_the_registry_builder_refuses_a_policy_given_as_a_string():
+    """Java's `withUnknownShardPolicy` takes the enum; a string is refused, as Java's compiler
+    refuses one, naming the members and `UnknownShardPolicy.from_`."""
+    with pytest.raises(TypeError, match=r"takes an UnknownShardPolicy, not a str \('fail'\)"):
+        DatabaseRegistry.builder().with_unknown_shard_policy("fail")  # type: ignore[arg-type]

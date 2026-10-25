@@ -63,7 +63,7 @@ from .config import (
 from .distributedjobs.config import JobsConfig
 from .errors import ValidationError
 from .events.config import HandlingConfig, LocalEventHandlerConfig
-from .sharding import ShardIdentifier
+from .sharding import ShardIdentifier, UnknownShardPolicy
 
 __all__ = ["EkbatanConfig", "load_ekbatan_config", "load_sharding_config"]
 
@@ -413,10 +413,14 @@ def _sharding(node: Any, path: str) -> ShardingConfig:
     settings: dict[str, Any] = {}
     if "unknown_shard_policy" in entries:
         policy_key, policy = entries["unknown_shard_policy"]
-        # Read as Java reads it (`ShardingConfig` normalises): any case, any separators, and an
+        # Read as Java reads it (`UnknownShardPolicy.from`): any case, any separators, and an
         # empty value is the default.
         if policy is not None:
-            settings["unknown_shard_policy"] = _text(policy, f"{path}.{policy_key}")
+            word = _text(policy, f"{path}.{policy_key}")
+            try:
+                settings["unknown_shard_policy"] = UnknownShardPolicy.from_(word)
+            except ValidationError as error:
+                raise ValidationError(f"{path}.{policy_key}: {error}") from None
     return _validated(
         path,
         lambda: ShardingConfig(

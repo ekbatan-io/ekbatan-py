@@ -24,7 +24,7 @@ from contextlib import AbstractContextManager, contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Literal, Protocol, Self
+from typing import TYPE_CHECKING, Any, Protocol, Self
 
 from sqlalchemy import Connection, Engine, Table, create_engine, insert
 
@@ -37,7 +37,7 @@ from .config import _unknown_shard_policy as _policy
 from .errors import TransactionContextError, TransactionThreadError, ValidationError
 from .fetching import Db, FetchResult
 from .schema import eventlog_translation
-from .sharding import ShardIdentifier
+from .sharding import ShardIdentifier, UnknownShardPolicy
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import URL
@@ -510,7 +510,7 @@ class _ShardRegistry[TM: _ShardManager]:
         self,
         managers: Mapping[ShardIdentifier, TM],
         default_shard: ShardIdentifier | None = None,
-        unknown_shard_policy: Literal["use_default_shard", "fail"] = "use_default_shard",
+        unknown_shard_policy: UnknownShardPolicy = UnknownShardPolicy.USE_DEFAULT_SHARD,
     ) -> None:
         if not managers:
             raise ValidationError("at least one database is required")
@@ -578,16 +578,16 @@ class _ShardRegistry[TM: _ShardManager]:
         that one writes to the wrong database.
 
         Nothing can tell those two apart here, so this does not try. It says what it did, every
-        time, and `unknown_shard_policy="fail"` is for a deployment that holds the whole
+        time, and `UnknownShardPolicy.FAIL` is for a deployment that holds the whole
         layout and can therefore be sure the second case is the only one.
         """
         if shard is None:
             return self.default_shard
         if shard in self._managers:
             return shard
-        if self.unknown_shard_policy == "fail":
+        if self.unknown_shard_policy is UnknownShardPolicy.FAIL:
             raise ValidationError(
-                f"shard {shard} is not registered and unknown_shard_policy is 'fail'; "
+                f"shard {shard} is not registered and unknown_shard_policy is FAIL; "
                 f"registered: {sorted(str(s) for s in self._managers)}"
             )
         REGISTRY_LOG.warning(
@@ -739,7 +739,7 @@ class _ShardRegistryBuilder[TM: _ShardManager, R]:
     def __init__(self) -> None:
         self._managers: dict[ShardIdentifier, TM] = {}
         self._default_shard: ShardIdentifier | None = None
-        self._unknown_shard_policy: Literal["use_default_shard", "fail"] = "use_default_shard"
+        self._unknown_shard_policy = UnknownShardPolicy.USE_DEFAULT_SHARD
 
     def with_database(self, manager: TM) -> Self:
         self._managers[manager.shard] = manager
@@ -750,10 +750,9 @@ class _ShardRegistryBuilder[TM: _ShardManager, R]:
         self._default_shard = manager.shard
         return self
 
-    def with_unknown_shard_policy(
-        self, unknown_shard_policy: Literal["use_default_shard", "fail"] | None
-    ) -> Self:
-        """``None`` means the default, ``"use_default_shard"`` - as Java's null does."""
+    def with_unknown_shard_policy(self, unknown_shard_policy: UnknownShardPolicy | None) -> Self:
+        """``None`` means the default, :attr:`UnknownShardPolicy.USE_DEFAULT_SHARD` - as Java's
+        null does."""
         self._unknown_shard_policy = _policy(unknown_shard_policy)
         return self
 

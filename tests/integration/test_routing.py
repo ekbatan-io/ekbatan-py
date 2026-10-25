@@ -22,7 +22,12 @@ from ekbatan.errors import CrossShardError, UnsupportedError, ValidationError
 from ekbatan.ids import ShardedId
 from ekbatan.persistence import DatabaseRegistry, DataSource, TransactionManager
 from ekbatan.repository import AbstractRepository
-from ekbatan.sharding import EmbeddedBitsShardingStrategy, NoShardingStrategy, ShardIdentifier
+from ekbatan.sharding import (
+    EmbeddedBitsShardingStrategy,
+    NoShardingStrategy,
+    ShardIdentifier,
+    UnknownShardPolicy,
+)
 from fixtures.domain import NOW, Wallet, WalletState
 from fixtures.executing import run
 from fixtures.repositories import WalletRepository
@@ -714,7 +719,7 @@ def strict_wallets(clock, mode, portal):
                 group(0, "global", member(0, DataSourceConfig(url="sqlite://"), name="global")),
                 group(1, "mexico", member(0, DataSourceConfig(url="sqlite://"), name="mexico")),
             ),
-            unknown_shard_policy="fail",
+            unknown_shard_policy=UnknownShardPolicy.FAIL,
         )
     )
     for shard in (GLOBAL, MEXICO):

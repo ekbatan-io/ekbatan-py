@@ -121,7 +121,7 @@ whatever is decided about the rest.
 | 55 | An event names its model with a string; forgetting it fails at the first event | forced | partly | M | A15 |
 | 56 | ~~Two events with the same fields are equal, even about different models~~ **fixed** (`EKB-0496`): `model_id` and `model_name` are part of an event's equality and hash, so events about different models are never equal | convention + choice | yes | M | A16 |
 | 57 | Exceptions end in `Error`, share `EkbatanError`; `ValidationError` stands for NPE / IAE / ISE | convention | partly | M | A17, B |
-| 58 | `unknown_shard_policy` is a string, not an enum | choice | yes | M | A18, C |
+| 58 | ~~`unknown_shard_policy` is a string, not an enum~~ **matched** (`EKB-0552`, the user's decision 2026-10-25): `UnknownShardPolicy` with `USE_DEFAULT_SHARD` and `FAIL`, exported from `ekbatan`, taken by the layout, the registry and their builders; a string in code is refused with a `TypeError`, and a config file's word is read by `UnknownShardPolicy.from_`, as Java's `from(String)` reads it | choice | yes | M | A18, C |
 | 59 | The clock is the framework's own - its one method is `instant()`, as Java's, since `EKB-0419`; `VirtualClock` is in the main package and starts frozen. **Settled by the user (2026-10-24)**: kept as it is | forced + choice | partly | M | A19, B |
 | 60 | `ShardedId.shard` refuses a non-v7 UUID | choice | yes | L | A20 |
 | 61 | Registries have public constructors; the repository and action registries refuse duplicates Java replaces | choice | yes | L | A21, B |

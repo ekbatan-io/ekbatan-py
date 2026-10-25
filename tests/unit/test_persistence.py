@@ -23,7 +23,7 @@ from sqlalchemy.exc import NoSuchModuleError
 from ekbatan.config import DataSourceConfig, ShardingConfig
 from ekbatan.errors import ValidationError
 from ekbatan.persistence import DatabaseRegistry, DataSource
-from ekbatan.sharding import ShardIdentifier
+from ekbatan.sharding import ShardIdentifier, UnknownShardPolicy
 from fixtures.config import group, member
 
 PRIMARY = DataSourceConfig(url="postgresql+psycopg://primary-9e3f:5432/db", pool_size=20)
@@ -263,10 +263,10 @@ def test_unknown_shard_policy_fail_raises_instead_of_routing_somewhere_else():
     """For a deployment that holds the whole layout, where an unregistered shard can only be a
     bug. Off by default, because turning it on where the layout *is* a subset breaks reads that
     Java would have served."""
-    registry = _two_shards(unknown_shard_policy="fail")
+    registry = _two_shards(unknown_shard_policy=UnknownShardPolicy.FAIL)
     try:
         with pytest.raises(
-            ValidationError, match="not registered and unknown_shard_policy is 'fail'"
+            ValidationError, match="not registered and unknown_shard_policy is FAIL"
         ):
             registry.effective_shard(ShardIdentifier(9, 9))
 

@@ -124,7 +124,7 @@ match by dropping the check (cheap), but the check is safer. Known: Dracula 60. 
 66. Surprise: low.
 
 **12. `useDefaultShard` is refused.** **Fixed** (`EKB-0303`, with 13 and 17): Python now reads the
-policy exactly as Java's `UnknownShardPolicy.from`. Before: Java strips everything but letters, so `useDefaultShard` -
+policy exactly as Java's `UnknownShardPolicy.from(String)`. Before: Java strips everything but letters, so `useDefaultShard` -
 the spelling Java's own error message asks for - is read; Python only lower-cases and turns `-`
 into `_`, so camelCase is refused. Java `UnknownShardPolicy.java:45-47`; Python
 `config_files.py:401`, `config.py:291`. Python could match by normalising as Java does (cheap).

@@ -11,6 +11,7 @@ from pathlib import Path
 
 from sqlalchemy import create_engine
 
+from ekbatan.sharding import UnknownShardPolicy
 from ekbatan.config import (
     DataSourceConfig,
     ShardGroupConfig,
@@ -487,7 +488,7 @@ def registry() -> None:
         DatabaseRegistry.builder()
         .with_default_database(a)
         .with_database(b)
-        .with_unknown_shard_policy("fail")
+        .with_unknown_shard_policy(UnknownShardPolicy.FAIL)
         .build()
     )
     p("reg.effective.unknown_fail_policy", err(lambda: failing.effective_shard(ShardIdentifier(5, 5))))

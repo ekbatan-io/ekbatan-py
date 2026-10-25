@@ -13,6 +13,7 @@ from uuid import uuid4
 from common import DUMMIES, Out, database, fresh, jbool, manager, started
 from sqlalchemy import func, select
 
+from ekbatan.sharding import UnknownShardPolicy
 from ekbatan.ids import ShardedId
 from ekbatan.persistence import DatabaseRegistry
 from ekbatan.sharding import EmbeddedBitsShardingStrategy, ShardIdentifier, sharded_uuid
@@ -145,7 +146,7 @@ def main() -> None:
             DatabaseRegistry.builder()
             .with_default_database(tm_a)
             .with_database(tm_b)
-            .with_unknown_shard_policy("fail")
+            .with_unknown_shard_policy(UnknownShardPolicy.FAIL)
             .build()
         )
         sf = WalletRepository(Wallet, DUMMIES, reg_fail, sharding=EmbeddedBitsShardingStrategy())

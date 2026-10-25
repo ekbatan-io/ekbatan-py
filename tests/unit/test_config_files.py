@@ -20,14 +20,14 @@ from ekbatan.config import (
 )
 from ekbatan.config_files import load_sharding_config
 from ekbatan.errors import ValidationError
-from ekbatan.sharding import ShardIdentifier
+from ekbatan.sharding import ShardIdentifier, UnknownShardPolicy
 
 SECRET = "Zq7-s3cret-pw"
 ENV = {"DB_PASSWORD": SECRET, "DB_HOST": "db1"}
 
 EXPECTED = ShardingConfig(
     default_shard=ShardIdentifier(0, 0),
-    unknown_shard_policy="fail",
+    unknown_shard_policy=UnknownShardPolicy.FAIL,
     groups=(
         ShardGroupConfig(
             group=0,
@@ -248,7 +248,7 @@ def test_ini_builds_the_same_layout_as_code(tmp_path):
     }
     assert layout.groups[0].members[0].config_for("jobsConfig").pool_size == 4
     assert layout.default_shard == EXPECTED.default_shard
-    assert layout.unknown_shard_policy == "fail"
+    assert layout.unknown_shard_policy is UnknownShardPolicy.FAIL
 
 
 def test_an_unknown_extension_is_refused(tmp_path):
@@ -544,18 +544,18 @@ def test_a_broken_file_is_refused_without_quoting_it(tmp_path, name, text):
 @pytest.mark.parametrize(
     ("written_as", "read"),
     [
-        ("useDefaultShard", "use_default_shard"),
-        ("UseDefaultShard", "use_default_shard"),
-        ("' fail '", "fail"),
-        ("''", "use_default_shard"),
-        ("", "use_default_shard"),
+        ("useDefaultShard", UnknownShardPolicy.USE_DEFAULT_SHARD),
+        ("UseDefaultShard", UnknownShardPolicy.USE_DEFAULT_SHARD),
+        ("' fail '", UnknownShardPolicy.FAIL),
+        ("''", UnknownShardPolicy.USE_DEFAULT_SHARD),
+        ("", UnknownShardPolicy.USE_DEFAULT_SHARD),
     ],
 )
 def test_the_policy_in_a_file_is_read_as_java_reads_it(tmp_path, written_as, read):
     """A Java `application.yml` written as Java documents it - `useDefaultShard` - loads, and a
     padded or empty value reads as Java's does."""
     text = YAML.replace("unknown-shard-policy: fail", f"unknown-shard-policy: {written_as}")
-    assert loaded(tmp_path, "ekbatan.yaml", text).unknown_shard_policy == read
+    assert loaded(tmp_path, "ekbatan.yaml", text).unknown_shard_policy is read
 
 
 # -- the environment is read by name, never held whole (EKB-0436-) ----------------------------

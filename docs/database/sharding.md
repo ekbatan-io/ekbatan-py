@@ -35,7 +35,7 @@ it is the shape the design assumes, and ignoring it makes scatter reads slower t
 
 A shard this deployment does not have routes to the default and **logs a warning
 saying so** - see [Unregistered shards](#unregistered-shards-fall-back-to-default-and-say-so)
-below, and `unknown_shard_policy="fail"` if you want it to be an error instead.
+below, and `UnknownShardPolicy.FAIL` if you want it to be an error instead.
 
 ## Declarative configuration
 
@@ -390,20 +390,24 @@ A deployment that holds the **whole** layout can go further, because there an un
 can only be a bug:
 
 ```python
+from ekbatan import UnknownShardPolicy
+
 ShardingConfig(
     default_shard=GLOBAL_SHARD,
     groups=(...),
-    unknown_shard_policy="fail",   # omitted -> "use_default_shard": fall back, and warn
+    unknown_shard_policy=UnknownShardPolicy.FAIL,   # omitted -> USE_DEFAULT_SHARD: fall back, and warn
 )
 ```
 
 ```
-ValidationError: shard 9:9 is not registered and unknown_shard_policy is 'fail'; registered: ['0:0', '1:0']
+ValidationError: shard 9:9 is not registered and unknown_shard_policy is FAIL; registered: ['0:0', '1:0']
 ```
 
-Case and separators do not matter, so `fail`, `FAIL`,
-`useDefaultShard`, `use_default_shard` and `USE-DEFAULT-SHARD` all work, in code and in a
-config file; an empty value, or `None`, is the default.
+In code the policy is the enum, `UnknownShardPolicy.USE_DEFAULT_SHARD` or
+`UnknownShardPolicy.FAIL`; a string there is refused with a `TypeError`. In a config file it is a
+word, read by `UnknownShardPolicy.from_`: case and separators do not matter, so `fail`, `FAIL`,
+`useDefaultShard`, `use_default_shard` and `USE-DEFAULT-SHARD` all work, and an empty value is the
+default.
 
 It is applied where routing resolves, so it covers **reads and writes alike** — `find_by_id(id)` on an
 unregistered shard raises just as `add(model)` does. Leave it alone if your deployment is a

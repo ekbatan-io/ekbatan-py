@@ -12,10 +12,12 @@ because the query succeeds and simply returns nothing.
 from __future__ import annotations
 
 import os
+import re
 import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from enum import Enum
 from typing import Protocol, runtime_checkable
 
 from .errors import ValidationError
@@ -34,6 +36,7 @@ __all__ = [
     "NoShardingStrategy",
     "ShardIdentifier",
     "ShardingStrategy",
+    "UnknownShardPolicy",
     "read_shard",
     "resolve_shard",
     "sharded_uuid",
@@ -215,3 +218,40 @@ def resolve_shard(
     strategy: ShardingStrategy, key: object, default: ShardIdentifier
 ) -> ShardIdentifier:
     return strategy.shard_for_id(key) or default
+
+
+class UnknownShardPolicy(Enum):
+    """What to do with a shard this deployment has not configured - Java's ``UnknownShardPolicy``.
+
+    The fallback exists because shard layouts differ between environments and grow over time: a
+    staging database holding one shard has to be able to read ids minted where there are four.
+    It is also exactly what a mistyped shard identifier looks like, and that one writes to the
+    wrong database; nothing at the call site can tell the two apart. So the fallback stays the
+    default and is logged every time it fires, and a deployment that holds the whole layout -
+    where an unregistered shard can only be a bug - can ask for :attr:`FAIL` instead.
+    """
+
+    #: Route it to the default shard, and log a warning saying so. The historical behaviour.
+    USE_DEFAULT_SHARD = "USE_DEFAULT_SHARD"
+    #: Raise. For a deployment that holds every shard in the layout.
+    FAIL = "FAIL"
+
+    @classmethod
+    def from_(cls, value: str | None) -> UnknownShardPolicy:
+        """Read a configured value as Java's ``UnknownShardPolicy.from`` does - the trailing
+        underscore only because ``from`` is a Python keyword.
+
+        Case and separators do not matter - everything but letters is dropped - so ``fail``,
+        ``FAIL``, ``useDefaultShard``, ``use_default_shard`` and ``USE-DEFAULT-SHARD`` all read.
+        ``None``, empty or blank is :attr:`USE_DEFAULT_SHARD`, as Java's null or blank is.
+        """
+        if value is None or not value.strip():
+            return cls.USE_DEFAULT_SHARD
+        normalised = re.sub(r"[^a-z]", "", value.strip().lower())
+        if normalised == "usedefaultshard":
+            return cls.USE_DEFAULT_SHARD
+        if normalised == "fail":
+            return cls.FAIL
+        raise ValidationError(
+            f"unknown_shard_policy must be 'useDefaultShard' or 'fail', not {value!r}"
+        )

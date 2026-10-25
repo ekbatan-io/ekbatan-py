@@ -9,6 +9,7 @@ from wallet_service_sqlite.model import Wallet, WalletState, WalletCreatedEvent
 from wallet_service_sqlite.builders import WalletBuilder
 from wallet_service_sqlite.schema import WALLETS, EVENTS, metadata
 from wallet_service_sqlite.repository import WalletRepository
+from ekbatan.sharding import UnknownShardPolicy
 from ekbatan import (ShardingConfig, ShardGroupConfig, ShardMemberConfig, DataSourceConfig, DatabaseRegistry,
                      ShardIdentifier, ShardedId, Id, Action, ActionExecutor, ExecutionConfiguration, CrossShardError,
                      ModelRepository, NoShardingStrategy)
@@ -21,7 +22,7 @@ logging.getLogger().addHandler(h); logging.getLogger().setLevel(logging.INFO)
 d = tempfile.mkdtemp()
 GLOBAL, MEXICO = ShardIdentifier(0, 0), ShardIdentifier(1, 0)
 def layout(policy=None):
-    kw = {} if policy is None else {"unknown_shard_policy": policy}
+    kw = {} if policy is None else {"unknown_shard_policy": UnknownShardPolicy.from_(policy)}
     return ShardingConfig(default_shard=GLOBAL, groups=(
         ShardGroupConfig(group=0, name="global", members=(ShardMemberConfig(member=0, name="global-eu-1", configs={"primaryConfig": DataSourceConfig(url=f"sqlite:///{d}/g.db")}),)),
         ShardGroupConfig(group=1, name="mexico", members=(ShardMemberConfig(member=0, name="mexico-1", configs={"primaryConfig": DataSourceConfig(url=f"sqlite:///{d}/m.db")}),)),

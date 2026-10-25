@@ -33,6 +33,7 @@ from common import (  # noqa: E402
     yn,
 )
 
+from ekbatan.sharding import UnknownShardPolicy
 from ekbatan.clock import VirtualClock  # noqa: E402
 from ekbatan.events import EventFanoutJob, EventHandlerRegistry, EventHandlingJob  # noqa: E402
 from ekbatan.events import EventHandler  # noqa: E402
@@ -59,7 +60,7 @@ def sharded(policy, clock):
     tm1 = TransactionManager(S1, DataSource.from_config(cfg("pg", "shard1", pool=3)))
     b = DatabaseRegistry.builder().with_database(tm0).with_database(tm1).with_default_database(tm0)
     if policy is not None:
-        b = b.with_unknown_shard_policy(policy)
+        b = b.with_unknown_shard_policy(UnknownShardPolicy.from_(policy))
     reg = b.build()
     repo = WidgetRepository(reg)
     return reg, repo, executor_for(reg, repo, clock)

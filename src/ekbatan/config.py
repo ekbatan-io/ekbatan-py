@@ -12,12 +12,12 @@ import re
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, field, fields
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self
+from typing import TYPE_CHECKING, Any, ClassVar, Self
 
 from ._credentials import require_none_in
 from ._redact import HIDDEN, redact_url
 from .errors import ValidationError
-from .sharding import ShardIdentifier
+from .sharding import ShardIdentifier, UnknownShardPolicy
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import URL
@@ -271,15 +271,16 @@ class ShardingConfig:
     groups: tuple[ShardGroupConfig, ...]
     #: What to do with a shard this deployment has not configured.
     #:
-    #: ``"use_default_shard"`` routes it to :attr:`default_shard`, which is what both ports have
+    #: :attr:`~UnknownShardPolicy.USE_DEFAULT_SHARD` routes it to :attr:`default_shard`, which is
+    #: what both ports have
     #: always done: a deployment holding a subset of the layout can read ids minted by one
     #: holding more, instead of refusing them. It is also how a mistyped shard identifier writes
     #: to the wrong database without saying so - which is why the fallback now logs a warning
     #: either way, and why this setting exists.
     #:
-    #: ``"fail"`` raises instead. For a deployment that holds the whole layout, where an
-    #: unregistered shard can only be a bug.
-    unknown_shard_policy: Literal["use_default_shard", "fail"] = "use_default_shard"
+    #: :attr:`~UnknownShardPolicy.FAIL` raises instead. For a deployment that holds the whole
+    #: layout, where an unregistered shard can only be a bug.
+    unknown_shard_policy: UnknownShardPolicy = UnknownShardPolicy.USE_DEFAULT_SHARD
 
     def __post_init__(self) -> None:
         if self.default_shard is None:
@@ -366,22 +367,20 @@ class ShardingConfig:
         )
 
 
-def _unknown_shard_policy(value: str | None) -> Literal["use_default_shard", "fail"]:
-    """Read a policy as Java's ``UnknownShardPolicy.from`` does.
+def _unknown_shard_policy(value: object) -> UnknownShardPolicy:
+    """The policy given, or the default for ``None`` - as Java's null is.
 
-    Case and separators do not matter - everything but letters is dropped - so ``fail``,
-    ``FAIL``, ``useDefaultShard``, ``use_default_shard`` and ``USE-DEFAULT-SHARD`` all read.
-    ``None``, empty or blank is the default, ``"use_default_shard"``.
+    A string is refused, as Java's compiler refuses one where an ``UnknownShardPolicy`` belongs.
+    A configured word is read with :meth:`UnknownShardPolicy.from_`, which the config files do.
     """
-    if value is None or not value.strip():
-        return "use_default_shard"
-    normalised = re.sub(r"[^a-z]", "", value.strip().lower())
-    if normalised == "usedefaultshard":
-        return "use_default_shard"
-    if normalised == "fail":
-        return "fail"
-    raise ValidationError(
-        f"unknown_shard_policy must be 'useDefaultShard' or 'fail', not {value!r}"
+    if value is None:
+        return UnknownShardPolicy.USE_DEFAULT_SHARD
+    if isinstance(value, UnknownShardPolicy):
+        return value
+    raise TypeError(
+        f"unknown_shard_policy takes an UnknownShardPolicy, not a {type(value).__name__} "
+        f"({value!r}): pass UnknownShardPolicy.FAIL or UnknownShardPolicy.USE_DEFAULT_SHARD, or "
+        f"read a configured word with UnknownShardPolicy.from_()"
     )
 
 
@@ -595,7 +594,7 @@ class ShardingConfigBuilder:
     def __init__(self) -> None:
         self._default_shard: ShardIdentifier | None = None
         self._groups: list[ShardGroupConfig] = []
-        self._unknown_shard_policy: Literal["use_default_shard", "fail"] = "use_default_shard"
+        self._unknown_shard_policy = UnknownShardPolicy.USE_DEFAULT_SHARD
 
     def default_shard(self, default_shard: ShardIdentifier) -> Self:
         self._default_shard = default_shard
@@ -609,9 +608,10 @@ class ShardingConfigBuilder:
         self._groups.append(group)
         return self
 
-    def unknown_shard_policy(self, unknown_shard_policy: str | None) -> Self:
-        """Spelled any way Java reads it; ``None`` or blank means the default, as Java's null."""
-        self._unknown_shard_policy = unknown_shard_policy  # type: ignore[assignment]
+    def unknown_shard_policy(self, unknown_shard_policy: UnknownShardPolicy | None) -> Self:
+        """``None`` means the default, :attr:`UnknownShardPolicy.USE_DEFAULT_SHARD`, as Java's
+        null does."""
+        self._unknown_shard_policy = _unknown_shard_policy(unknown_shard_policy)
         return self
 
     def build(self) -> ShardingConfig:

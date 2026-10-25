@@ -23,6 +23,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 from sqlalchemy import MetaData, create_engine, text  # noqa: E402
 from testcontainers.community.postgres import PostgresContainer  # noqa: E402
 
+from ekbatan.sharding import UnknownShardPolicy
 from ekbatan import errors as E  # noqa: E402
 from ekbatan.action import (  # noqa: E402
     ActionExecutor,
@@ -235,7 +236,7 @@ def sharding(urls, policy=None) -> ShardingConfig:
     ]
     b = ShardingConfig.builder().default_shard(GLOBAL).groups(groups)
     if policy:
-        b = b.unknown_shard_policy(policy)
+        b = b.unknown_shard_policy(UnknownShardPolicy.from_(policy))
     return b.build()
 
 

@@ -12,7 +12,7 @@ import pytest
 
 from ekbatan.config import DataSourceConfig, ShardGroupConfig, ShardingConfig, ShardMemberConfig
 from ekbatan.errors import ValidationError
-from ekbatan.sharding import ShardIdentifier
+from ekbatan.sharding import ShardIdentifier, UnknownShardPolicy
 from fixtures.config import group, member
 
 GLOBAL = ShardIdentifier(0, 0)
@@ -324,54 +324,52 @@ def test_a_blank_namespace_still_says_it_is_required(namespace):
 
 
 def test_unknown_shard_policy_defaults_to_use_default_shard_when_nobody_names_one():
-    """`EKB-0200`. Omitting it has to mean `use_default_shard`: Java's `effectiveShard` falls
+    """`EKB-0200`. Omitting it has to mean `USE_DEFAULT_SHARD`: Java's `effectiveShard` falls
     back, and a deployment holding a subset of the layout reads the rest's ids because of it."""
     layout = ShardingConfig(default_shard=GLOBAL, groups=(group(0, "g", member(0, a_source())),))
 
-    assert layout.unknown_shard_policy == "use_default_shard"
+    assert layout.unknown_shard_policy is UnknownShardPolicy.USE_DEFAULT_SHARD
 
 
 def test_unknown_shard_policy_refuses_a_value_that_is_neither():
     """Java's message, which names the camelCase spelling."""
     with pytest.raises(ValidationError, match="must be 'useDefaultShard' or 'fail', not 'raise'"):
+        UnknownShardPolicy.from_("raise")
+
+
+def test_unknown_shard_policy_is_an_enum_and_a_string_in_code_is_refused():
+    """Java's `UnknownShardPolicy` enum, and Java's compiler: code passes `UnknownShardPolicy.FAIL`,
+    and a string where the enum belongs is refused, naming the members and `from_`. Only a
+    configured word is read from text, by `UnknownShardPolicy.from_`."""
+    assert [p.name for p in UnknownShardPolicy] == ["USE_DEFAULT_SHARD", "FAIL"]
+    with pytest.raises(TypeError, match=r"takes an UnknownShardPolicy, not a str \('fail'\)"):
         ShardingConfig(
             default_shard=GLOBAL,
             groups=(group(0, "g", member(0, a_source())),),
-            unknown_shard_policy="raise",  # type: ignore[arg-type]
+            unknown_shard_policy="fail",  # type: ignore[arg-type]
         )
+    with pytest.raises(TypeError, match="takes an UnknownShardPolicy"):
+        ShardingConfig.builder().unknown_shard_policy("fail")  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize(
     ("given", "read"),
     [
-        ("useDefaultShard", "use_default_shard"),
-        ("UseDefaultShard", "use_default_shard"),
-        ("use_default_shard", "use_default_shard"),
-        ("USE-DEFAULT-SHARD", "use_default_shard"),
-        ("use default shard", "use_default_shard"),
-        ("fail", "fail"),
-        ("FAIL", "fail"),
-        (" fail ", "fail"),
-        ("", "use_default_shard"),
-        ("   ", "use_default_shard"),
-        (None, "use_default_shard"),
+        ("useDefaultShard", UnknownShardPolicy.USE_DEFAULT_SHARD),
+        ("UseDefaultShard", UnknownShardPolicy.USE_DEFAULT_SHARD),
+        ("use_default_shard", UnknownShardPolicy.USE_DEFAULT_SHARD),
+        ("USE-DEFAULT-SHARD", UnknownShardPolicy.USE_DEFAULT_SHARD),
+        ("use default shard", UnknownShardPolicy.USE_DEFAULT_SHARD),
+        ("fail", UnknownShardPolicy.FAIL),
+        ("FAIL", UnknownShardPolicy.FAIL),
+        (" fail ", UnknownShardPolicy.FAIL),
+        ("", UnknownShardPolicy.USE_DEFAULT_SHARD),
+        ("   ", UnknownShardPolicy.USE_DEFAULT_SHARD),
+        (None, UnknownShardPolicy.USE_DEFAULT_SHARD),
     ],
 )
 def test_unknown_shard_policy_is_read_as_java_reads_it(given, read):
     """Java's `UnknownShardPolicy.from` keeps only the letters, in any case, and reads null or
     blank as the default. `useDefaultShard` - the spelling Java's own error message asks for -
-    was refused here."""
-    layout = ShardingConfig(
-        default_shard=GLOBAL,
-        groups=(group(0, "g", member(0, a_source())),),
-        unknown_shard_policy=given,  # type: ignore[arg-type]
-    )
-    assert layout.unknown_shard_policy == read
-    built = (
-        ShardingConfig.builder()
-        .default_shard(GLOBAL)
-        .with_group(group(0, "g", member(0, a_source())))
-        .unknown_shard_policy(given)
-        .build()
-    )
-    assert built.unknown_shard_policy == read
+    was refused here once."""
+    assert UnknownShardPolicy.from_(given) is read
