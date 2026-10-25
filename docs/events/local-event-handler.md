@@ -49,12 +49,15 @@ its execution revived elsewhere, and both jobs are written to be safe under a re
 **Sync**
 
 ```python
-class WalletMoneyDepositedEventHandler:
-    name = "money-deposited"
-    event_type = WalletMoneyDepositedEvent
-
+class WalletMoneyDepositedEventHandler(EventHandler[WalletMoneyDepositedEvent]):
     def __init__(self, executor: ActionExecutor) -> None:
         self.executor = executor
+
+    def name(self) -> str:
+        return "money-deposited"
+
+    def event_type(self) -> type[WalletMoneyDepositedEvent]:
+        return WalletMoneyDepositedEvent
 
     def handle(self, envelope: EventEnvelope[WalletMoneyDepositedEvent]) -> None:
         event = envelope.event
@@ -64,21 +67,26 @@ class WalletMoneyDepositedEventHandler:
 **Async**
 
 ```python
-class WalletMoneyDepositedEventHandler:
-    name = "money-deposited"
-    event_type = WalletMoneyDepositedEvent
-
+class WalletMoneyDepositedEventHandler(AsyncEventHandler[WalletMoneyDepositedEvent]):
     def __init__(self, executor: AsyncActionExecutor) -> None:
         self.executor = executor
+
+    def name(self) -> str:
+        return "money-deposited"
+
+    def event_type(self) -> type[WalletMoneyDepositedEvent]:
+        return WalletMoneyDepositedEvent
 
     async def handle(self, envelope: EventEnvelope[WalletMoneyDepositedEvent]) -> None:
         event = envelope.event
         ...
 ```
 
-A plain class. **No base class, no decorator, no annotation** - three attributes and a method.
-There is nothing to inherit because there is nothing the framework needs to give you, and nothing
-scans for it: handlers go in the registry, in the wiring, where you can read them.
+A class that extends `EventHandler` - or `AsyncEventHandler`, whose `handle()` is `async def` -
+and writes three methods: `name()`, `event_type()` and `handle()`. `aliases()` is empty unless
+it overrides it. A class that extends neither, or whose `handle()` is of the other kind, is
+refused when it is registered. No decorator and no annotation: nothing scans for handlers -
+they go in the registry, in the wiring, where you can read them.
 
 Several handlers may subscribe to one event type; each gets its own notification row and its own
 retry lifecycle.
@@ -94,8 +102,8 @@ own threads - never inside the action.
 
 ### An async handler
 
-`handle` may be `async def`, for a handler that awaits an `ekbatan.aio` executor - the Async
-block above. Either kind runs in either mode: a sync service may have an async handler, and an
+A handler that awaits an `ekbatan.aio` executor extends `AsyncEventHandler`, whose `handle()` is
+`async def` - the Async block above. Either kind runs in either mode: a sync service may have an async handler, and an
 async service a sync one.
 
 Dispatch still claims and records notifications on its threads. It runs an async handler on its
@@ -129,20 +137,25 @@ first runs and closed with the dispatch.
 ### Renaming a handler safely
 
 It is the durable subscription id written on every notification row. Rename the class freely;
-rename `name` and the queued rows under the old one become invisible to the handler and sit until
+rename `name()` and the queued rows under the old one become invisible to the handler and sit until
 they expire.
 
-The way through is `aliases`:
+The way through is `aliases()`:
 
 ```python
-class MoneyDepositedWelcomeHandler:
-    name = "money-deposited-welcome"
-    aliases = ("money-deposited",)          # what it used to be
-    event_type = WalletMoneyDepositedEvent
+class MoneyDepositedWelcomeHandler(EventHandler[WalletMoneyDepositedEvent]):
+    def name(self) -> str:
+        return "money-deposited-welcome"
+
+    def aliases(self) -> set[str]:
+        return {"money-deposited"}          # what it used to be
+
+    def event_type(self) -> type[WalletMoneyDepositedEvent]:
+        return WalletMoneyDepositedEvent
 ```
 
 **Aliases are lookup-only.** Dispatch resolves an old-name row through them; fan-out keeps
-writing only the canonical `name`. They do not replay history and they do not create a second
+writing only the canonical `name()`. They do not replay history and they do not create a second
 subscription - for that, write a second handler with its own name and no alias.
 
 Drop the alias once no non-terminal rows remain under the old name:
@@ -158,9 +171,9 @@ Keeping it longer is harmless.
 
 Two rules make the rename safe, and they are not symmetrical:
 
-1. **Fan-out writes the current `name` only.** From the deploy onward, every new delivery row
+1. **Fan-out writes the current `name()` only.** From the deploy onward, every new delivery row
    carries the new name. There is no backfill and no rewrite of rows already queued.
-2. **Dispatch resolves through `aliases` as well.** A row still carrying the old name is matched
+2. **Dispatch resolves through `aliases()` as well.** A row still carrying the old name is matched
    to this handler and runs, so the queue drains under the new code rather than stalling.
 
 That asymmetry is what makes the rename a one-way door you can walk through slowly. New work
@@ -416,12 +429,15 @@ A handler does not have to keep the work inside the database. Write one for an e
 publish from inside `handle(...)` with your own client:
 
 ```python
-class WalletEventPublisher:
-    name = "wallet-kafka-publisher"
-    event_type = WalletMoneyDepositedEvent
-
+class WalletEventPublisher(EventHandler[WalletMoneyDepositedEvent]):
     def __init__(self, producer: KafkaProducer) -> None:
         self.producer = producer
+
+    def name(self) -> str:
+        return "wallet-kafka-publisher"
+
+    def event_type(self) -> type[WalletMoneyDepositedEvent]:
+        return WalletMoneyDepositedEvent
 
     def handle(self, envelope: EventEnvelope[WalletMoneyDepositedEvent]) -> None:
         self.producer.send(
@@ -452,12 +468,15 @@ row, post to an external API. The shape is the same as any handler; the only dif
 the constructor takes:
 
 ```python
-class WalletMoneyDepositedEventHandler:
-    name = "money-deposited-notification"
-    event_type = WalletMoneyDepositedEvent
-
+class WalletMoneyDepositedEventHandler(EventHandler[WalletMoneyDepositedEvent]):
     def __init__(self, notifications: NotificationService) -> None:
         self.notifications = notifications
+
+    def name(self) -> str:
+        return "money-deposited-notification"
+
+    def event_type(self) -> type[WalletMoneyDepositedEvent]:
+        return WalletMoneyDepositedEvent
 
     def handle(self, envelope: EventEnvelope[WalletMoneyDepositedEvent]) -> None:
         self.notifications.deposit_received(

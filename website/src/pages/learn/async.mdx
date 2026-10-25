@@ -198,16 +198,19 @@ then succeeds.
 ## 7b. The handler
 
 It runs after the deposit has committed - fan-out and dispatch pick the event up on their own
-threads - and it may be `async def`. Dispatch runs it on the handler loop, where it awaits its
-own executor:
+threads - and it may extend `AsyncEventHandler`, with an `async def handle()`. Dispatch runs it on
+the handler loop, where it awaits its own executor:
 
 ```python
-class WalletMoneyDepositedEventHandler:
-    name = "wallet-money-deposited-notification"
-    event_type = WalletMoneyDepositedEvent
-
+class WalletMoneyDepositedEventHandler(AsyncEventHandler[WalletMoneyDepositedEvent]):
     def __init__(self, executor: AsyncActionExecutor) -> None:
         self.executor = executor
+
+    def name(self) -> str:
+        return "wallet-money-deposited-notification"
+
+    def event_type(self) -> type[WalletMoneyDepositedEvent]:
+        return WalletMoneyDepositedEvent
 
     async def handle(self, envelope: EventEnvelope[WalletMoneyDepositedEvent]) -> None:
         await self.executor.execute(CreateNotificationAction, CreateNotificationAction.Params(...))

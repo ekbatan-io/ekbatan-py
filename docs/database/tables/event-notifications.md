@@ -111,7 +111,7 @@ The rest are the delivery state, and they are this table's own:
 | column | null | meaning |
 | --- | :---: | --- |
 | `id` | no | this delivery row |
-| `handler_name` | no | the handler's `name`. **Treat it as schema data** - see below |
+| `handler_name` | no | the handler's `name()`. **Treat it as schema data** - see below |
 | `event_type` | no | not null here, unlike in `events`: sentinel rows are never fanned out |
 | `state` | no | `PENDING`, `FAILED`, `SUCCEEDED` or `EXPIRED` |
 | `attempts` | no | failed attempts so far |
@@ -146,20 +146,25 @@ be retried until the window closes. See [Sagas](../../concepts/sagas.md).
 
 ## Handler names are schema
 
-`handler_name` stores the handler's `name`, and old queued rows carry the old name. Renaming a
+`handler_name` stores the handler's `name()`, and old queued rows carry the old name. Renaming a
 handler without saying so makes every queued row invisible to it - they will sit until they
 expire.
 
-The way through is `aliases`:
+The way through is `aliases()`:
 
 ```python
-class WalletMoneyDepositedEventHandler:
-    name = "wallet-money-deposited-notification"
-    aliases = ("wallet-deposit-alert",)      # what it used to be called
-    event_type = WalletMoneyDepositedEvent
+class WalletMoneyDepositedEventHandler(EventHandler[WalletMoneyDepositedEvent]):
+    def name(self) -> str:
+        return "wallet-money-deposited-notification"
+
+    def aliases(self) -> set[str]:
+        return {"wallet-deposit-alert"}      # what it used to be called
+
+    def event_type(self) -> type[WalletMoneyDepositedEvent]:
+        return WalletMoneyDepositedEvent
 ```
 
-New rows are written with `name`; queued rows written under an alias still route. Drop the alias
+New rows are written with `name()`; queued rows written under an alias still route. Drop the alias
 once they have drained.
 
 ## Dialect types

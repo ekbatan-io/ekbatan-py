@@ -139,7 +139,7 @@ whatever is decided about the rest.
 | 68 | `execute(Action, params, principal="x")`: principal last, a plain string | convention + choice | partly | M | B |
 | 69 | An action can rename itself in the outbox by overriding `name` | choice | yes | M | B |
 | 70 | ~~`event_type` is a string on an event and a class on a handler; overriding the event's breaks fan-out silently~~ **fixed** (`EKB-0495`): an event's `event_type` is final, its class name, as in Java - mypy flags an override and the event class is refused when it is defined | choice | yes | M | B |
-| 71 | A handler is any object with `name`, `event_type`, `handle`, as class attributes | convention | partly | L | B |
+| 71 | ~~A handler is any object with `name`, `event_type`, `handle`, as class attributes~~ **matched** (`EKB-0548`, the user's decision 2026-10-25, "exactly match java"): a handler extends `EventHandler` - or `AsyncEventHandler`, whose `handle()` is `async def` - with Java's `name()`, `aliases()` (empty unless overridden), `event_type()` and `handle()`; one that extends neither, or whose `handle()` is the other kind, is refused when it is registered | convention | yes | L | B |
 | 72 | Retry delay is float seconds; `RetryConfig()` with no arguments means "one retry after 100 ms" | choice | yes | L | B |
 | 73 | A missing handler is not counted as a failed attempt | choice | yes | L | B |
 | 74 | `ActionSpec` verifiers fail on a falsy return value. **Settled by the user (2026-10-25)**: kept, a Python limitation - a lambda cannot hold an `assert`, so the value it returns is what gets checked | forced | no | L | B |
@@ -179,7 +179,7 @@ whatever is decided about the rest.
 
 | # | Dracula | Why | Match Java? | Surprise | Area |
 |---|---|---|---|---|---|
-| 96 | snake_case names, `X.builder()` instead of `X.Builder.x()`, properties instead of getters | convention | no | L | A29, B |
+| 96 | snake_case names, `X.builder()` instead of `X.Builder.x()`, properties instead of getters (not for event handlers: since `EKB-0548` they answer Java's `name()`, `aliases()` and `event_type()` methods) | convention | no | L | A29, B |
 
 Known before the sweep and not repeated in the areas: urls that name the driver
 (`postgresql+psycopg://`).

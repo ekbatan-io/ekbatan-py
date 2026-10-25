@@ -387,9 +387,12 @@ There are two APIs: the sync one and `ekbatan.aio`. The rules for keeping them o
   providers' cores (`_HoldingCore`, `_HolderCore`, `_LeaseCore`, the statement and result
   helpers in `locks/sql.py` and `locks/redis.py`). The caller takes the lock around
   `await executor.execute(...)`; the holder is the task.
-- **Event handlers run after the action**, on dispatch's threads, never inside it. A handler may
-  be `async def`: dispatch runs it on its `HandlerLoop` (one loop on its own thread) and records
-  the outcome exactly as for a sync handler. What an async handler awaits belongs to that loop.
+- **Event handlers run after the action**, on dispatch's threads, never inside it. A handler
+  extends `EventHandler` - Java's four methods, `name()`, `aliases()` (empty by default),
+  `event_type()` and `handle()` - or `AsyncEventHandler`, whose `handle()` is `async def`: dispatch
+  runs that one on its `HandlerLoop` (one loop on its own thread) and records the outcome exactly
+  as for a sync handler. What an async handler awaits belongs to that loop. The registry refuses
+  a handler that extends neither, or whose `handle()` is the other kind.
 - **Drivers.** A url naming a sync driver, or none, connects through the database's async
   default (`async_url`, `ASYNC_DEFAULT_DRIVERS`: asyncpg, aiomysql, aiosqlite); an async driver
   in the url is kept. For asyncpg, libpq's `options` / `application_name` / `connect_timeout` /

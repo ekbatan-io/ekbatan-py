@@ -147,12 +147,15 @@ away before the handler ran.
 <div slot="sync">
 
 ```python
-class WalletMoneyDepositedEventHandler:
-    name = "money-deposited"
-    event_type = WalletMoneyDepositedEvent
-
+class WalletMoneyDepositedEventHandler(EventHandler[WalletMoneyDepositedEvent]):
     def __init__(self, executor: ActionExecutor) -> None:
         self.executor = executor
+
+    def name(self) -> str:
+        return "money-deposited"
+
+    def event_type(self) -> type[WalletMoneyDepositedEvent]:
+        return WalletMoneyDepositedEvent
 
     def handle(self, envelope: EventEnvelope[WalletMoneyDepositedEvent]) -> None:
         event = envelope.event
@@ -163,12 +166,15 @@ class WalletMoneyDepositedEventHandler:
 <div slot="async">
 
 ```python
-class WalletMoneyDepositedEventHandler:
-    name = "money-deposited"
-    event_type = WalletMoneyDepositedEvent
-
+class WalletMoneyDepositedEventHandler(AsyncEventHandler[WalletMoneyDepositedEvent]):
     def __init__(self, executor: AsyncActionExecutor) -> None:
         self.executor = executor
+
+    def name(self) -> str:
+        return "money-deposited"
+
+    def event_type(self) -> type[WalletMoneyDepositedEvent]:
+        return WalletMoneyDepositedEvent
 
     async def handle(self, envelope: EventEnvelope[WalletMoneyDepositedEvent]) -> None:
         event = envelope.event
@@ -178,27 +184,32 @@ class WalletMoneyDepositedEventHandler:
 </div>
 </ModeTabs>
 
-No base class, no decorator, no annotation — two attributes and a method. There is nothing to
-inherit because there is nothing the framework needs to give you.
+A class that extends `EventHandler` — or `AsyncEventHandler`, whose `handle()` is `async def` —
+and writes three methods. No decorator and no annotation.
 
-- **`name`** — the durable subscription id, written to `event_notifications.handler_name`.
+- **`name()`** — the durable subscription id, written to `event_notifications.handler_name`.
   Cluster-stable; see below.
-- **`event_type`** — the payload class this handler accepts. It drives deserialisation.
-- **`handle(envelope)`** — your logic, `def` or `async def`; it runs after the action, on
-  dispatch's threads, in either mode. `envelope.event` is the typed payload;
+- **`event_type()`** — the payload class this handler accepts. It drives deserialisation.
+- **`handle(envelope)`** — your logic, `async def` on an `AsyncEventHandler`; it runs after the
+  action, on dispatch's threads, in either mode. `envelope.event` is the typed payload;
   `envelope.action_params` is the source action's parameters, which is where routing concerns
   live when you do not want them polluting the event.
 
-#### `name` is schema
+#### `name()` is schema
 
-Rename the class freely. Rename `name` and the queued rows under the old one become invisible to
-the handler and sit there until they expire. The way through is `aliases`:
+Rename the class freely. Rename `name()` and the queued rows under the old one become invisible to
+the handler and sit there until they expire. The way through is `aliases()`:
 
 ```python
-class MoneyDepositedWelcomeHandler:
-    name = "money-deposited-welcome"
-    aliases = ("money-deposited",)     # what it used to be
-    event_type = WalletMoneyDepositedEvent
+class MoneyDepositedWelcomeHandler(EventHandler[WalletMoneyDepositedEvent]):
+    def name(self) -> str:
+        return "money-deposited-welcome"
+
+    def aliases(self) -> set[str]:
+        return {"money-deposited"}     # what it used to be
+
+    def event_type(self) -> type[WalletMoneyDepositedEvent]:
+        return WalletMoneyDepositedEvent
 ```
 
 Aliases are lookup-only: dispatch resolves old rows through them, fan-out keeps writing the

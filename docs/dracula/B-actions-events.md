@@ -146,8 +146,9 @@ sides. Ordered by surprise, highest first.
 - **Could match Java?** yes. Make the event's name not overridable (or not public), or give it a different name.
 - **Surprise:** medium
 
-### A handler is any object with `name`, `event_type` and `handle`, usually declared as class attributes
-- **What:** `EventHandler` is a `Protocol`. A handler is written as `name = "wallet-deposit-alert"`
+### ~~A handler is any object with `name`, `event_type` and `handle`, usually declared as class attributes~~ matched (`EKB-0548`)
+- **Matched** (`EKB-0548`, the user's decision 2026-10-25: "exactly match java"): `EventHandler` and `AsyncEventHandler` are abstract base classes with Java's four methods in Java's order - `name()`, `aliases()` (an empty set unless overridden, as Java's `Set.of()`), `event_type()` and `handle()`, `async def` on `AsyncEventHandler`. The registry, fan-out and dispatch call them; dispatch runs a handler by its base. A handler that extends neither base, or whose `handle()` is of the other kind, is refused with a `TypeError` when it is registered, as Java's compiler refuses one. Proven red then green by `tests/unit/test_event_handler_registry.py` and `tests/integration/test_async_handlers.py`.
+- **What (at the sweep, 2026-10-12):** `EventHandler` is a `Protocol`. A handler is written as `name = "wallet-deposit-alert"`
   and `event_type = MoneyDepositedEvent` on the class, inherits nothing, and is checked only when
   registered (a missing `event_type` is an `AttributeError` there). `aliases` is optional and
   read with `getattr`. Java implements an interface with `name()`, `eventType()` and `handle()`,

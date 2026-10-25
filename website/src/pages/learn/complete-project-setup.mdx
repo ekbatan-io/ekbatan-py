@@ -1729,13 +1729,15 @@ and so is what the executor does with it - one transaction for the rows and thei
 
 </div>
 
-The handler takes the **executor**, not a connection: it does its work as its own unit of work,
+The handler extends `EventHandler` and answers three methods: `name()`, `event_type()` and
+`handle()`. It takes the **executor**, not a connection: it does its work as its own unit of work,
 after the one that produced the event has committed. **Delivery is at-least-once** - make the body
-idempotent - and the handler's `name` is stored on every notification row, so keep it stable.
+idempotent - and the handler's `name()` is stored on every notification row, so keep it stable.
 
 <div data-mode="async">
 
-`handle` is `async def` and awaits an executor of its own. It still runs after the deposit, never
+It extends `AsyncEventHandler` instead, so `handle()` is `async def` and awaits an executor of its
+own. It still runs after the deposit, never
 inside it: fan-out and dispatch are jobs on their own threads, and dispatch runs an async handler
 on its **handler loop** - one event loop on a thread of its own. What the handler awaits belongs
 to that loop, so `app.py` (step 13) builds the handler its own registry and executor, and closes

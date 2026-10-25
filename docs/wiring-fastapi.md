@@ -192,8 +192,8 @@ things change over the sync service:
 
 - **A keyed lock around the unit of work**, from `ekbatan.aio.locks`: `async with
   locks.acquire(key, max_hold):` around `await executor.execute(...)`. Its holder is the task.
-- **Handlers run after the action, on dispatch's threads.** A handler may be `async def` and await
-  an executor of its own on dispatch's handler loop; fan-out, dispatch and the jobs stay on
+- **Handlers run after the action, on dispatch's threads.** A handler may extend `AsyncEventHandler`
+  and await an executor of its own on dispatch's handler loop; fan-out, dispatch and the jobs stay on
   threads through a sync registry built from the same config file.
 
 [Going async](going-async.md) walks through it, and

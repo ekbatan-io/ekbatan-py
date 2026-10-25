@@ -263,15 +263,19 @@ A handler never runs inside an action. The action commits its rows and its event
 and dispatch - jobs on their own threads - pick the events up and run the handlers, a batch at a
 time. That is the same whatever kind the request path is.
 
-A handler's `handle` may be `async def`, to await an `AsyncActionExecutor`:
+A handler may extend `AsyncEventHandler`, whose `handle()` is `async def`, to await an
+`AsyncActionExecutor`:
 
 ```python
-class WalletMoneyDepositedEventHandler:
-    name = "wallet-money-deposited-notification"
-    event_type = WalletMoneyDepositedEvent
-
+class WalletMoneyDepositedEventHandler(AsyncEventHandler[WalletMoneyDepositedEvent]):
     def __init__(self, executor: AsyncActionExecutor) -> None:
         self.executor = executor
+
+    def name(self) -> str:
+        return "wallet-money-deposited-notification"
+
+    def event_type(self) -> type[WalletMoneyDepositedEvent]:
+        return WalletMoneyDepositedEvent
 
     async def handle(self, envelope: EventEnvelope[WalletMoneyDepositedEvent]) -> None:
         await self.executor.execute(CreateNotificationAction, CreateNotificationAction.Params(...))

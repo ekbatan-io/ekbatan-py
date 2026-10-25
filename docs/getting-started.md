@@ -364,8 +364,8 @@ only a test against a real database checks it.
 The async samples above need the async driver beside the sync one -
 `"ekbatan[postgres,postgres-async,migrations]"`, `mysql-async`, `mariadb-async` or
 `sqlite-async`. Models, events, migrations and the generated schema are the same in both modes;
-the keyed lock has an async twin in `ekbatan.aio.locks`, an event handler may be `async def`, and
-the jobs stay on threads. How to choose is [Sync or async?](sync-or-async.md); the reference is
+the keyed lock has an async twin in `ekbatan.aio.locks`, an event handler may extend `AsyncEventHandler`,
+and the jobs stay on threads. How to choose is [Sync or async?](sync-or-async.md); the reference is
 [Native asyncio](runtime/async.md).
 
 ## Where to go next

@@ -1452,3 +1452,23 @@ writes `wallet.id.getValue()`. Ledger: `docs/REPO-KEYS-LEDGER.md`.
 | **The examples, the suite's fixtures and the guide declare `UUID`**: none forces its id column | the user: "keep `UUID` as the declared key; none of them forces its id column" | - |
 | **An endpoint that reads by a path id passes the `UUID` it was given** (`find_by_id(id)`), no longer `find_by_id(ShardedId[Wallet].of(id))` | Java's controller: `walletRepository.findById(id)` | build the typed id and take `.value` |
 | **History keeps the old forms**: the ledgers, this file, the dracula "what was" lines, the parity probes' recordings; three probe scripts already behind the API (two-argument `ModelRepository[...]` in `round2-N6/core/getting_started.py`, `round2-N5/common.py`, `round2-N4/probe_base_class.py`) are left as they were | they record what was true then, or were stale before this change | rewrite them |
+
+## Event handlers extend a base class with Java's methods (EKB-0548-)
+
+The decision (the user, 2026-10-25, Dracula 71): "exactly match java". A handler extends
+`EventHandler` - or `AsyncEventHandler`, whose `handle()` is `async def` - with Java's four
+methods in Java's order: `name()`, `aliases()` (empty unless overridden), `event_type()` and
+`handle()`. The registry, fan-out and dispatch call them. Ledger: `docs/HANDLER-BASE-LEDGER.md`.
+
+| decision | why | the other way |
+| --- | --- | --- |
+| **One private core, two public bases**: `_HandlerCore[E]` holds `name()`, `aliases()` and `event_type()`; `EventHandler` adds an abstract `handle()`, `AsyncEventHandler` an abstract `async def handle()`. Siblings, not one extending the other | one copy of each member and of `aliases()`'s default; an `AsyncEventHandler` that were an `EventHandler` would pass every check meant for a sync one, and type checkers refuse a coroutine `handle()` overriding a plain one | one class with both kinds of `handle()`; or `AsyncEventHandler(EventHandler)` |
+| **`aliases()` returns a read-only set** (`collections.abc.Set[str]`), `frozenset()` by default | Java's `Set<String>` and `Set.of()`; an override may return any set, and the docs show a set literal | `tuple[str, ...]`, as the old attribute was spelt |
+| **Dispatch tells the two apart by base class**; the registry refuses a `handle()` of the other kind - `async def` on an `EventHandler`, a plain `def` on an `AsyncEventHandler` - with a `TypeError` | running by base would otherwise skip a coroutine it never awaits, and count the row as handled; Java's compiler refuses a mismatched signature | tell by the value `handle()` returns, as before (`inspect.isawaitable`), and accept either kind under either base |
+| **A sync handler whose `handle()` hands back an awaitable anyway** (a plain `def` that returns a coroutine) fails the attempt with a `TypeError`, the coroutine closed | the same silent skip, from a shape the registry's check cannot see; a failed attempt is logged and retried until it expires | run it on the handler loop, as before |
+| **`TypeError` for a handler that extends neither base or has the other kind of `handle()`**; `ValidationError` stays for a bad value (a blank `name()`, a `None` `event_type()`) | a class of the wrong shape is a programming error, as Java's compile error is - the same type as the module's other class-shape refusals; a bad value is what the registry already called a validation failure | `ValidationError` for all of them |
+| **The messages are Java's, in the method form, with "None" where Java says "null"**: `handler.name() cannot be blank`, `handler.event_type() cannot be None`, `handler.event_type().__name__ cannot be blank`, `handler.aliases() cannot be None`, `handler.aliases() cannot contain blank values` | the port's registry already said "None" (`handler cannot be None`); `__name__` is what `getSimpleName()` reads here | Java's text word for word, "null" included |
+| **Method order in the examples and docs: the constructor, `name()`, `event_type()`, `handle()`**; `aliases()` only where a handler overrides it | Java's examples' order | the interface's order, with `aliases()` written out everywhere |
+| **The suite's `RecordingHandler` takes `aliases=`** | the renamed-handler test set the attribute after construction, which a method cannot be | a subclass per alias case |
+| **`agent-skills/` and its mirrors are unchanged**: no skill describes a handler's shape | nothing to say | - |
+| **History keeps the old form**: the ledgers, this file, the dracula "what was" lines, the parity probes' recordings. The 9 probe scripts are converted and compile; they are not re-run | they record what was | re-record the probes |

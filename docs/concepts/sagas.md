@@ -112,14 +112,17 @@ The runnable example uses in-process handlers, because every step lives in one a
 **Sync**
 
 ```python
-class TransferInitiatedEventHandler:
+class TransferInitiatedEventHandler(EventHandler[TransferInitiatedEvent]):
     """Step one committed; run step two."""
-
-    name = "transfer-initiated-handler"
-    event_type = TransferInitiatedEvent
 
     def __init__(self, executor: ActionExecutor) -> None:
         self.executor = executor
+
+    def name(self) -> str:
+        return "transfer-initiated-handler"
+
+    def event_type(self) -> type[TransferInitiatedEvent]:
+        return TransferInitiatedEvent
 
     def handle(self, envelope: EventEnvelope[TransferInitiatedEvent]) -> None:
         event = envelope.event
@@ -138,14 +141,17 @@ class TransferInitiatedEventHandler:
 **Async**
 
 ```python
-class TransferInitiatedEventHandler:
+class TransferInitiatedEventHandler(AsyncEventHandler[TransferInitiatedEvent]):
     """Step one committed; run step two - awaited, on dispatch's handler loop."""
-
-    name = "transfer-initiated-handler"
-    event_type = TransferInitiatedEvent
 
     def __init__(self, executor: AsyncActionExecutor) -> None:
         self.executor = executor
+
+    def name(self) -> str:
+        return "transfer-initiated-handler"
+
+    def event_type(self) -> type[TransferInitiatedEvent]:
+        return TransferInitiatedEvent
 
     async def handle(self, envelope: EventEnvelope[TransferInitiatedEvent]) -> None:
         event = envelope.event

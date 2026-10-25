@@ -806,14 +806,16 @@ out every row above on its own: none of them would use db-scheduler's schema.
 Schedules are `Every`, `FixedDelay` and `Daily`. Cron is not built in: parsing it needs a
 dependency, and a `Schedule` is one method.
 
-## Handlers are duck-typed
+## A handler extends one of two bases
 
-> **forced** - A `Protocol` is how Python spells an interface. No behaviour differs.
+> **chosen** - by the user (2026-10-25): handlers take Java's shape, a base class with `name()`, `aliases()`, `event_type()` and `handle()`. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md), "Event handlers extend a base class with Java's methods (EKB-0548-)".
 
-Java's `EventHandler` is an interface. Here it is a `Protocol`: anything with `name`,
-`event_type` and `handle` is a handler, so an existing class can subscribe without inheriting
-anything. `aliases` is optional and read with `getattr`, which is what makes a handler rename
-possible without every handler declaring an empty set.
+Java's `EventHandler` is an interface a handler implements. Here it is an abstract base class a
+handler extends, with the same four methods in the same order, `aliases()` empty unless
+overridden. The one difference is a second base, `AsyncEventHandler`, whose `handle()` is
+`async def` - for a handler that awaits `ekbatan.aio` - which Java, having no async side, does
+not need. The registry refuses a handler that extends neither, as Java's compiler refuses a class
+that does not implement the interface, and one whose `handle()` is of the other kind.
 
 ## A data source wraps SQLAlchemy's engine
 
