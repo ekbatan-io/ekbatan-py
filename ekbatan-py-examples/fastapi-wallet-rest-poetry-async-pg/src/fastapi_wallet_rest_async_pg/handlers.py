@@ -11,7 +11,7 @@ import logging
 from uuid import UUID
 
 from ekbatan.aio import AsyncActionExecutor
-from ekbatan.events import EventEnvelope
+from ekbatan.events import AsyncEventHandler, EventEnvelope
 
 from .actions import CreateNotificationAction
 from .model import NotificationKind, WalletMoneyDepositedEvent
@@ -19,7 +19,7 @@ from .model import NotificationKind, WalletMoneyDepositedEvent
 LOG = logging.getLogger(__name__)
 
 
-class WalletMoneyDepositedEventHandler:
+class WalletMoneyDepositedEventHandler(AsyncEventHandler[WalletMoneyDepositedEvent]):
     """Reacts to a committed `WalletMoneyDepositedEvent` by creating a notification row.
 
     The handler runs in-process after the deposit commits, on dispatch's handler loop, then
@@ -29,12 +29,15 @@ class WalletMoneyDepositedEventHandler:
     action that produced the event.
     """
 
-    #: Cluster-stable; stored in `event_notifications.handler_name`.
-    name = "wallet-money-deposited-notification"
-    event_type = WalletMoneyDepositedEvent
-
     def __init__(self, executor: AsyncActionExecutor) -> None:
         self.executor = executor
+
+    def name(self) -> str:
+        # Cluster-stable; stored in `event_notifications.handler_name`.
+        return "wallet-money-deposited-notification"
+
+    def event_type(self) -> type[WalletMoneyDepositedEvent]:
+        return WalletMoneyDepositedEvent
 
     async def handle(self, envelope: EventEnvelope[WalletMoneyDepositedEvent]) -> None:
         wallet_id = UUID(envelope.event.model_id)
