@@ -1521,7 +1521,7 @@ def _key_type(column: Any) -> tuple[type | None, bool]:
     found: object
     converted = isinstance(column.type, Converted)
     if converted:
-        found = _converter_user_type(column.type._converter)
+        found = _converter_user_type(column.type._converter, f"{column.table.name}.{column.name}")
     elif isinstance(column.type, TypeDecorator):
         return None, False
     else:
@@ -1536,17 +1536,28 @@ def _key_type(column: Any) -> tuple[type | None, bool]:
     return None, converted
 
 
-def _converter_user_type(converter: object) -> object:
+def _converter_user_type(converter: object, where: str) -> object:
     """What a converter's ``from_db`` gives: its return annotation, else the second argument of
     its ``Converter[DbT, UserT]`` base - the rule schemagen types a converted column's record by.
-    ``None`` where neither says."""
+    ``None`` where neither says.
+
+    An annotation that is there but cannot be read while the program runs - a name imported only
+    under ``TYPE_CHECKING`` - is refused with a ``TypeError`` naming it, as a model's field types
+    are, rather than leaving the column's key check off in silence."""
     from .schema import Converter
 
     method = getattr(converter, "from_db", None)
-    try:
-        found = typing.get_type_hints(method).get("return") if method is not None else None
-    except Exception:  # an annotation naming something its module cannot see
-        found = None
+    found: object = None
+    if isinstance(method, types.FunctionType | types.MethodType):
+        try:
+            found = typing.get_type_hints(method).get("return")
+        except Exception as error:  # a name the converter's module cannot see at run time
+            raise TypeError(
+                f"{type(converter).__qualname__}.from_db's return type cannot be read "
+                f"({type(error).__name__}: {error}). It says what {where} holds, so it has to "
+                f"be readable while the program runs: import the name where the converter is "
+                f"written, not only under TYPE_CHECKING."
+            ) from error
     if found is not None and found is not Any:
         return found
     for klass in type(converter).__mro__:

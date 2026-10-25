@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from decimal import Decimal
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -27,6 +27,11 @@ from ekbatan.schema import converted, uuid_column
 from fixtures.actions import WalletCreateAction
 from fixtures.executing import run
 from modes import rebased
+
+if TYPE_CHECKING:
+    # For the type checker only - so it does not exist while the tests run. See
+    # test_a_converter_whose_return_type_cannot_be_read_is_refused.
+    from fractions import Fraction
 
 MODES = ("sync", "async")
 
@@ -167,7 +172,9 @@ def test_a_converted_id_column_takes_its_typed_id_and_round_trips_it(badge_repos
     with badge_repository.readonly_db() as conn:
         assert (
             conn.execute(
-                select(func.count()).select_from(BADGES).where(badge_repository.id_matches(badge.id))
+                select(func.count())
+                .select_from(BADGES)
+                .where(badge_repository.id_matches(badge.id))
             ).scalar_one()
             == 1
         )
@@ -178,9 +185,7 @@ def test_a_converted_id_column_takes_its_typed_id_and_round_trips_it(badge_repos
 
 
 @pytest.mark.parametrize("method", sorted(READS))
-def test_a_converted_id_column_refuses_a_raw_uuid_and_names_its_typed_id(
-    badge_repository, method
-):
+def test_a_converted_id_column_refuses_a_raw_uuid_and_names_its_typed_id(badge_repository, method):
     badge = badge_repository.add(a_badge())
     with pytest.raises(
         TypeError,
@@ -188,3 +193,39 @@ def test_a_converted_id_column_refuses_a_raw_uuid_and_names_its_typed_id(
         rf"ShardedId - not a UUID; pass the ShardedId the column is converted to",
     ):
         READS[method](badge_repository, badge.id.value)
+
+
+# ------------------------------------------------- a converter whose types cannot be read
+
+
+class UnreadableIdConverter:
+    """Its types name a class imported only for the type checker."""
+
+    def from_db(self, value: UUID) -> Fraction:
+        return Fraction(value.int)
+
+    def to_db(self, value: Fraction) -> UUID:
+        return UUID(int=int(value))
+
+
+UNREADABLE = Table(
+    "badges_unreadable",
+    MetaData(),
+    Column("id", converted(uuid_column(), UnreadableIdConverter()), primary_key=True),
+    Column("version", BigInteger, nullable=False),
+    Column("state", String(24), nullable=False),
+    Column("label", String(64), nullable=False),
+)
+
+
+def test_a_converter_whose_return_type_cannot_be_read_is_refused(registry, clock):
+    """What a converted id column holds is read off its converter's `from_db`. A return type the
+    converter's module cannot see while the program runs - imported only under TYPE_CHECKING - is
+    refused when the repository is made, naming it and the column. It used to switch the key check
+    off without a word."""
+    with pytest.raises(
+        TypeError,
+        match=r"UnreadableIdConverter\.from_db's return type cannot be read \(NameError: .*Fraction"
+        r".*badges_unreadable\.id holds",
+    ):
+        BadgeRepository(Badge, UNREADABLE, registry, clock=clock)

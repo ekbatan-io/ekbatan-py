@@ -51,7 +51,9 @@ Four classes, in layers:
 uuid column - `ModelRepository[Wallet, WalletsRecord, UUID]` - so the reads by id take
 `wallet.id.value`, and a typed id there is refused, saying to pass its `.value`. A schemagen
 forced type that converts the id column to a typed id makes that typed id the key, and then a raw
-`UUID` is refused. An application extends `ModelRepository` or
+`UUID` is refused. That type is read off the converter's `from_db` return type, so it has to be
+readable while the program runs: one naming a class imported only under `TYPE_CHECKING` is
+refused when the repository is made. An application extends `ModelRepository` or
 `EntityRepository` and nothing else. In async mode the same four live in `ekbatan.aio` with an `Async` prefix -
 `AsyncModelRepository`, `AsyncEntityRepository` - and every read and write is awaited. The rules
 are the same code.
