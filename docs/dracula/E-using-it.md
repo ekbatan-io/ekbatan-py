@@ -209,7 +209,8 @@ follow the guide and run the project. Area F merges the two.
   start by itself.
 - **Surprise:** medium
 
-### The config file is found by a path you pass; no profiles, no environment overrides
+### The config file is found by a path you pass; no profiles, no environment overrides - settled by the user (2026-10-25)
+- **Settled by the user (2026-10-25)**: kept, with no framework change. In Java this is Spring's settings system, not ekbatan's; building profiles into ekbatan would be its own invention, and the user does not want that. Profiles work with the framework as it is - shown by a run: `${VAR:default}` placeholders set per environment, as the examples do; a file per profile, chosen by its path (`ekbatan-prod.yaml` when `APP_PROFILE=prod`); or one file with placeholders and a values file per profile (`.env.prod`, read with python-dotenv) passed through `load_ekbatan_config(..., environ=...)`, where a real environment variable still wins. Not covered: a profile file that holds only the differences laid over a base file, and overriding a key the file has no placeholder for. Libraries that do those (Dynaconf, OmegaConf) would need ekbatan to accept an already-loaded mapping; weighed and not wanted.
 - **What:** Spring finds `application.yml` on the classpath, lets any key be overridden by an
   environment variable or a profile, and binds it for you. Here you pass the file's path to
   `load_ekbatan_config` (the examples use `Path(__file__).parent / "ekbatan.yaml"`; the guide uses

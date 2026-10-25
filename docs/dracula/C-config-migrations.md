@@ -36,7 +36,8 @@ Not repeated: urls that name the driver (`postgresql+psycopg://` vs `jdbc:postgr
 - **Could match Java?** partly - `maximumPoolSize` could be a front for `pool_size`; leak detection and idle timeout would have to be written from scratch.
 - **Surprise:** high
 
-### The app reads the config file itself, and wires everything by hand
+### The app reads the config file itself, and wires everything by hand - settled by the user (2026-10-25)
+- **Settled by the user (2026-10-25)**: kept, with no framework change. In Java this is Spring's settings system, not ekbatan's; building profiles into ekbatan would be its own invention, and the user does not want that. Profiles work with the framework as it is - shown by a run: `${VAR:default}` placeholders set per environment, as the examples do; a file per profile, chosen by its path (`ekbatan-prod.yaml` when `APP_PROFILE=prod`); or one file with placeholders and a values file per profile (`.env.prod`, read with python-dotenv) passed through `load_ekbatan_config(..., environ=...)`, where a real environment variable still wins. Not covered: a profile file that holds only the differences laid over a base file, and overriding a key the file has no placeholder for. Libraries that do those (Dynaconf, OmegaConf) would need ekbatan to accept an already-loaded mapping; weighed and not wanted.
 - **What:** In Java, Spring/Quarkus/Micronaut read `ekbatan.*` from `application.yml` and create
   the registry, executor and so on as beans. In Python you call `load_ekbatan_config(path)` on a
   separate file (`ekbatan.yaml`) and then build each piece yourself. There are no profiles
