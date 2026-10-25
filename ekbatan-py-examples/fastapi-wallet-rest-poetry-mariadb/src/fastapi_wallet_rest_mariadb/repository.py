@@ -23,7 +23,7 @@ from .model import Notification, NotificationKind, NotificationState, Wallet, Wa
 from .schema import NOTIFICATIONS, WALLETS, NotificationsRecord, WalletsRecord
 
 
-class WalletRepository(ModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]):
+class WalletRepository(ModelRepository[Wallet, WalletsRecord, UUID]):
     """Wallets, routed by the shard packed into each id.
 
     A ModelRepository, because a wallet's changes are events. Saying so is what lets the
@@ -84,7 +84,7 @@ class WalletRepository(ModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]
         )
 
 
-class NotificationRepository(EntityRepository[Notification, NotificationsRecord, Id[Notification]]):
+class NotificationRepository(EntityRepository[Notification, NotificationsRecord, UUID]):
     """Notifications, on the default shard: no sharding strategy, so every one is written there
     and read from there, whichever shard its wallet is on.
 

@@ -135,7 +135,9 @@ def test_close_transitions_wallet_to_closed_state() -> None:
             WalletCloseAction, WalletCloseAction.Params(wallet_id=wallet.id), principal="test-user"
         )
 
-        assert (await service.wallet_repository.get_by_id(wallet.id)).state is WalletState.CLOSED
+        assert (
+            await service.wallet_repository.get_by_id(wallet.id.value)
+        ).state is WalletState.CLOSED
 
     scenario(test)
 

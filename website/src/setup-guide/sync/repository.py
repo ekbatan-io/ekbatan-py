@@ -22,7 +22,7 @@ from .model import Notification, NotificationKind, NotificationState, Wallet, Wa
 from .schema import NOTIFICATIONS, WALLETS, NotificationsRecord, WalletsRecord
 
 
-class WalletRepository(ModelRepository[Wallet, WalletsRecord, Id[Wallet]]):
+class WalletRepository(ModelRepository[Wallet, WalletsRecord, UUID]):
     def __init__(self, database_registry: DatabaseRegistry) -> None:
         super().__init__(Wallet, WALLETS, database_registry)
 
@@ -60,7 +60,7 @@ class WalletRepository(ModelRepository[Wallet, WalletsRecord, Id[Wallet]]):
         )
 
 
-class NotificationRepository(EntityRepository[Notification, NotificationsRecord, Id[Notification]]):
+class NotificationRepository(EntityRepository[Notification, NotificationsRecord, UUID]):
     def __init__(self, database_registry: DatabaseRegistry) -> None:
         super().__init__(Notification, NOTIFICATIONS, database_registry)
 

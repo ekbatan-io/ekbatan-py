@@ -109,7 +109,7 @@ def test_close_transitions_wallet_to_closed_state(service: WalletService) -> Non
         WalletCloseAction, WalletCloseAction.Params(wallet_id=wallet.id), principal="test-user"
     )
 
-    assert service.wallet_repository.get_by_id(wallet.id).state is WalletState.CLOSED
+    assert service.wallet_repository.get_by_id(wallet.id.value).state is WalletState.CLOSED
 
 
 def test_the_script_runs(capsys: pytest.CaptureFixture[str]) -> None:

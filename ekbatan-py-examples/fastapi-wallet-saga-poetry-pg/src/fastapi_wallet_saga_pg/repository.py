@@ -18,7 +18,7 @@ from .model import TransferStep, TransferStepName, Wallet, WalletState
 from .schema import TRANSFER_STEPS, WALLETS, TransferStepsRecord, WalletsRecord
 
 
-class WalletRepository(ModelRepository[Wallet, WalletsRecord, Id[Wallet]]):
+class WalletRepository(ModelRepository[Wallet, WalletsRecord, UUID]):
     def __init__(self, database_registry: DatabaseRegistry) -> None:
         super().__init__(Wallet, WALLETS, database_registry)
 
@@ -52,7 +52,7 @@ class WalletRepository(ModelRepository[Wallet, WalletsRecord, Id[Wallet]]):
         )
 
 
-class TransferStepRepository(EntityRepository[TransferStep, TransferStepsRecord, Id[TransferStep]]):
+class TransferStepRepository(EntityRepository[TransferStep, TransferStepsRecord, UUID]):
     def __init__(self, database_registry: DatabaseRegistry) -> None:
         super().__init__(TransferStep, TRANSFER_STEPS, database_registry)
 

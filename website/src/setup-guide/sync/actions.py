@@ -46,7 +46,7 @@ class WalletDepositMoneyAction(Action["WalletDepositMoneyAction.Params", Wallet]
         self.wallet_repository = wallet_repository
 
     def perform(self, principal: str | None, params: Params) -> Wallet:
-        wallet = self.wallet_repository.get_by_id(params.wallet_id)
+        wallet = self.wallet_repository.get_by_id(params.wallet_id.value)
         updated = wallet.deposit(params.amount)
         return self.plan.update(updated)
 
