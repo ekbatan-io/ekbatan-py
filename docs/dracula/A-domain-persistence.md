@@ -273,7 +273,8 @@ counter shows one run with it). The text below is the finding as it was.
 - **Could match Java?** yes - include `model_id` in equality, or use `eq=False`.
 - **Surprise:** medium
 
-### 17. Exceptions have different names, a common base, and different constructors
+### 17. Exceptions have different names, a common base, and different constructors - settled by the user (2026-10-25)
+- **Settled by the user (2026-10-25)**: kept as it is, a Python convention. Python's style names an exception with `Error`, as the built-ins (`ValueError`, `KeyError`) are named; renaming them `...Exception` to copy Java was weighed and left. The common base `EkbatanError` only adds one way to catch them all - each is still caught by its own name - and the Python-only errors (`ForkedProcessError`, `BlockingCallError`, `TransactionThreadError`, `TransactionContextError`, `ConnectivityError`) guard situations Java does not have.
 - **What:** `StaleRecordError`, `EntityNotFoundError`, `CrossShardError`, `LockAcquisitionError`
   (Java: `...Exception`). All share `EkbatanError` (Java has no common base; all are
   `RuntimeException`). Where Java throws `NullPointerException` / `IllegalArgumentException` /
