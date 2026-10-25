@@ -50,6 +50,7 @@ class WalletMoneyDepositedEventHandler(AsyncEventHandler[WalletMoneyDepositedEve
         LOG.info("Creating notification for wallet=%s recipient=%s", wallet_id, recipient)
 
         await self.executor.execute(
+            "wallet-handler",
             CreateNotificationAction,
             CreateNotificationAction.Params(
                 wallet_id=wallet_id,
@@ -57,5 +58,4 @@ class WalletMoneyDepositedEventHandler(AsyncEventHandler[WalletMoneyDepositedEve
                 recipient=recipient,
                 message=message,
             ),
-            principal="wallet-handler",
         )

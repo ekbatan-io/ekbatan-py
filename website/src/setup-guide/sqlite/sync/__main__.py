@@ -30,18 +30,18 @@ def main() -> None:
 def run(service: WalletService) -> None:
     service.start()
     wallet = service.executor.execute(
+        "script",
         WalletCreateAction,
         WalletCreateAction.Params(
             owner_id=uuid4(), currency="EUR", initial_balance=Decimal("100.00")
         ),
-        principal="script",
     )
     wallet = service.executor.execute(
+        "script",
         WalletDepositMoneyAction,
         WalletDepositMoneyAction.Params(
             wallet_id=wallet.id, amount=Decimal("25.50"), recipient="ada@example.com"
         ),
-        principal="script",
     )
     print(f"wallet {wallet.id}, balance {wallet.balance}")
 

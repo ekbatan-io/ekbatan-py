@@ -111,11 +111,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/wallets", response_model=WalletResponse, status_code=201)
     async def create(body: CreateRequest, service: Service) -> WalletResponse:
         wallet = await service.executor.execute(
+            "rest-user",
             WalletCreateAction,
             WalletCreateAction.Params(
                 owner_id=body.owner_id, currency=body.currency, initial_balance=body.initial_balance
             ),
-            principal="rest-user",
         )
         return WalletResponse.of(wallet)
 
@@ -123,22 +123,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def deposit(id: UUID, body: DepositRequest, service: Service) -> WalletResponse:
         async with service.lock_provider.acquire(f"wallet:{id}", timedelta(seconds=10)):
             updated = await service.executor.execute(
+                "rest-user",
                 WalletDepositMoneyAction,
                 WalletDepositMoneyAction.Params(wallet_id=Id[Wallet].of(id), amount=body.amount),
-                principal="rest-user",
             )
             return WalletResponse.of(updated)
 
     @app.post("/wallets/transfers", response_model=TransferResponse, status_code=202)
     async def transfer(body: TransferRequest, service: Service) -> TransferResponse:
         result = await service.executor.execute(
+            "rest-user",
             InitiateTransferAction,
             InitiateTransferAction.Params(
                 from_wallet_id=Id[Wallet].of(body.from_wallet_id),
                 to_wallet_id=Id[Wallet].of(body.to_wallet_id),
                 amount=body.amount,
             ),
-            principal="rest-user",
         )
         return TransferResponse(
             transfer_id=result.transfer_id, from_wallet=WalletResponse.of(result.source_wallet)
@@ -147,9 +147,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/wallets/{id}/close", response_model=WalletResponse)
     async def close(id: UUID, service: Service) -> WalletResponse:
         closed = await service.executor.execute(
+            "rest-user",
             WalletCloseAction,
             WalletCloseAction.Params(wallet_id=Id[Wallet].of(id)),
-            principal="rest-user",
         )
         return WalletResponse.of(closed)
 

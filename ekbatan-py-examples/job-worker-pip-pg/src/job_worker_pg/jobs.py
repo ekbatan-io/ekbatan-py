@@ -68,13 +68,13 @@ class WalletStipendJob(DistributedJob):
             try:
                 with self.lock_provider.acquire(f"wallet:{wallet.id.value}", timedelta(seconds=10)):
                     self.executor.execute(
+                        "wallet-stipend-job",
                         WalletDepositMoneyAction,
                         WalletDepositMoneyAction.Params(
                             wallet_id=wallet.id,
                             amount=self.STIPEND,
                             recipient="stipend@system.local",
                         ),
-                        principal="wallet-stipend-job",
                     )
             except Exception:
                 LOG.warning(

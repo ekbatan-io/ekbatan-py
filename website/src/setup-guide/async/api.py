@@ -61,22 +61,22 @@ def create_app() -> FastAPI:
     @app.post("/wallets", status_code=201)
     async def create(body: CreateRequest, request: Request) -> dict[str, str]:
         wallet = await service(request).executor.execute(
+            "rest-user",
             WalletCreateAction,
             WalletCreateAction.Params(
                 owner_id=body.owner_id, currency=body.currency, initial_balance=body.initial_balance
             ),
-            principal="rest-user",
         )
         return {"id": str(wallet.id.value), "balance": str(wallet.balance)}
 
     @app.post("/wallets/{id}/deposits")
     async def deposit(id: UUID, body: DepositRequest, request: Request) -> dict[str, str]:
         wallet = await service(request).executor.execute(
+            "rest-user",
             WalletDepositMoneyAction,
             WalletDepositMoneyAction.Params(
                 wallet_id=Id[Wallet].of(id), amount=body.amount, recipient=body.recipient
             ),
-            principal="rest-user",
         )
         return {"id": str(wallet.id.value), "balance": str(wallet.balance)}
 

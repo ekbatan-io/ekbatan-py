@@ -40,9 +40,9 @@ class WalletStipendJob(DistributedJob):
     def execute(self, ctx: ExecutionContext) -> None:
         for wallet in self.wallet_repository.find_open_with_balance_below(self.THRESHOLD):
             self.executor.execute(
+                "wallet-stipend-job",
                 WalletDepositMoneyAction,
                 WalletDepositMoneyAction.Params(
                     wallet_id=wallet.id, amount=self.STIPEND, recipient="stipend@system.local"
                 ),
-                principal="wallet-stipend-job",
             )

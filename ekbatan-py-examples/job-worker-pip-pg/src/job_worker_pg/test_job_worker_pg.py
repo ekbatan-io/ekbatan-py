@@ -98,6 +98,7 @@ def eventually(check: Callable[[], bool], within: float = 20.0) -> bool:
 
 def a_wallet(worker: Worker, country_code: str, currency: str) -> Wallet:
     return worker.executor.execute(
+        "test-user",
         WalletCreateAction,
         WalletCreateAction.Params(
             country_code=country_code,
@@ -105,7 +106,6 @@ def a_wallet(worker: Worker, country_code: str, currency: str) -> Wallet:
             currency=currency,
             initial_balance=Decimal("0"),
         ),
-        principal="test-user",
     )
 
 

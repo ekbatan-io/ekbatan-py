@@ -79,13 +79,13 @@ class WalletStipendJob(DistributedJob):
                     f"wallet:{wallet.id.value}", timedelta(seconds=10)
                 ):
                     await self.executor.execute(
+                        "wallet-stipend-job",
                         WalletDepositMoneyAction,
                         WalletDepositMoneyAction.Params(
                             wallet_id=wallet.id,
                             amount=self.STIPEND,
                             recipient="stipend@system.local",
                         ),
-                        principal="wallet-stipend-job",
                     )
             except Exception:
                 LOG.warning(

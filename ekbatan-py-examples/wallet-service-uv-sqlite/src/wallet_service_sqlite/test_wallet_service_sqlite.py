@@ -41,6 +41,7 @@ def create_wallet(
     service: WalletService, country_code: str, currency: str, initial_balance: str
 ) -> Wallet:
     return service.executor.execute(
+        "test-user",
         WalletCreateAction,
         WalletCreateAction.Params(
             country_code=country_code,
@@ -48,17 +49,16 @@ def create_wallet(
             currency=currency,
             initial_balance=Decimal(initial_balance),
         ),
-        principal="test-user",
     )
 
 
 def deposit(service: WalletService, wallet: Wallet, amount: str, recipient: str) -> Wallet:
     return service.executor.execute(
+        "test-user",
         WalletDepositMoneyAction,
         WalletDepositMoneyAction.Params(
             wallet_id=wallet.id, amount=Decimal(amount), recipient=recipient
         ),
-        principal="test-user",
     )
 
 
@@ -106,7 +106,9 @@ def test_close_transitions_wallet_to_closed_state(service: WalletService) -> Non
     wallet = create_wallet(service, "US", "EUR", "0.00")
 
     service.executor.execute(
-        WalletCloseAction, WalletCloseAction.Params(wallet_id=wallet.id), principal="test-user"
+        "test-user",
+        WalletCloseAction,
+        WalletCloseAction.Params(wallet_id=wallet.id),
     )
 
     assert service.wallet_repository.get_by_id(wallet.id.value).state is WalletState.CLOSED

@@ -49,6 +49,7 @@ class WalletMoneyDepositedEventHandler(EventHandler[WalletMoneyDepositedEvent]):
         LOG.info("Creating notification for wallet=%s recipient=%s", wallet_id, recipient)
 
         self.executor.execute(
+            "wallet-handler",
             CreateNotificationAction,
             CreateNotificationAction.Params(
                 wallet_id=wallet_id,
@@ -56,5 +57,4 @@ class WalletMoneyDepositedEventHandler(EventHandler[WalletMoneyDepositedEvent]):
                 recipient=recipient,
                 message=message,
             ),
-            principal="wallet-handler",
         )

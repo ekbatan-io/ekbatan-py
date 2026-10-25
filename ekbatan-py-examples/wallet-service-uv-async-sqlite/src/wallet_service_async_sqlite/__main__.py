@@ -45,6 +45,7 @@ async def serve(service: WalletService) -> None:
 
 async def create_wallet(service: WalletService, country_code: str, currency: str) -> Wallet:
     return await service.executor.execute(
+        "script",
         WalletCreateAction,
         WalletCreateAction.Params(
             country_code=country_code,
@@ -52,7 +53,6 @@ async def create_wallet(service: WalletService, country_code: str, currency: str
             currency=currency,
             initial_balance=Decimal("100.00"),
         ),
-        principal="script",
     )
 
 
@@ -71,11 +71,11 @@ async def run(service: WalletService) -> None:
 
     say("deposit into the first")
     wallet = await service.executor.execute(
+        "script",
         WalletDepositMoneyAction,
         WalletDepositMoneyAction.Params(
             wallet_id=wallet.id, amount=Decimal("25.50"), recipient="ada@example.com"
         ),
-        principal="script",
     )
     print(f"   balance {wallet.balance}, version {wallet.version}")
     print("   the row and its event were written by one transaction")
@@ -100,7 +100,9 @@ async def run(service: WalletService) -> None:
     say("close it")
     for _ in range(2):
         await service.executor.execute(
-            WalletCloseAction, WalletCloseAction.Params(wallet_id=wallet.id), principal="script"
+            "script",
+            WalletCloseAction,
+            WalletCloseAction.Params(wallet_id=wallet.id),
         )
     print("   closed twice; the second time changed nothing and emitted nothing")
 

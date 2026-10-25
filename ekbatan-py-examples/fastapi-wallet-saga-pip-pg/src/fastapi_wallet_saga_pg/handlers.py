@@ -35,6 +35,7 @@ class TransferInitiatedEventHandler(EventHandler[TransferInitiatedEvent]):
         event = envelope.event
         LOG.info("Transfer %s initiated; invoking CompleteTransferAction", event.transfer_id)
         self.executor.execute(
+            "transfer-saga",
             CompleteTransferAction,
             CompleteTransferAction.Params(
                 transfer_id=event.transfer_id,
@@ -42,7 +43,6 @@ class TransferInitiatedEventHandler(EventHandler[TransferInitiatedEvent]):
                 to_wallet_id=Id[Wallet].of(event.to_wallet_id),
                 amount=event.amount,
             ),
-            principal="transfer-saga",
         )
 
 
@@ -66,11 +66,11 @@ class TransferFailedEventHandler(EventHandler[TransferFailedEvent]):
             event.reason,
         )
         self.executor.execute(
+            "transfer-saga",
             RefundTransferAction,
             RefundTransferAction.Params(
                 transfer_id=event.transfer_id,
                 from_wallet_id=Id[Wallet].of(event.from_wallet_id),
                 amount=event.amount,
             ),
-            principal="transfer-saga",
         )

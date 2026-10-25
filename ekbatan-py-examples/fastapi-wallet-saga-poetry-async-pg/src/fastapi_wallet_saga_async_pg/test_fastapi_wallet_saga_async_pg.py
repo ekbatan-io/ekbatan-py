@@ -134,6 +134,7 @@ def test_happy_path_transfer_credits_destination_via_the_local_event_handler(
     on_the_app_loop(
         client,
         lambda: executor.execute(
+            "test",
             CompleteTransferAction,
             CompleteTransferAction.Params(
                 transfer_id=transfer_id,
@@ -141,7 +142,6 @@ def test_happy_path_transfer_credits_destination_via_the_local_event_handler(
                 to_wallet_id=Id[Wallet].of(b_id),
                 amount=Decimal("25.00"),
             ),
-            principal="test",
         ),
     )
     assert balance(client, b_id) == Decimal("25.00")
@@ -178,13 +178,13 @@ def test_compensation_path_refunds_source_when_destination_is_closed(client: Tes
     on_the_app_loop(
         client,
         lambda: executor.execute(
+            "test",
             RefundTransferAction,
             RefundTransferAction.Params(
                 transfer_id=transfer_id,
                 from_wallet_id=Id[Wallet].of(a_id),
                 amount=Decimal("25.00"),
             ),
-            principal="test",
         ),
     )
     assert balance(client, a_id) == Decimal("100.00")

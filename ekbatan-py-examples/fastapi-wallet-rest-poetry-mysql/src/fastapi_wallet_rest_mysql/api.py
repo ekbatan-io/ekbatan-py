@@ -105,6 +105,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/wallets", response_model=WalletResponse, status_code=201)
     def create(body: CreateRequest, service: Service) -> WalletResponse:
         wallet = service.executor.execute(
+            "rest-user",
             WalletCreateAction,
             WalletCreateAction.Params(
                 country_code=body.country_code,
@@ -112,7 +113,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 currency=body.currency,
                 initial_balance=body.initial_balance,
             ),
-            principal="rest-user",
         )
         return WalletResponse.of(wallet)
 
@@ -122,20 +122,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # into one wallet take turns instead of the second losing on the version check.
         with service.lock_provider.acquire(f"wallet:{id}", timedelta(seconds=10)):
             updated = service.executor.execute(
+                "rest-user",
                 WalletDepositMoneyAction,
                 WalletDepositMoneyAction.Params(
                     wallet_id=ShardedId[Wallet].of(id), amount=body.amount, recipient=body.recipient
                 ),
-                principal="rest-user",
             )
             return WalletResponse.of(updated)
 
     @app.post("/wallets/{id}/close", response_model=WalletResponse)
     def close(id: UUID, service: Service) -> WalletResponse:
         closed = service.executor.execute(
+            "rest-user",
             WalletCloseAction,
             WalletCloseAction.Params(wallet_id=ShardedId[Wallet].of(id)),
-            principal="rest-user",
         )
         return WalletResponse.of(closed)
 

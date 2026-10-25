@@ -54,6 +54,7 @@ async def create_wallet(
     service: WalletService, country_code: str, currency: str, initial_balance: str
 ) -> Wallet:
     return await service.executor.execute(
+        "test-user",
         WalletCreateAction,
         WalletCreateAction.Params(
             country_code=country_code,
@@ -61,17 +62,16 @@ async def create_wallet(
             currency=currency,
             initial_balance=Decimal(initial_balance),
         ),
-        principal="test-user",
     )
 
 
 async def deposit(service: WalletService, wallet: Wallet, amount: str, recipient: str) -> Wallet:
     return await service.executor.execute(
+        "test-user",
         WalletDepositMoneyAction,
         WalletDepositMoneyAction.Params(
             wallet_id=wallet.id, amount=Decimal(amount), recipient=recipient
         ),
-        principal="test-user",
     )
 
 
@@ -132,7 +132,9 @@ def test_close_transitions_wallet_to_closed_state() -> None:
         wallet = await create_wallet(service, "US", "EUR", "0.00")
 
         await service.executor.execute(
-            WalletCloseAction, WalletCloseAction.Params(wallet_id=wallet.id), principal="test-user"
+            "test-user",
+            WalletCloseAction,
+            WalletCloseAction.Params(wallet_id=wallet.id),
         )
 
         assert (
