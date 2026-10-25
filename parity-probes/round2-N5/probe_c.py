@@ -44,6 +44,7 @@ from common import (  # noqa: E402
 from ekbatan import _json  # noqa: E402
 from ekbatan.clock import VirtualClock  # noqa: E402
 from ekbatan.events import EventFanoutJob, EventHandlerRegistry, EventHandlingJob  # noqa: E402
+from ekbatan.events import EventHandler  # noqa: E402
 from ekbatan.events.config import LocalEventHandlerConfig  # noqa: E402
 from ekbatan.sharding import read_shard  # noqa: E402
 
@@ -171,9 +172,12 @@ def read() -> None:
     k = f"c.{D}.read_other."
     got = []
 
-    class Reader:
-        name = "n5-price-reader"
-        event_type = PricedEvent
+    class Reader(EventHandler[PricedEvent]):
+        def name(self) -> str:
+            return "n5-price-reader"
+
+        def event_type(self) -> type[PricedEvent]:
+            return PricedEvent
 
         def handle(self, env) -> None:
             got.append(env)

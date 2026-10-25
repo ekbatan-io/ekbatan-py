@@ -77,6 +77,7 @@ from ekbatan.config import (  # noqa: E402
 from ekbatan.distributedjobs import DistributedJob, job_registry  # noqa: E402
 from ekbatan.domain import ModelEvent  # noqa: E402
 from ekbatan.events import EventDispatch, EventFanout, EventHandlerRegistry  # noqa: E402
+from ekbatan.events import EventHandler  # noqa: E402
 from ekbatan.persistence import DatabaseRegistry, DataSource  # noqa: E402
 from ekbatan.sharding import ShardIdentifier  # noqa: E402
 from fixtures.schema import EVENT_NOTIFICATIONS, EVENTS, metadata  # noqa: E402
@@ -108,15 +109,13 @@ class Fatal(BaseException):
     """The nearest thing to a Java `Error`."""
 
 
-class Rec:
+class Rec(EventHandler[Any]):
     def __init__(self, name: str, mode: str) -> None:
         self._name, self.mode = name, mode
 
-    @property
     def name(self) -> str:
         return self._name
 
-    @property
     def event_type(self) -> type:
         return WidgetCreatedEvent
 

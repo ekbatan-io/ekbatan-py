@@ -110,7 +110,7 @@ class EventFanout:
                 EventNotification.builder()
                 .id(uuid.uuid4())
                 .event_id(event.id)
-                .handler_name(handler.name)
+                .handler_name(handler.name())
                 # The event's context, copied across, so dispatch never reads the events
                 # table again and a handler's envelope is one row.
                 .namespace(event.namespace)

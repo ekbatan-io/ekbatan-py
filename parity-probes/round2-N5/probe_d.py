@@ -43,6 +43,7 @@ from ekbatan.clock import SystemClock  # noqa: E402
 from ekbatan.config import DataSourceConfig  # noqa: E402
 from ekbatan.distributedjobs import job_registry  # noqa: E402
 from ekbatan.events import EventFanoutJob, EventHandlerRegistry, EventHandlingJob  # noqa: E402
+from ekbatan.events import EventHandler  # noqa: E402
 from ekbatan.events.config import LocalEventHandlerConfig  # noqa: E402
 from ekbatan.locks.sql import PostgresKeyedLockProvider  # noqa: E402
 
@@ -77,9 +78,12 @@ class Whole:
         self.locks = PostgresKeyedLockProvider.builder().data_source(self.lock_data_source).build()
         self.jobs_data_source = DataSource.from_config(c(3))
 
-        class Handler:
-            name = "n5-life-handler"
-            event_type = WidgetCreatedEvent
+        class Handler(EventHandler[WidgetCreatedEvent]):
+            def name(self) -> str:
+                return "n5-life-handler"
+
+            def event_type(self) -> type[WidgetCreatedEvent]:
+                return WidgetCreatedEvent
 
             def handle(self, env) -> None:
                 seen.append(env.event.name)

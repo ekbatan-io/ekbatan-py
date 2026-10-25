@@ -6,6 +6,7 @@ from datetime import timedelta
 from decimal import Decimal
 from uuid import uuid4
 
+from ekbatan.events import EventHandler
 from ekbatan.ids import ShardedId
 from fixtures.actions import (
     CreateNotificationAction,
@@ -325,8 +326,7 @@ def test_a_renamed_handler_still_drains_its_old_queue(
     deposit(executor, wallet_repository, wallet)
     fanout.drain_once()
 
-    renamed = succeeding("wallet-notifier")
-    renamed.aliases = ("wallet-emailer",)
+    renamed = succeeding("wallet-notifier", aliases=["wallet-emailer"])
     _, dispatch = pipeline(renamed)
     dispatch.drain_once()
 
@@ -474,12 +474,15 @@ def test_a_chained_action_s_own_event_is_fanned_out_and_dispatched_in_turn(
     where that is worth doubting.
     """
 
-    class OpenASecondWalletOnDeposit:
-        name = "second-wallet-opener"
-        event_type = WalletMoneyDepositedEvent
-
+    class OpenASecondWalletOnDeposit(EventHandler[WalletMoneyDepositedEvent]):
         def __init__(self) -> None:
             self.calls = 0
+
+        def name(self) -> str:
+            return "second-wallet-opener"
+
+        def event_type(self) -> type[WalletMoneyDepositedEvent]:
+            return WalletMoneyDepositedEvent
 
         def handle(self, envelope) -> None:
             self.calls += 1
@@ -491,14 +494,17 @@ def test_a_chained_action_s_own_event_is_fanned_out_and_dispatched_in_turn(
                 ),
             )
 
-    class AuditTheOpening:
+    class AuditTheOpening(EventHandler[WalletCreatedEvent]):
         """Java's `NoteCreatedAuditEntryHandler`: the second hop writes an entity."""
-
-        name = "wallet-open-auditor"
-        event_type = WalletCreatedEvent
 
         def __init__(self) -> None:
             self.received = []
+
+        def name(self) -> str:
+            return "wallet-open-auditor"
+
+        def event_type(self) -> type[WalletCreatedEvent]:
+            return WalletCreatedEvent
 
         @property
         def calls(self) -> int:

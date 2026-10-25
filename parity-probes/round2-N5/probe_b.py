@@ -35,6 +35,7 @@ from common import (  # noqa: E402
 
 from ekbatan.clock import VirtualClock  # noqa: E402
 from ekbatan.events import EventFanoutJob, EventHandlerRegistry, EventHandlingJob  # noqa: E402
+from ekbatan.events import EventHandler  # noqa: E402
 from ekbatan.events.config import LocalEventHandlerConfig  # noqa: E402
 from ekbatan.sharding import read_shard  # noqa: E402
 
@@ -72,9 +73,12 @@ def main() -> None:
     reg, repo, ex = sharded(None, clock)
     calls: list[str] = []
 
-    class Handler:
-        name = "n5-shard-handler"
-        event_type = WidgetCreatedEvent
+    class Handler(EventHandler[WidgetCreatedEvent]):
+        def name(self) -> str:
+            return "n5-shard-handler"
+
+        def event_type(self) -> type[WidgetCreatedEvent]:
+            return WidgetCreatedEvent
 
         def handle(self, env) -> None:
             calls.append(env.event.name)

@@ -14,6 +14,7 @@ from ekbatan.clock import SystemClock
 from ekbatan.distributedjobs import job_registry
 from ekbatan.events import (EventHandlerRegistry, LocalEventHandlerConfig, HandlingConfig,
                             EventFanoutJob, EventHandlingJob, EventEnvelope)
+from ekbatan.events import EventHandler  # noqa: E402
 from fixtures.logins import data_source
 from fixtures.schema import EVENTS, EVENT_NOTIFICATIONS, metadata
 from fixtures.domain import WalletMoneyDepositedEvent as WalletMoneyDepositedEvent
@@ -27,9 +28,12 @@ registry = DatabaseRegistry.from_config(ShardingConfig.builder().default_shard(S
 engine = registry.manager(S0).primary if hasattr(registry.manager(S0), "primary") else create_engine(b.url("w"))
 clock = SystemClock(); executor = None
 
-class WalletMoneyDepositedEventHandler:
-    name = "money-deposited"
-    event_type = WalletMoneyDepositedEvent
+class WalletMoneyDepositedEventHandler(EventHandler[WalletMoneyDepositedEvent]):
+    def name(self) -> str:
+        return "money-deposited"
+
+    def event_type(self) -> type[WalletMoneyDepositedEvent]:
+        return WalletMoneyDepositedEvent
     def __init__(self, executor) -> None:
         self.executor = executor
     def handle(self, envelope: EventEnvelope[WalletMoneyDepositedEvent]) -> None:

@@ -32,7 +32,7 @@ from ..persistence import DatabaseRegistry
 from ..sharding import ShardIdentifier
 from ..time import Instant
 from ._across import Concurrently
-from .handler import AnyEventHandler, EventEnvelope, EventHandlerRegistry
+from .handler import AnyEventHandler, AsyncEventHandler, EventEnvelope, EventHandlerRegistry
 from .loop import HandlerLoop
 from .notification import EventNotification, backoff
 from .repository import EventNotificationRepository
@@ -261,11 +261,24 @@ class EventDispatch:
 
         started = time.monotonic()
         try:
-            handled = handler.handle(self._envelope(handler, row, attempts))
-            if inspect.isawaitable(handled):
-                # An async handler: run on the handler loop while this thread waits, so the
-                # outcome below is decided from it exactly as from a sync one.
-                self._handler_loop.run(handled)
+            envelope = self._envelope(handler, row, attempts)
+            if isinstance(handler, AsyncEventHandler):
+                # Run on the handler loop while this thread waits, so the outcome below is
+                # decided from it exactly as from a sync one. Told by its base, which the
+                # registry has already matched to its handle().
+                self._handler_loop.run(handler.handle(envelope))
+            else:
+                handled = handler.handle(envelope)
+                if inspect.isawaitable(handled):
+                    # A sync handler's handle() that hands back a coroutine anyway - a plain
+                    # def returning one. Never awaited, it would do nothing and count as done.
+                    close = getattr(handled, "close", None)
+                    if callable(close):
+                        close()
+                    raise TypeError(
+                        f"{type(handler).__qualname__}.handle() returned something to await: "
+                        f"extend AsyncEventHandler and make it async def"
+                    )
         except BaseException as error:
             HANDLER_DURATION.record(
                 time.monotonic() - started,
@@ -355,7 +368,7 @@ class EventDispatch:
     def _envelope(
         self, handler: AnyEventHandler, row: EventNotification, attempt: int
     ) -> EventEnvelope[ModelEvent]:
-        event_type = handler.event_type
+        event_type = handler.event_type()
         payload = row.payload or {}
         return EventEnvelope(
             event=decode(event_type, payload),

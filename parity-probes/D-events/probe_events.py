@@ -40,6 +40,7 @@ from ekbatan.events import (  # noqa: E402
     EventHandlingJob,
     LocalEventHandlerConfig,
 )
+from ekbatan.events import EventHandler  # noqa: E402
 from ekbatan.events.repository import (  # noqa: E402
     EventEntityRepository,
     EventNotificationRepository,
@@ -105,20 +106,21 @@ MAX = 0
 LOCK = threading.Lock()
 
 
-class Rec:
+class Rec(EventHandler[Any]):
     def __init__(self, name: str, event_type: type, mode: str = "ok", aliases: tuple = ()):
         self._name = name
         self._event_type = event_type
         self.mode = mode
-        self.aliases = aliases
+        self._aliases = frozenset(aliases)
         self.received: list[Any] = []
         self.order: list[str] = []
 
-    @property
     def name(self) -> str:
         return self._name
 
-    @property
+    def aliases(self) -> frozenset[str]:
+        return self._aliases
+
     def event_type(self) -> type:
         return self._event_type
 
@@ -397,7 +399,7 @@ def f_fanout_and_happy_path(w: World) -> None:
                     ]
                 )
             )
-        p(f"f.received.{h.name}", jlist(sorted(lines)))
+        p(f"f.received.{h.name()}", jlist(sorted(lines)))
     p("f.handle2.any", any_(hj.drain_once()))
 
     audit = Rec("note-audit", NoteCreatedEvent)
@@ -804,7 +806,7 @@ def g_registry(w: World) -> None:
         .build()
     )
     p("g.handled_event_types", jlist(r.event_types))
-    p("g.subscribers_widget", jlist([h.name for h in r.subscribers("WidgetCreatedEvent")]))
+    p("g.subscribers_widget", jlist([h.name() for h in r.subscribers("WidgetCreatedEvent")]))
     p("g.subscribers_unknown", jlist(r.subscribers("Nope")))
     p("g.lookup_alias", r.by_name("a-old").name)
     p("g.lookup_unknown", "null" if r.by_name("zzz") is None else "found")

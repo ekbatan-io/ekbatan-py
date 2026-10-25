@@ -32,7 +32,7 @@ from ekbatan.config import DataSourceConfig
 from ekbatan.distributedjobs import job_registry
 from ekbatan.domain import ModelEvent
 from ekbatan.errors import EkbatanError, LockAcquisitionError, ValidationError
-from ekbatan.events.handler import EventHandlerRegistry
+from ekbatan.events.handler import EventHandler, EventHandlerRegistry
 from ekbatan.events.jobs import _valid_name
 from ekbatan.locks.base import check as check_lock_args
 from ekbatan.locks.redis import RedisKeyedLockProvider
@@ -52,12 +52,14 @@ class FakeRedis:
         return object()
 
 
-class BlankNamed:
+class BlankNamed(EventHandler[SomethingHappenedEvent]):
     def __init__(self, name: str) -> None:
-        self.name = name
+        self._name = name
 
-    @property
-    def event_type(self) -> type:
+    def name(self) -> str:
+        return self._name
+
+    def event_type(self) -> type[SomethingHappenedEvent]:
         return SomethingHappenedEvent
 
     def handle(self, envelope: object) -> None: ...
@@ -87,7 +89,7 @@ class TestEveryBlankCheckAgrees:
             RedisKeyedLockProvider(FakeRedis(), namespace=blank)
 
     def test_an_event_handler_name(self, blank: str) -> None:
-        with pytest.raises(ValidationError, match=r"handler\.name cannot be blank"):
+        with pytest.raises(ValidationError, match=r"handler\.name\(\) cannot be blank"):
             EventHandlerRegistry().add(BlankNamed(blank))
 
     def test_an_event_job_name(self, blank: str) -> None:

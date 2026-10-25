@@ -45,6 +45,7 @@ from db_scheduler.task.schedule import FixedDelay  # noqa: E402
 from ekbatan.clock import SystemClock, VirtualClock  # noqa: E402
 from ekbatan.distributedjobs import DistributedJob, job_registry  # noqa: E402
 from ekbatan.events import EventFanoutJob, EventHandlerRegistry, EventHandlingJob  # noqa: E402
+from ekbatan.events import EventHandler  # noqa: E402
 from ekbatan.events.config import LocalEventHandlerConfig  # noqa: E402
 from ekbatan.ids import ShardedId  # noqa: E402
 from ekbatan.locks.sql import MariaDBKeyedLockProvider, MySQLKeyedLockProvider, PostgresKeyedLockProvider  # noqa: E402
@@ -178,9 +179,12 @@ def a6(D_: str) -> None:
         c.execute(text("delete from eventlog.events"))
     calls = []
 
-    class TxHandler:
-        name = "n5-tx-handler"
-        event_type = WidgetCreatedEvent
+    class TxHandler(EventHandler[WidgetCreatedEvent]):
+        def name(self) -> str:
+            return "n5-tx-handler"
+
+        def event_type(self) -> type[WidgetCreatedEvent]:
+            return WidgetCreatedEvent
 
         def handle(self, envelope) -> None:
             if envelope.event.name != "a6":

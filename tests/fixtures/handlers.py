@@ -8,11 +8,12 @@ whose deployment discovers, all at once, that it cannot.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
+from collections.abc import Set as AbstractSet
 from typing import Any
 
 from ekbatan import ActionExecutor
-from ekbatan.events import EventEnvelope
+from ekbatan.events import AsyncEventHandler, EventEnvelope, EventHandler
 from ekbatan.ids import ShardedId
 
 from .actions import (
@@ -21,20 +22,28 @@ from .actions import (
 from .domain import Wallet, WalletClosedEvent, WalletMoneyDepositedEvent
 
 
-class RecordingHandler:
+class RecordingHandler(EventHandler[Any]):
     """Records what it was handed. The shape every other handler here is a variation on."""
 
-    def __init__(self, name: str, event_type: type, on_call: Callable[[], None] | None = None):
+    def __init__(
+        self,
+        name: str,
+        event_type: type,
+        on_call: Callable[[], None] | None = None,
+        aliases: Iterable[str] = (),
+    ):
         self._name = name
         self._event_type = event_type
         self._on_call = on_call
+        self._aliases = frozenset(aliases)
         self.received: list[EventEnvelope[Any]] = []
 
-    @property
     def name(self) -> str:
         return self._name
 
-    @property
+    def aliases(self) -> AbstractSet[str]:
+        return self._aliases
+
     def event_type(self) -> type:
         return self._event_type
 
@@ -49,9 +58,11 @@ class RecordingHandler:
 
 
 def succeeding(
-    name: str = "recorder", event_type: type = WalletMoneyDepositedEvent
+    name: str = "recorder",
+    event_type: type = WalletMoneyDepositedEvent,
+    aliases: Iterable[str] = (),
 ) -> RecordingHandler:
-    return RecordingHandler(name, event_type)
+    return RecordingHandler(name, event_type, aliases=aliases)
 
 
 def failing(name: str = "flaky", times: int | None = None) -> RecordingHandler:
@@ -82,7 +93,7 @@ def fatal(name: str = "exploder") -> RecordingHandler:
     return RecordingHandler(name, WalletMoneyDepositedEvent, explode)
 
 
-class WalletMoneyDepositedEventHandler:
+class WalletMoneyDepositedEventHandler(EventHandler[WalletMoneyDepositedEvent]):
     """Chains into another unit of work - the shape a saga step has.
 
     Reads the recipient off the producing action's parameters, because a delivery address has
@@ -93,8 +104,11 @@ class WalletMoneyDepositedEventHandler:
         self.executor = executor
         self.calls = 0
 
-    name = "wallet-deposit-notification"
-    event_type = WalletMoneyDepositedEvent
+    def name(self) -> str:
+        return "wallet-deposit-notification"
+
+    def event_type(self) -> type[WalletMoneyDepositedEvent]:
+        return WalletMoneyDepositedEvent
 
     def handle(self, envelope: EventEnvelope[WalletMoneyDepositedEvent]) -> None:
         self.calls += 1
@@ -113,7 +127,7 @@ def on_close(name: str = "closer") -> RecordingHandler:
     return RecordingHandler(name, WalletClosedEvent)
 
 
-class AsyncTwin:
+class AsyncTwin(AsyncEventHandler[Any]):
     """A handler made async for the async half of a run with ``HANDLER_KINDS``: the same name,
     event type and aliases, and an ``async def handle`` that awaits the sync body on a worker
     thread - so dispatch takes the async path (its handler loop) while the body, its counters and
@@ -124,18 +138,16 @@ class AsyncTwin:
     def __init__(self, sync: Any) -> None:
         self.sync = sync
 
-    @property
     def name(self) -> str:
-        return str(self.sync.name)
+        return str(self.sync.name())
 
-    @property
+    def aliases(self) -> AbstractSet[str]:
+        aliases: AbstractSet[str] = self.sync.aliases()
+        return aliases
+
     def event_type(self) -> type:
-        event_type: type = self.sync.event_type
+        event_type: type = self.sync.event_type()
         return event_type
-
-    @property
-    def aliases(self) -> Any:
-        return getattr(self.sync, "aliases", ())
 
     async def handle(self, envelope: EventEnvelope[Any]) -> None:
         await asyncio.to_thread(self.sync.handle, envelope)

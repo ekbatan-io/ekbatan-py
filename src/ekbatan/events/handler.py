@@ -10,17 +10,22 @@ the day the handler outgrows in-process dispatch, the same body has to compile a
 consumer, and it can only do that if everything it needed arrived in the envelope.
 
 A handler runs after the action that emitted its event has committed - later, on dispatch's own
-threads, never inside the action. Its ``handle`` may be ``async def`` (:class:`AsyncEventHandler`),
-to await an ``ekbatan.aio`` executor: dispatch then runs it on its handler loop, and decides
-success, retry and expiry from it exactly as for a sync one.
+threads, never inside the action. It extends :class:`EventHandler` - Java's ``EventHandler``,
+with its ``name()``, ``aliases()``, ``event_type()`` and ``handle()`` - or
+:class:`AsyncEventHandler`, whose ``handle()`` is ``async def`` to await an ``ekbatan.aio``
+executor: dispatch then runs it on its handler loop, and decides success, retry and expiry from
+it exactly as for a sync one.
 """
 
 from __future__ import annotations
 
+import inspect
 import uuid
+from abc import ABC, abstractmethod
 from collections.abc import Iterable
+from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
-from typing import Any, Protocol, Self, runtime_checkable
+from typing import Any, Self
 
 from .._builder import FieldBuilder
 from ..domain import ModelEvent
@@ -72,48 +77,57 @@ class EventEnvelope[E: ModelEvent]:
         return EventEnvelopeBuilder()
 
 
-@runtime_checkable
-class EventHandler[E: ModelEvent](Protocol):
-    """Something that reacts to one event type."""
+class _HandlerCore[E: ModelEvent](ABC):
+    """Both kinds of handler but for ``handle``: Java's ``EventHandler`` methods, in its order.
 
-    @property
+    Private - a handler extends :class:`EventHandler`, or :class:`AsyncEventHandler` for an
+    ``async def handle()``.
+    """
+
+    @abstractmethod
     def name(self) -> str:
         """A cluster-stable identifier, stored on every notification row this handler creates.
 
         Not a label: renaming it creates a new subscription, and every row queued under the old
         name is stranded. Keep it stable across class and module renames, and use
-        :attr:`aliases` when you do have to change it.
+        :meth:`aliases` when you do have to change it.
         """
-        ...
 
-    @property
+    def aliases(self) -> AbstractSet[str]:
+        """Earlier names this handler still answers to, so the rows queued under a name it was
+        renamed from still find it. None unless overridden, as Java's ``Set.of()``."""
+        return frozenset()
+
+    @abstractmethod
     def event_type(self) -> type[E]:
         """The event this subscribes to. Subscription is by type; a handler that receives
         everything and filters in its own body is one that will eventually forget to."""
-        ...
 
+
+class EventHandler[E: ModelEvent](_HandlerCore[E]):
+    """Reacts to one event type - Java's ``EventHandler``, extended rather than implemented:
+    write ``name()``, ``event_type()`` and ``handle()``; ``aliases()`` is empty unless overridden.
+
+    Runs on dispatch's threads, after the action that emitted the event has committed.
+    """
+
+    @abstractmethod
     def handle(self, envelope: EventEnvelope[E]) -> None:
         """Do the work. Raising records a failure and schedules a retry."""
-        ...
 
 
-@runtime_checkable
-class AsyncEventHandler[E: ModelEvent](Protocol):
-    """A handler whose ``handle`` is a coroutine - for one that awaits an ``ekbatan.aio``
-    executor. The same ``name``, ``event_type`` and ``aliases`` as :class:`EventHandler`.
+class AsyncEventHandler[E: ModelEvent](_HandlerCore[E]):
+    """An :class:`EventHandler` whose ``handle()`` is ``async def`` - for one that awaits an
+    ``ekbatan.aio`` executor. The same ``name()``, ``aliases()`` and ``event_type()``.
 
     It runs on dispatch's handler loop (``ekbatan.events.HandlerLoop``), a batch at a time; what
     it awaits must belong to that loop. Raising records a failure and schedules a retry, as for a
     sync handler.
     """
 
-    @property
-    def name(self) -> str: ...
-
-    @property
-    def event_type(self) -> type[E]: ...
-
-    async def handle(self, envelope: EventEnvelope[E]) -> None: ...
+    @abstractmethod
+    async def handle(self, envelope: EventEnvelope[E]) -> None:
+        """Do the work, awaited. Raising records a failure and schedules a retry."""
 
 
 #: Either kind; a registry holds both.
@@ -146,18 +160,25 @@ class EventHandlerRegistry:
         return EventHandlerRegistryBuilder()
 
     def add(self, handler: AnyEventHandler) -> EventHandlerRegistry:
-        """Java's ``withHandler``, check for check."""
+        """Java's ``withHandler``, check for check.
+
+        A handler extends :class:`EventHandler` or :class:`AsyncEventHandler`, as a Java handler
+        implements ``EventHandler``; anything else is refused, as Java's compiler refuses it. So
+        is a ``handle()`` of the other kind - an ``async def`` on an :class:`EventHandler`, a plain
+        ``def`` on an :class:`AsyncEventHandler` - because dispatch runs a handler by its base.
+        """
         if handler is None:
             raise ValidationError("handler cannot be None")
-        name = handler.name
+        _refuse_a_handler_of_no_kind(handler)
+        name = handler.name()
         if not isinstance(name, str) or not name.strip():
-            raise ValidationError("handler.name cannot be blank")
-        event_type = handler.event_type
+            raise ValidationError("handler.name() cannot be blank")
+        event_type = handler.event_type()
         if event_type is None:
-            raise ValidationError("handler.event_type cannot be None")
+            raise ValidationError("handler.event_type() cannot be None")
         short_name = getattr(event_type, "__name__", None)
         if not isinstance(short_name, str) or not short_name.strip():
-            raise ValidationError("handler.event_type.__name__ cannot be blank")
+            raise ValidationError("handler.event_type().__name__ cannot be blank")
 
         self._refuse_a_taken_lookup_name(name)
 
@@ -170,12 +191,12 @@ class EventHandlerRegistry:
 
         self._types_by_short_name[short_name] = event_type
         self._by_lookup[name] = handler
-        aliases = getattr(handler, "aliases", ())
+        aliases = handler.aliases()
         if aliases is None:
-            raise ValidationError("handler.aliases cannot be None")
+            raise ValidationError("handler.aliases() cannot be None")
         for alias in aliases:
             if not isinstance(alias, str) or not alias.strip():
-                raise ValidationError("handler.aliases cannot contain blank values")
+                raise ValidationError("handler.aliases() cannot contain blank values")
             if alias == name:
                 raise ValidationError(f"Handler alias duplicates canonical name: {name}")
             self._refuse_a_taken_lookup_name(alias)
@@ -308,3 +329,24 @@ class EventHandlerRegistryBuilder:
 def _qualified(cls: type) -> str:
     """Java's ``Class.getName()``: the module and the class, to tell two same-named apart."""
     return f"{cls.__module__}.{cls.__qualname__}"
+
+
+def _refuse_a_handler_of_no_kind(handler: object) -> None:
+    """A handler is one of the two kinds, by its base, and its ``handle()`` is that kind's."""
+    what = type(handler).__qualname__
+    if not isinstance(handler, EventHandler | AsyncEventHandler):
+        raise TypeError(
+            f"{what} is not an event handler: extend EventHandler, or AsyncEventHandler for an "
+            f"async def handle()"
+        )
+    awaited = inspect.iscoroutinefunction(type(handler).handle)
+    if isinstance(handler, EventHandler) and awaited:
+        raise TypeError(
+            f"{what} extends EventHandler, but its handle() is async def: extend "
+            f"AsyncEventHandler instead"
+        )
+    if isinstance(handler, AsyncEventHandler) and not awaited:
+        raise TypeError(
+            f"{what} extends AsyncEventHandler, but its handle() is not async def: extend "
+            f"EventHandler instead"
+        )

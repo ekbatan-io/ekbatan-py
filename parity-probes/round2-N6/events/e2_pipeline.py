@@ -29,6 +29,7 @@ from ekbatan.events import (  # noqa: E402
     EventDispatch, EventFanout, EventHandlerRegistry, EventHandlingJob, HandlingConfig,
     LocalEventHandlerConfig, EventFanoutJob,
 )
+from ekbatan.events import EventHandler  # noqa: E402
 from ekbatan.ids import ShardedId  # noqa: E402
 from ekbatan.persistence import DatabaseRegistry  # noqa: E402
 from ekbatan.repository import RepositoryRegistry  # noqa: E402
@@ -147,11 +148,19 @@ CUR = MAX = 0
 LK = threading.Lock()
 
 
-class H:
+class H(EventHandler[WalletMoneyDepositedEvent]):
     def __init__(self, name, mode="ok", aliases=()):
-        self.name, self.mode, self.aliases = name, mode, aliases
-        self.event_type = WalletMoneyDepositedEvent
+        self._name, self.mode, self._aliases = name, mode, frozenset(aliases)
         self.seen = []
+
+    def name(self):
+        return self._name
+
+    def aliases(self):
+        return self._aliases
+
+    def event_type(self):
+        return WalletMoneyDepositedEvent
 
     def handle(self, env):
         global CUR, MAX

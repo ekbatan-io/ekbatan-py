@@ -25,9 +25,11 @@ from sqlalchemy import func, select
 from conftest import GLOBAL, NOT_UNDER_GEVENT, _registry, under_gevent
 from ekbatan.aio import AsyncActionExecutor, AsyncDatabaseRegistry
 from ekbatan.events import (
+    AsyncEventHandler,
     EventDispatch,
     EventEnvelope,
     EventFanout,
+    EventHandler,
     EventHandlerRegistry,
     HandlerLoop,
 )
@@ -69,14 +71,65 @@ def wired(registry: Any, clock: Any, *handlers: Any, **options: Any) -> tuple[An
     return fanout, dispatch
 
 
-class NotifyingHandler:
-    """Awaits an async executor: the shape an async handler is for."""
+class CountingSync(EventHandler[WalletMoneyDepositedEvent]):
+    def __init__(self) -> None:
+        self.calls = 0
 
-    name = "async-deposit-notification"
-    event_type = WalletMoneyDepositedEvent
+    def name(self) -> str:
+        return "counting-sync"
+
+    def event_type(self) -> type[WalletMoneyDepositedEvent]:
+        return WalletMoneyDepositedEvent
+
+    def handle(self, envelope: EventEnvelope[WalletMoneyDepositedEvent]) -> None:
+        self.calls += 1
+
+
+class CountingAsync(AsyncEventHandler[WalletMoneyDepositedEvent]):
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def name(self) -> str:
+        return "counting-async"
+
+    def event_type(self) -> type[WalletMoneyDepositedEvent]:
+        return WalletMoneyDepositedEvent
+
+    async def handle(self, envelope: EventEnvelope[WalletMoneyDepositedEvent]) -> None:
+        await asyncio.sleep(0)
+        self.calls += 1
+
+
+def test_a_sync_and_an_async_handler_in_the_method_form_both_run_through_dispatch(
+    registry, executor, wallet_repository, clock, notifications_in
+):
+    """Java's shape: a handler extends a base and answers `name()` and `event_type()`. Fan-out
+    stores `name()` on each row, dispatch builds the envelope from `event_type()`, and runs each
+    by its base - the async one on the handler loop."""
+    sync_handler, async_handler = CountingSync(), CountingAsync()
+    fanout, dispatch = wired(registry, clock, sync_handler, async_handler)
+    try:
+        a_deposit(executor, wallet_repository)
+        fanout.drain_once()
+        assert dispatch.drain_once() == 2
+
+        assert (sync_handler.calls, async_handler.calls) == (1, 1)
+        assert notifications_in() == {"SUCCEEDED": 2}
+    finally:
+        dispatch.close()
+
+
+class NotifyingHandler(AsyncEventHandler[WalletMoneyDepositedEvent]):
+    """Awaits an async executor: the shape an async handler is for."""
 
     def __init__(self, executor: AsyncActionExecutor) -> None:
         self.executor = executor
+
+    def name(self) -> str:
+        return "async-deposit-notification"
+
+    def event_type(self) -> type[WalletMoneyDepositedEvent]:
+        return WalletMoneyDepositedEvent
 
     async def handle(self, envelope: EventEnvelope[WalletMoneyDepositedEvent]) -> None:
         await self.executor.execute(
@@ -127,11 +180,16 @@ def test_an_async_handler_awaits_an_async_executor_on_the_handler_loop(
     assert not loop.running
 
 
-class Sleeping:
+class Sleeping(AsyncEventHandler[WalletMoneyDepositedEvent]):
     def __init__(self, name: str) -> None:
-        self.name = name
-        self.event_type = WalletMoneyDepositedEvent
+        self._name = name
         self.loops: list[Any] = []
+
+    def name(self) -> str:
+        return self._name
+
+    def event_type(self) -> type[WalletMoneyDepositedEvent]:
+        return WalletMoneyDepositedEvent
 
     async def handle(self, envelope: EventEnvelope[Any]) -> None:
         self.loops.append(asyncio.get_running_loop())
@@ -158,9 +216,12 @@ def test_one_batch_of_async_handlers_runs_on_one_loop_at_once(
     assert not dispatch.handler_loop.running, "the dispatch closed the loop it made"
 
 
-class Interrupting:
-    name = "interrupter"
-    event_type = WalletMoneyDepositedEvent
+class Interrupting(AsyncEventHandler[WalletMoneyDepositedEvent]):
+    def name(self) -> str:
+        return "interrupter"
+
+    def event_type(self) -> type[WalletMoneyDepositedEvent]:
+        return WalletMoneyDepositedEvent
 
     async def handle(self, envelope: EventEnvelope[Any]) -> None:
         raise KeyboardInterrupt("from a handler")
