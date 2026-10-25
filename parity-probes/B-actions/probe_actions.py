@@ -167,7 +167,7 @@ class CreateAction(Action[CountryParams, Wallet]):
 
 class DepositAction(Action[IdParams, Wallet]):
     def perform(self, principal, params):
-        w = wallet_repo.get(ShardedId[Wallet](params.wallet_id))
+        w = wallet_repo.get_by_id(ShardedId[Wallet](params.wallet_id))
         return self.plan.update(w.deposit(Decimal("5")))
 
 
@@ -178,7 +178,7 @@ class CreateAndDepositAction(Action[NoParams, Wallet]):
 
 class TouchAction(Action[IdParams, Wallet]):
     def perform(self, principal, params):
-        w = wallet_repo.get(ShardedId[Wallet](params.wallet_id))
+        w = wallet_repo.get_by_id(ShardedId[Wallet](params.wallet_id))
         return self.plan.update(w.copy().build())
 
 
@@ -223,7 +223,7 @@ class ThrowAction(Action[str, Wallet]):
 class StaleUpdateAction(Action[IdParams, Wallet]):
     def perform(self, principal, params):
         ATTEMPTS[0] += 1
-        w = wallet_repo.get(ShardedId[Wallet](params.wallet_id))
+        w = wallet_repo.get_by_id(ShardedId[Wallet](params.wallet_id))
         return self.plan.update(w.copy().version(999).build())
 
 
@@ -252,7 +252,7 @@ class PartialAction(Action[IdParams, Wallet]):
     def perform(self, principal, params):
         ATTEMPTS[0] += 1
         g = self.plan.add(new_wallet(GLOBAL))
-        mx = wallet_repo.get(ShardedId[Wallet](params.wallet_id))
+        mx = wallet_repo.get_by_id(ShardedId[Wallet](params.wallet_id))
         self.plan.update(mx.copy().version(999).build())
         return g
 
@@ -309,7 +309,7 @@ class DupEventAction(Action[CountryParams, Wallet]):
 class ReadOwnAction(Action[NoParams, str]):
     def perform(self, principal, params):
         w = self.plan.add(new_wallet(GLOBAL))
-        return fmt(wallet_repo.find(w.id) is not None)
+        return fmt(wallet_repo.find_by_id(w.id) is not None)
 
 
 class OuterAction(Action[NoParams, Wallet]):
@@ -348,7 +348,7 @@ class LatchDepositAction(Action[IdParams, Wallet]):
     def perform(self, principal, params):
         with LATCH["lock"]:
             ATTEMPTS[0] += 1
-        w = wallet_repo.get(ShardedId[Wallet](params.wallet_id))
+        w = wallet_repo.get_by_id(ShardedId[Wallet](params.wallet_id))
         with LATCH["lock"]:
             LATCH["count"] += 1
             if LATCH["count"] >= 2:
@@ -360,13 +360,13 @@ class LatchDepositAction(Action[IdParams, Wallet]):
 class ReAddAction(Action[IdParams, Wallet]):
     def perform(self, principal, params):
         ATTEMPTS[0] += 1
-        w = wallet_repo.get(ShardedId[Wallet](params.wallet_id))
+        w = wallet_repo.get_by_id(ShardedId[Wallet](params.wallet_id))
         return self.plan.add(w.copy().version(1).build())
 
 
 class UpdateThenAddAction(Action[IdParams, Wallet]):
     def perform(self, principal, params):
-        w = wallet_repo.get(ShardedId[Wallet](params.wallet_id))
+        w = wallet_repo.get_by_id(ShardedId[Wallet](params.wallet_id))
         self.plan.update(w.deposit(Decimal("1")))
         return self.plan.add(new_wallet(GLOBAL))
 
@@ -786,7 +786,7 @@ def probe() -> None:
     e29 = catching(lambda: executor.execute(OuterAction, NoParams(), principal=alice))
     p("s29.outer_exception", err(e29))
     p("s29.wallets", wallet_repository(GLOBAL))
-    p("s29.inner_wallet_committed", wallet_repo.find(INNER_ID[0]) is not None)
+    p("s29.inner_wallet_committed", wallet_repo.find_by_id(INNER_ID[0]) is not None)
     p("s29.outbox_rows", outbox(GLOBAL))
 
     # S30 plan outside execution and on another thread

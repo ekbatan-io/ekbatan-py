@@ -55,7 +55,7 @@ def test_state_and_events_commit_together(executor, wallet_repository, outbox, r
         ),
     )
 
-    assert wallet_repository.get(wallet.id).balance == Decimal("150.0000")
+    assert wallet_repository.get_by_id(wallet.id).balance == Decimal("150.0000")
     assert len(commits) == 1, "one unit of work is one transaction, whatever it touched"
 
     rows = outbox()
@@ -95,8 +95,8 @@ def test_a_failed_unit_of_work_writes_neither(executor, wallet_repository, outbo
             ),
         )
 
-    assert wallet_repository.get(wallet.id).balance == Decimal("100.0000")
-    assert wallet_repository.get(wallet.id).version == 1
+    assert wallet_repository.get_by_id(wallet.id).balance == Decimal("100.0000")
+    assert wallet_repository.get_by_id(wallet.id).version == 1
     assert len(outbox()) == before, "no event for a change that did not happen"
 
 
@@ -113,7 +113,9 @@ def test_a_failure_after_staging_discards_the_plan(executor, wallet_repository, 
             ),
         )
 
-    assert wallet_repository.get(wallet.id).balance == Decimal("100.0000"), "staging is not writing"
+    assert wallet_repository.get_by_id(wallet.id).balance == Decimal("100.0000"), (
+        "staging is not writing"
+    )
     assert len(outbox()) == before
 
 
@@ -134,8 +136,8 @@ def test_events_of_one_unit_of_work_share_an_action_id(executor, wallet_reposito
     assert len({r["action_id"] for r in transfer}) == 1, "one invocation, one action id"
     assert len({r["id"] for r in transfer}) == 2, "each event is its own row"
 
-    assert wallet_repository.get(source.id).balance == Decimal("75.0000")
-    assert wallet_repository.get(destination.id).balance == Decimal("25.0000")
+    assert wallet_repository.get_by_id(source.id).balance == Decimal("75.0000")
+    assert wallet_repository.get_by_id(destination.id).balance == Decimal("25.0000")
 
 
 def test_the_rows_of_one_invocation_share_its_context_and_do_not_promise_an_order(
@@ -200,7 +202,7 @@ def test_a_unit_of_work_that_emits_nothing_still_writes_a_sentinel(
     assert sentinel["model_type"] is None
     assert sentinel["payload"] is None
     assert sentinel["event_date"] is not None
-    assert len(notification_repository.all()) == 1, "the entity itself was written"
+    assert len(notification_repository.find_all()) == 1, "the entity itself was written"
 
 
 def test_the_sentinels_payload_is_sql_null_not_json_null(executor, registry):
@@ -240,7 +242,7 @@ def test_a_no_op_close_changes_nothing_and_emits_nothing(executor, wallet_reposi
         WalletCloseAction.Params(wallet_id=wallet.id),
     )
 
-    again = wallet_repository.get(wallet.id)
+    again = wallet_repository.get_by_id(wallet.id)
     assert again.state is WalletState.CLOSED
     assert again.version == closed.version, "closing a closed wallet moves nothing"
 

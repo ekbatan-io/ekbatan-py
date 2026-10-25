@@ -73,7 +73,7 @@ def test_updating_many_rows_is_one_statement_not_one_each(wallet_repository, sql
         "batch has to become one statement joined against a derived table, or fifty rows cost "
         "fifty round trips"
     )
-    assert {w.balance for w in wallet_repository.all()} == {Decimal("2.0000")}
+    assert {w.balance for w in wallet_repository.find_all()} == {Decimal("2.0000")}
 
 
 def test_a_large_batch_is_still_one_statement(registry, clock, sql):
@@ -87,7 +87,7 @@ def test_a_large_batch_is_still_one_statement(registry, clock, sql):
     wallet_repository.update_all([w.evolve(balance=Decimal("3.00")) for w in stored])
 
     assert len(kind(sql, "UPDATE")) == 1, "35 rows, one UPDATE"
-    assert wallet_repository.count(WALLETS.c.balance == Decimal("3.00")) == 35, (
+    assert wallet_repository.count_where(WALLETS.c.balance == Decimal("3.00")) == 35, (
         "and every one landed"
     )
 
@@ -109,7 +109,7 @@ def test_a_lookup_of_many_ids_is_one_statement_per_shard(wallet_repository, sql)
     stored = wallet_repository.add_all(some_wallets(30))
     sql.clear()
 
-    found = wallet_repository.find_many([w.id for w in stored])
+    found = wallet_repository.find_all_by_ids([w.id for w in stored])
 
     assert len(found) == 30
     assert len(kind(sql, "SELECT")) == 1, "not one query per id"
@@ -120,7 +120,7 @@ def test_a_lookup_collapses_duplicate_ids(wallet_repository, sql):
     asked = [w.id for w in stored] * 4
     sql.clear()
 
-    found = wallet_repository.find_many(asked)
+    found = wallet_repository.find_all_by_ids(asked)
 
     assert len(found) == 3, "asking four times for the same id is an accident, not an instruction"
     statement = kind(sql, "SELECT")[0][0]
@@ -132,7 +132,7 @@ def test_a_lookup_of_many_ids_is_one_query_per_shard(registry, clock, sql):
     stored = wallet_repository.add_all(some_wallets(25))
     sql.clear()
 
-    assert len(wallet_repository.find_many([w.id for w in stored])) == 25
+    assert len(wallet_repository.find_all_by_ids([w.id for w in stored])) == 25
     assert len(kind(sql, "SELECT")) == 1, "25 ids, one SELECT - as findAllByIds does"
 
 
@@ -180,7 +180,7 @@ def test_reads_do_not_touch_a_shard_they_have_no_business_on(sharded_registry, c
             lambda conn, cur, stmt, params, ctx, many, s=str(shard): touched.append(s),
         )
 
-    wallet_repository.find(wallet.id)
+    wallet_repository.find_by_id(wallet.id)
     assert touched == ["1:0"], "the id said which database; nothing else was asked"
 
 
@@ -269,12 +269,12 @@ def test_a_reading_write_asks_for_returning_and_a_no_result_one_does_not(
         "the thousand-row import whose rows nobody reads must not put them on the wire"
     )
 
-    stored = wallet_repository.all()
+    stored = wallet_repository.find_all()
     sql.clear()
     wallet_repository.update_all([w.evolve(balance=Decimal("2.00")) for w in stored])
     assert ("RETURNING" in kind(sql, "UPDATE")[0][0].upper()) is updates_back
 
-    stored = wallet_repository.all()
+    stored = wallet_repository.find_all()
     sql.clear()
     wallet_repository.update_all_no_result([w.evolve(balance=Decimal("3.00")) for w in stored])
     assert "RETURNING" not in kind(sql, "UPDATE")[0][0].upper()
@@ -302,7 +302,7 @@ def test_a_write_with_no_returning_still_costs_one_statement(wallet_repository, 
     wallet_repository.add_all_no_result(some_wallets(40))
     assert len(kind(sql, "INSERT")) == 1
 
-    stored = wallet_repository.all()
+    stored = wallet_repository.find_all()
     sql.clear()
     wallet_repository.update_all_no_result([w.evolve(balance=Decimal("5.00")) for w in stored])
     assert len(kind(sql, "UPDATE")) == 1

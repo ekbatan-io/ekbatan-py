@@ -111,7 +111,7 @@ def a3(tm, widgets, ex, clock) -> None:
     with tm.transaction():
         widgets.add(w)
         p("a3.repo_add_in_outer_visible_outside", yn(widget_count(f"id = '{wid(w)}'") == 1))
-        p("a3.repo_find_in_outer_sees_outer_row", yn(widgets.find(w.id) is not None))
+        p("a3.repo_find_in_outer_sees_outer_row", yn(widgets.find_by_id(w.id) is not None))
         p("a3.repo_tx_db_else_db_sees_outer_row", yn(_tx_else_count(widgets, w) == 1))
         try:
             ex.execute(WidgetRenameAction, RenameParams(id=w.id.value, name="renamed"))

@@ -152,7 +152,7 @@ def each_door(registry: DatabaseRegistry, wallet_repository: Any, known: Wallet)
         "transaction": lambda: manager.transaction().__enter__(),
         "connection": lambda: manager.connection().__enter__(),
         "readonly connection": lambda: manager.connection(readonly=True).__enter__(),
-        "repository read (db)": lambda: wallet_repository.find(known.id),
+        "repository read (db)": lambda: wallet_repository.find_by_id(known.id),
         "repository readonly_db": lambda: wallet_repository.readonly_db().__enter__(),
         "repository write (tx_db_else_db)": lambda: wallet_repository.add(a_wallet()),
     }
@@ -189,7 +189,7 @@ def test_a_sync_registry_built_before_fork_is_refused_in_the_child(backend, fork
         assert len(said) == 6
         assert said[0].startswith(f"ForkedProcessError: {registry.default!r} was created")
         # The parent is untouched: its pool still works, reads and writes.
-        assert wallet_repository.find(known.id) == known
+        assert wallet_repository.find_by_id(known.id) == known
         with registry.default.transaction():
             wallet_repository.add(a_wallet())
         assert count(registry) == 2
@@ -233,7 +233,7 @@ def test_an_async_registry_built_before_fork_is_refused_in_the_child(backend, fo
                 tries = {
                     "transaction": lambda: manager.transaction().__aenter__(),
                     "connection": lambda: manager.connection().__aenter__(),
-                    "repository read": lambda: wallet_repository.find(known.id),
+                    "repository read": lambda: wallet_repository.find_by_id(known.id),
                     "repository write": lambda: wallet_repository.add(a_wallet()),
                 }
                 said: list[str] = []
@@ -248,7 +248,7 @@ def test_an_async_registry_built_before_fork_is_refused_in_the_child(backend, fo
 
             said = in_a_child(lambda: asyncio.run(doors()))
             # The parent's pool, on the parent's loop, still works.
-            assert await wallet_repository.find(known.id) == known
+            assert await wallet_repository.find_by_id(known.id) == known
             async with manager.transaction():
                 await wallet_repository.add(a_wallet())
             async with manager.connection(readonly=True) as conn:
@@ -346,7 +346,7 @@ def test_closing_a_sync_registry_in_the_child_is_refused_and_leaves_the_parent_a
         assert said[1].startswith(f"ForkedProcessError: {registry.default!r} was created")
         with registry.default.connection() as conn:
             assert session(conn, dialect) == before, "the child closed the parent's connection"
-        assert wallet_repository.find(known.id) == known
+        assert wallet_repository.find_by_id(known.id) == known
     finally:
         registry.close()
 
@@ -383,7 +383,7 @@ def test_closing_an_async_registry_in_the_child_is_refused_and_leaves_the_parent
             async with registry.default.connection() as conn:
                 after = await async_session(conn, dialect)
             assert after == before, "the child closed the parent's connection"
-            assert await wallet_repository.find(known.id) == known
+            assert await wallet_repository.find_by_id(known.id) == known
             assert said[0].startswith(f"ForkedProcessError: {registry!r} was created")
             assert said[1].startswith(f"ForkedProcessError: {registry.default!r} was created")
             return said
@@ -717,13 +717,13 @@ def test_an_async_handler_that_calls_the_sync_api_on_the_handler_loop_is_refused
     try:
 
         async def handler_body() -> Any:
-            return wallet_repository.find(known.id)  # sync, on the handler loop's own thread
+            return wallet_repository.find_by_id(known.id)  # sync, on the handler loop's own thread
 
         with pytest.raises(BlockingCallError):
             loop.run(handler_body())
 
         async def handler_body_done_right() -> Any:
-            return await asyncio.to_thread(wallet_repository.find, known.id)
+            return await asyncio.to_thread(wallet_repository.find_by_id, known.id)
 
         assert loop.run(handler_body_done_right()) == known
     finally:

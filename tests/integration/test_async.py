@@ -265,12 +265,12 @@ def test_a_read_across_shards_asks_them_at_once_and_keeps_the_sync_order(backend
             seen: dict[str, Any] = {}
             with slow_reads({names[GLOBAL]: 0.45, names[MEXICO]: 0.3}, seen):
                 started = time.monotonic()
-                found = await wallet_repository.find_where()
+                found = await wallet_repository.find_all()
                 took = time.monotonic() - started
                 counted = await wallet_repository.count()
                 anywhere = await wallet_repository.exists_where(WALLETS.c.id == there.id.value)
                 one = await wallet_repository.find_one_where(WALLETS.c.id == there.id.value)
-                many = await wallet_repository.find_many([there.id, here.id])
+                many = await wallet_repository.find_all_by_ids([there.id, here.id])
 
         assert seen["most"] == 2, "the two shards were read at the same time"
         assert took < 0.7, f"{took:.2f}s - one after another would be 0.75s or more"
@@ -301,11 +301,11 @@ def test_one_failing_shard_fails_the_read_names_the_shard_and_cancels_the_rest(b
             with slow_reads({names[GLOBAL]: 5}, seen):
                 started = time.monotonic()
                 with pytest.raises(sqlalchemy.exc.DBAPIError) as failed:
-                    await w.find_where()
+                    await w.find_all()
                 took = time.monotonic() - started
 
             assert checked_out(registry) == 0, "both connections went back"
-            assert len(await w.find_where(shard=GLOBAL)) == 1, "and the first shard still reads"
+            assert len(await w.find_all(shard=GLOBAL)) == 1, "and the first shard still reads"
             return failed.value, seen, took
 
     error, seen, took = asyncio.run(scenario())
@@ -324,7 +324,7 @@ def test_one_failing_shard_fails_the_read_names_the_shard_and_cancels_the_rest(b
             Wallet, WALLETS, sync_registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
         )
         with pytest.raises(type(error)):
-            sync.find_where()
+            sync.find_all()
     finally:
         sync_registry.close()
 
@@ -395,7 +395,7 @@ class SlowDepositAction(TwinAction[WalletDepositMoneyAction.Params, Wallet]):
     async def perform(
         self, principal: str | None, params: WalletDepositMoneyAction.Params
     ) -> Wallet:
-        wallet = await self.wallet_repository.get(params.wallet_id)
+        wallet = await self.wallet_repository.get_by_id(params.wallet_id)
         await asyncio.sleep(5)
         return self.plan.update(wallet.deposit(params.amount))
 
@@ -438,7 +438,7 @@ def test_a_timeout_around_a_unit_of_work_commits_nothing(backend, clock, where):
 
             assert registry.default.current() is None, "nothing is left ambient"
             assert checked_out(registry) == 0, "the connection went back"
-            assert (await wallet_repository.get(stored.id)).balance == Decimal("10.0000"), (
+            assert (await wallet_repository.get_by_id(stored.id)).balance == Decimal("10.0000"), (
                 "not committed"
             )
             async with registry.default.connection() as conn:
@@ -533,8 +533,8 @@ class ReadsTwoAtOnceAction(TwinAction[tuple[str, str], tuple[Wallet, Wallet]]):
 
     async def perform(self, principal: str | None, params: Any) -> tuple[Wallet, Wallet]:
         first, second = await asyncio.gather(
-            self.wallet_repository.get(params["first"]),
-            self.wallet_repository.get(params["second"]),
+            self.wallet_repository.get_by_id(params["first"]),
+            self.wallet_repository.get_by_id(params["second"]),
         )
         return first, second
 

@@ -236,7 +236,7 @@ def test_one_update_writes_a_column_mapped_from_a_field_of_another_name(people, 
         people.update_no_result(changed(stored, 1))
 
     assert stored_rows(people)[stored.id.value] == (2, "renamed-1", "second-1")
-    found = people.get(stored.id)
+    found = people.get_by_id(stored.id)
     assert (found.nick, found.klass) == ("renamed-1", "second-1")
 
 

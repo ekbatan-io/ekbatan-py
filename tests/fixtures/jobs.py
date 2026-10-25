@@ -43,7 +43,7 @@ class WalletStipendJob(DistributedJob):
 
     def execute(self, ctx: ExecutionContext) -> None:
         self.runs += 1
-        for wallet in self.wallet_repository.all():
+        for wallet in self.wallet_repository.find_all():
             if wallet.state is WalletState.OPENED:
                 self.executor.execute(
                     WalletDepositMoneyAction,

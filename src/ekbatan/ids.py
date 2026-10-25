@@ -6,7 +6,7 @@ too - and, when the id carries shard bits, so that routing can be read off the i
 asking anything else::
 
     def perform(self, principal: str | None, params: Params) -> Wallet:
-        wallet = self.wallet_repository.get(params.wallet_id)  # ShardedId[Wallet], not UUID
+        wallet = self.wallet_repository.get_by_id(params.wallet_id)  # ShardedId[Wallet], not UUID
 
 Spelled as Java spells them, with the model as the type argument::
 

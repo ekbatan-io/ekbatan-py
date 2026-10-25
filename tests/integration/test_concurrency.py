@@ -148,7 +148,7 @@ def test_a_pool_worker_does_not_carry_a_transaction_into_its_next_task(registry)
 def wallets_of(registry):
     from fixtures.schema import WALLETS
 
-    return WalletRepository(Wallet, WALLETS, registry).all()
+    return WalletRepository(Wallet, WALLETS, registry).find_all()
 
 
 def test_concurrent_units_of_work_all_commit_and_none_interleave(registry, executor, dialect):
@@ -214,7 +214,7 @@ def test_concurrent_updates_to_one_row_leave_exactly_one_winner_per_version(
 
     outcomes = _in_parallel(deposit)
 
-    final = wallet_repository.get(wallet.id)
+    final = wallet_repository.get_by_id(wallet.id)
     assert outcomes.count("ok") >= 1
     assert final.version == 1 + outcomes.count("ok"), (
         "the version moved once per committed deposit, and no more"

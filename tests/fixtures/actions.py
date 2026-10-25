@@ -55,7 +55,7 @@ class WalletDepositMoneyAction(Action["WalletDepositMoneyAction.Params", Wallet]
         self.wallet_repository = wallet_repository
 
     def perform(self, principal: str | None, params: Params) -> Wallet:
-        wallet = self.wallet_repository.get(params.wallet_id)
+        wallet = self.wallet_repository.get_by_id(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 
 
@@ -71,7 +71,7 @@ class WalletCloseAction(Action["WalletCloseAction.Params", Wallet]):
         self.wallet_repository = wallet_repository
 
     def perform(self, principal: str | None, params: Params) -> Wallet:
-        wallet = self.wallet_repository.get(params.wallet_id)
+        wallet = self.wallet_repository.get_by_id(params.wallet_id)
         closed = wallet.close()
         # An already-closed wallet comes back unchanged, so there is nothing to stage - and
         # therefore no event. The invocation is still recorded.
@@ -95,8 +95,8 @@ class WalletTransferMoneyAction(Action["WalletTransferMoneyAction.Params", tuple
         self.wallet_repository = wallet_repository
 
     def perform(self, principal: str | None, params: Params) -> tuple[Wallet, Wallet]:
-        source = self.wallet_repository.get(params.from_wallet_id)
-        destination = self.wallet_repository.get(params.to_wallet_id)
+        source = self.wallet_repository.get_by_id(params.from_wallet_id)
+        destination = self.wallet_repository.get_by_id(params.to_wallet_id)
         if source.currency != destination.currency:
             raise ValidationError(
                 f"cannot transfer {source.currency} into a {destination.currency} wallet"
@@ -143,7 +143,7 @@ class WalletDepositThenFailAction(Action[WalletDepositMoneyAction.Params, Wallet
         self.wallet_repository = wallet_repository
 
     def perform(self, principal: str | None, params: WalletDepositMoneyAction.Params) -> Wallet:
-        wallet = self.wallet_repository.get(params.wallet_id)
+        wallet = self.wallet_repository.get_by_id(params.wallet_id)
         self.plan.update(wallet.deposit(params.amount))
         raise ValidationError("changed my mind")
 
@@ -187,7 +187,7 @@ class AsyncWalletDepositMoneyAction(TwinAction[WalletDepositMoneyAction.Params, 
     async def perform(
         self, principal: str | None, params: WalletDepositMoneyAction.Params
     ) -> Wallet:
-        wallet = await self.wallet_repository.get(params.wallet_id)
+        wallet = await self.wallet_repository.get_by_id(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 
 
@@ -198,7 +198,7 @@ class AsyncWalletCloseAction(TwinAction[WalletCloseAction.Params, Wallet]):
         self.wallet_repository = wallet_repository
 
     async def perform(self, principal: str | None, params: WalletCloseAction.Params) -> Wallet:
-        wallet = await self.wallet_repository.get(params.wallet_id)
+        wallet = await self.wallet_repository.get_by_id(params.wallet_id)
         closed = wallet.close()
         return self.plan.update(closed) if closed is not wallet else wallet
 
@@ -214,8 +214,8 @@ class AsyncWalletTransferMoneyAction(
     async def perform(
         self, principal: str | None, params: WalletTransferMoneyAction.Params
     ) -> tuple[Wallet, Wallet]:
-        source = await self.wallet_repository.get(params.from_wallet_id)
-        destination = await self.wallet_repository.get(params.to_wallet_id)
+        source = await self.wallet_repository.get_by_id(params.from_wallet_id)
+        destination = await self.wallet_repository.get_by_id(params.to_wallet_id)
         if source.currency != destination.currency:
             raise ValidationError(
                 f"cannot transfer {source.currency} into a {destination.currency} wallet"
@@ -251,6 +251,6 @@ class AsyncWalletDepositThenFailAction(TwinAction[WalletDepositMoneyAction.Param
     async def perform(
         self, principal: str | None, params: WalletDepositMoneyAction.Params
     ) -> Wallet:
-        wallet = await self.wallet_repository.get(params.wallet_id)
+        wallet = await self.wallet_repository.get_by_id(params.wallet_id)
         self.plan.update(wallet.deposit(params.amount))
         raise ValidationError("changed my mind")

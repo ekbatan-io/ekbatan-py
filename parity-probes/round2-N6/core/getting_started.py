@@ -26,7 +26,7 @@ class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
     def __init__(self, registry: DatabaseRegistry) -> None:
         super().__init__(Wallet, WALLETS, registry)
     def find_all_by_owner(self, owner_id):
-        return self.find_where(WALLETS.c.owner_id == owner_id)
+        return self.find_all_where(WALLETS.c.owner_id == owner_id)
 
 layout = ShardingConfig.single("sqlite://") if hasattr(ShardingConfig, "single") else None
 print("PROBE layout-helper ShardingConfig.single exists:", layout is not None)
@@ -49,7 +49,7 @@ class WalletDepositMoneyAction(Action[DepositParams, Wallet]):
         super().__init__(clock)
         self.wallet_repository = wallet_repository
     def perform(self, principal, params):
-        wallet = self.wallet_repository.get(params.wallet_id)
+        wallet = self.wallet_repository.get_by_id(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 
 # getting-started.md:172-180 ActionExecutor(...) keyword constructor

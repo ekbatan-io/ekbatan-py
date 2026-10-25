@@ -137,7 +137,7 @@ class Repository[M: Persistable[Any, Any]](Protocol):
     anything that has these members can be registered, as anything implementing Java's interface
     can - a repository that is not backed by SQL at all among them.
 
-    Java's ten methods, in snake case, with ``find_all`` spelled ``all``. Three more that this
+    Java's ten methods, in snake case. Three more that this
     port's plumbing reads where Java's reads something else: ``model_type``, because the registry
     here learns the type from the repository rather than being handed it; ``sharding``, which is
     Java's ``shardingStrategy()``; and ``shard_of``, where Java's executor asks the strategy
@@ -192,7 +192,7 @@ class Repository[M: Persistable[Any, Any]](Protocol):
     def update_all_no_result(self, models: Sequence[M]) -> None: ...
 
     @abstractmethod
-    def all(self, *, shard: ShardIdentifier | None = None) -> list[M]: ...
+    def find_all(self, *, shard: ShardIdentifier | None = None) -> list[M]: ...
 
 
 class _RepositoryCore[M: Persistable[Any, Any], R: Mapping[str, Any], K](ABC):
@@ -793,27 +793,27 @@ class _RepositoryCore[M: Persistable[Any, Any], R: Mapping[str, Any], K](ABC):
         if len(rows) > 1:
             raise ValidationError(
                 f"find_one_where matched more than one {self.model_type.__name__}: the "
-                f"predicate is not unique. Use find_where when several rows are expected."
+                f"predicate is not unique. Use find_all_where when several rows are expected."
             )
         return self._read_back(rows[0]) if rows else None
 
     def _keys_by_shard(self, keys: Iterable[K]) -> dict[ShardIdentifier, list[Any]]:
-        """``find_many``'s keys, duplicates dropped, grouped by the shard each lives on - in the
-        order each shard was first named."""
+        """``find_all_by_ids``'s keys, duplicates dropped, grouped by the shard each lives on - in
+        the order each shard was first named."""
         by_shard: dict[ShardIdentifier, list[Any]] = {}
         for key in dict.fromkeys(_to_column(k) for k in keys):
             by_shard.setdefault(self.shard_for(key), []).append(key)
         return by_shard
 
     def _among(self, conn: Any, keys: Sequence[Any]) -> Any:
-        """``find_many``'s statement for one shard's keys."""
+        """``find_all_by_ids``'s statement for one shard's keys."""
         return select(self.table).where(*self._live(self._id_among(conn, keys)))
 
     def _count(self, *criteria: ColumnElement[bool]) -> Any:
         return select(func.count()).select_from(self.table).where(*self._live(*criteria))
 
     def _found(self, found: M | None, key: K) -> M:
-        """What ``get`` makes of ``find``'s answer: the row, or a refusal naming it."""
+        """What ``get_by_id`` makes of ``find_by_id``'s answer: the row, or a refusal naming it."""
         if found is None:
             raise EntityNotFoundError(self.model_type.__name__, key)
         return found
@@ -1058,18 +1058,19 @@ class AbstractRepository[M: Persistable[Any, Any], R: Mapping[str, Any], K](
 
     # ------------------------------------------------------------------ reads
 
-    def find(self, key: K) -> M | None:
-        """The row, or ``None``. The lookup that treats absence as ordinary."""
+    def find_by_id(self, key: K) -> M | None:
+        """The row, or ``None``. The lookup that treats absence as ordinary - Java's ``findById``,
+        with ``None`` where Java has an empty ``Optional``."""
         stmt = self._by_id(key)
         with self._reader(key=key) as conn:
             row = conn.execute(stmt).first()
         return self._read_back(row) if row is not None else None
 
-    def get(self, key: K) -> M:
+    def get_by_id(self, key: K) -> M:
         """The row, or raise. The lookup for callers that cannot continue without it."""
-        return self._found(self.find(key), key)
+        return self._found(self.find_by_id(key), key)
 
-    def find_many(self, keys: Iterable[K]) -> list[M]:
+    def find_all_by_ids(self, keys: Iterable[K]) -> list[M]:
         """The rows that exist, in no promised order.
 
         Duplicates are collapsed before the query - asking twice for the same id is a caller's
@@ -1084,14 +1085,21 @@ class AbstractRepository[M: Persistable[Any, Any], R: Mapping[str, Any], K](
 
         return [model for found in self._on_each(list(by_shard), read) for model in found]
 
-    def find_where(
-        self, *criteria: ColumnElement[bool], shard: ShardIdentifier | None = None
+    def find_all_where(
+        self,
+        condition: ColumnElement[bool],
+        *more: ColumnElement[bool],
+        shard: ShardIdentifier | None = None,
     ) -> list[M]:
-        stmt = self._where(*criteria)
+        """Live rows matching every condition, on the shard named or on every shard."""
+        stmt = self._where(condition, *more)
         return self._read_all(self._read(stmt, shard))
 
     def find_one_where(
-        self, *criteria: ColumnElement[bool], shard: ShardIdentifier | None = None
+        self,
+        condition: ColumnElement[bool],
+        *more: ColumnElement[bool],
+        shard: ShardIdentifier | None = None,
     ) -> M | None:
         """The one row matching, or ``None``. For a predicate you believe is unique.
 
@@ -1102,7 +1110,7 @@ class AbstractRepository[M: Persistable[Any, Any], R: Mapping[str, Any], K](
         picking arbitrarily, and whoever wrote a predicate they thought was unique is exactly
         the person who will not notice that it was not.
         """
-        stmt = self._one_where(*criteria)
+        stmt = self._one_where(condition, *more)
 
         def read(each: ShardIdentifier) -> M | None:
             with self._reader(shard=each) as conn:
@@ -1110,16 +1118,20 @@ class AbstractRepository[M: Persistable[Any, Any], R: Mapping[str, Any], K](
 
         return self._first_answer(self._shards(shard), read)
 
-    def all(self, *, shard: ShardIdentifier | None = None) -> list[M]:
-        return self.find_where(shard=shard)
+    def find_all(self, *, shard: ShardIdentifier | None = None) -> list[M]:
+        """Every live row, on the shard named or on every shard."""
+        return self._read_all(self._read(self._where(), shard))
 
-    def exists(self, key: K) -> bool:
+    def exists_by_id(self, key: K) -> bool:
         stmt = self._presence(self.id_column == _to_column(key))
         with self._reader(key=key) as conn:
             return conn.execute(stmt).first() is not None
 
     def exists_where(
-        self, *criteria: ColumnElement[bool], shard: ShardIdentifier | None = None
+        self,
+        condition: ColumnElement[bool],
+        *more: ColumnElement[bool],
+        shard: ShardIdentifier | None = None,
     ) -> bool:
         """Whether any row matches - which is not the same question as how many do.
 
@@ -1127,7 +1139,7 @@ class AbstractRepository[M: Persistable[Any, Any], R: Mapping[str, Any], K](
         million rows that is a million rows of work for one bit of information, and it is the
         shape a "does this customer have any orders" check most often takes.
         """
-        stmt = self._presence(*criteria)
+        stmt = self._presence(condition, *more)
 
         def read(each: ShardIdentifier) -> bool | None:
             with self._reader(shard=each) as conn:
@@ -1135,8 +1147,18 @@ class AbstractRepository[M: Persistable[Any, Any], R: Mapping[str, Any], K](
 
         return self._first_answer(self._shards(shard), read) is not None
 
-    def count(self, *criteria: ColumnElement[bool], shard: ShardIdentifier | None = None) -> int:
-        return sum(int(r[0]) for r in self._read(self._count(*criteria), shard))
+    def count(self, *, shard: ShardIdentifier | None = None) -> int:
+        """How many live rows there are, on the shard named or on every shard."""
+        return sum(int(r[0]) for r in self._read(self._count(), shard))
+
+    def count_where(
+        self,
+        condition: ColumnElement[bool],
+        *more: ColumnElement[bool],
+        shard: ShardIdentifier | None = None,
+    ) -> int:
+        """How many live rows match every condition, on the shard named or on every shard."""
+        return sum(int(r[0]) for r in self._read(self._count(condition, *more), shard))
 
     def _read(self, stmt: Any, shard: ShardIdentifier | None) -> list[Row[Any]]:
         """Run a read on one shard, or on every shard when none is named.

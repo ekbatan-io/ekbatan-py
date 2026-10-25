@@ -119,7 +119,7 @@ def test_an_action_can_be_run_by_type(registry, clock, wallet_repository, notifi
     )
 
     assert deposited.balance == Decimal("15.00")
-    assert wallet_repository.get(wallet.id).balance == Decimal("15.0000")
+    assert wallet_repository.get_by_id(wallet.id).balance == Decimal("15.0000")
 
 
 def test_an_instance_is_refused_and_the_message_says_what_to_do(executor):

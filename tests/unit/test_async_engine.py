@@ -215,9 +215,10 @@ def test_what_waits_on_the_database_is_a_coroutine_and_nothing_else_is():
     from ekbatan.repository import AbstractRepository
 
     waits = {
-        "add", "add_all", "add_all_no_result", "add_no_result", "all", "count", "exists",
-        "exists_where", "find", "find_many", "find_one_where", "find_where", "get", "update",
-        "update_all", "update_all_no_result", "update_no_result",
+        "add", "add_all", "add_all_no_result", "add_no_result", "count", "count_where",
+        "exists_by_id", "exists_where", "find_all", "find_all_by_ids", "find_all_where",
+        "find_by_id", "find_one_where", "get_by_id", "update", "update_all",
+        "update_all_no_result", "update_no_result",
     }  # fmt: skip
     for name in public(AbstractRepository):
         member = getattr(AbstractAsyncRepository, name)

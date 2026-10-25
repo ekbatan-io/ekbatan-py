@@ -11,5 +11,5 @@ svc.executor.execute(WalletDepositMoneyAction, DepositParams(wallet_id=w.id, amo
 with svc.registry.default.connection() as c:
     for r in c.execute(select(EVENTS).order_by(EVENTS.c.event_date)).mappings():
         print("PROBE row:", {k: r[k] for k in ("action_name", "model_type", "event_type", "payload", "action_params", "namespace")})
-probe("wallets version after deposit", lambda: svc.wallet_repository.get(w.id).version)
+probe("wallets version after deposit", lambda: svc.wallet_repository.get_by_id(w.id).version)
 svc.close()

@@ -57,7 +57,7 @@ def spoil(registry, statement) -> None:
 def test_a_row_the_model_refuses_is_refused_where_it_is_read(registry, wallet_repository):
     kept = wallet_repository.add(a_wallet())
     spoiled = wallet_repository.add(a_wallet())
-    assert wallet_repository.get(spoiled.id).balance == Decimal(10), "a good row reads back"
+    assert wallet_repository.get_by_id(spoiled.id).balance == Decimal(10), "a good row reads back"
 
     spoil(
         registry,
@@ -65,10 +65,12 @@ def test_a_row_the_model_refuses_is_refused_where_it_is_read(registry, wallet_re
     )
 
     with pytest.raises(ValidationError, match="balance cannot be negative"):
-        wallet_repository.get(spoiled.id)
+        wallet_repository.get_by_id(spoiled.id)
     with pytest.raises(ValidationError, match="balance cannot be negative"):
-        wallet_repository.find_many([kept.id, spoiled.id])
-    assert wallet_repository.get(kept.id).balance == Decimal(10), "only the bad row is refused"
+        wallet_repository.find_all_by_ids([kept.id, spoiled.id])
+    assert wallet_repository.get_by_id(kept.id).balance == Decimal(10), (
+        "only the bad row is refused"
+    )
 
 
 def test_every_read_path_checks_the_rows_it_makes(registry, wallet_repository):
@@ -78,10 +80,10 @@ def test_every_read_path_checks_the_rows_it_makes(registry, wallet_repository):
         update(WALLETS).where(WALLETS.c.id == stored.id.value).values(balance=Decimal("-1")),
     )
     for read in (
-        lambda: wallet_repository.find(stored.id),
-        lambda: wallet_repository.find_where(WALLETS.c.id == stored.id.value),
+        lambda: wallet_repository.find_by_id(stored.id),
+        lambda: wallet_repository.find_all_where(WALLETS.c.id == stored.id.value),
         lambda: wallet_repository.find_one_where(WALLETS.c.id == stored.id.value),
-        lambda: wallet_repository.all(),
+        lambda: wallet_repository.find_all(),
     ):
         with pytest.raises(ValidationError, match="balance cannot be negative"):
             read()
@@ -94,7 +96,7 @@ def test_an_entity_s_validate_runs_on_load(registry, notes, wallet_repository):
             id=Id[Notification].random(), wallet_id=wallet.id, kind="email", recipient="ada@x"
         )
     )
-    assert notes.get(note.id).recipient == "ada@x"
+    assert notes.get_by_id(note.id).recipient == "ada@x"
 
     spoil(
         registry,
@@ -102,4 +104,4 @@ def test_an_entity_s_validate_runs_on_load(registry, notes, wallet_repository):
     )
 
     with pytest.raises(ValidationError, match="recipient cannot be blank"):
-        notes.get(note.id)
+        notes.get_by_id(note.id)

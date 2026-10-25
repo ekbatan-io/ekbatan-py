@@ -60,12 +60,12 @@ def main() -> None:
         s.add(dB)
         o.p("add_B.on_B", count_on(B, dB.id))
         o.p("add_B.on_A", count_on(A, dB.id))
-        o.p("findById_B", jbool(s.find(dB.id) is not None))
-        o.p("existsById_B", jbool(s.exists(dB.id)))
+        o.p("findById_B", jbool(s.find_by_id(dB.id) is not None))
+        o.p("existsById_B", jbool(s.exists_by_id(dB.id)))
         dU = on(U)
         s.add(dU)
         o.p("add_unregistered.on_A", count_on(A, dU.id))
-        o.p("findById_unregistered", jbool(s.find(dU.id) is not None))
+        o.p("findById_unregistered", jbool(s.find_by_id(dU.id) is not None))
 
         dA, dB2 = on(A), on(B)
         o.err("addAll_cross.A_then_B", lambda: s.add_all([dA, dB2]))
@@ -78,21 +78,21 @@ def main() -> None:
         s.add(dB2)
         o.err(
             "updateAll_cross",
-            lambda: s.update_all([s.get(dA.id).deposit(ONE), s.get(dB2.id).deposit(ONE)]),
+            lambda: s.update_all([s.get_by_id(dA.id).deposit(ONE), s.get_by_id(dB2.id).deposit(ONE)]),
         )
         dB3 = s.add(on(B))
-        o.p("update_on_B.version", s.update(s.get(dB3.id).deposit(ONE)).version)
+        o.p("update_on_B.version", s.update(s.get_by_id(dB3.id).deposit(ONE)).version)
 
         o.p("count_across", s.count())
-        o.p("findAll_across", len(s.all()))
+        o.p("findAll_across", len(s.find_all()))
         owner_b = uuid4()
         s.add(on(B, owner_b))
         cond = DUMMIES.c.owner_id == owner_b
         o.p("findOneWhere_across", jbool(s.find_one_where(cond) is not None))
         o.p("existsWhere_across", jbool(s.exists_where(cond)))
-        o.p("countWhere_across", s.count(cond))
-        o.p("findAllWhere_across", len(s.find_where(cond)))
-        o.p("findAllByIds_across", len(s.find_many([dB.id, dA.id, dU.id, sharded_uuid(B)])))
+        o.p("countWhere_across", s.count_where(cond))
+        o.p("findAllWhere_across", len(s.find_all_where(cond)))
+        o.p("findAllByIds_across", len(s.find_all_by_ids([dB.id, dA.id, dU.id, sharded_uuid(B)])))
 
         owner_both = uuid4()
         s.add(on(A, owner_both))
@@ -105,23 +105,23 @@ def main() -> None:
         with tm_a.primary.connect() as c:
             a_rows = c.execute(select(func.count()).select_from(DUMMIES)).scalar_one()
         o.p("unsharded.count_equals_A_rows", jbool(n.count() == a_rows))
-        o.p("unsharded.findAll_equals_A_rows", jbool(len(n.all()) == a_rows))
+        o.p("unsharded.findAll_equals_A_rows", jbool(len(n.find_all()) == a_rows))
         dB5 = on(B)
         n.add(dB5)
         o.p("unsharded.add_B_id.on_A", count_on(A, dB5.id))
         o.p("unsharded.add_B_id.on_B", count_on(B, dB5.id))
-        o.p("unsharded.findById_row_on_B", jbool(n.find(dB.id) is not None))
+        o.p("unsharded.findById_row_on_B", jbool(n.find_by_id(dB.id) is not None))
         o.err("unsharded.addAll_mixed_ids", lambda: len(n.add_all([on(A), on(B)])))
 
         x = WalletRepository(Wallet, DUMMIES, reg, sharding=NonIdStrategy())
-        o.err("nonid.findById", lambda: x.find(uuid4()))
-        o.err("nonid.existsById", lambda: x.exists(uuid4()))
-        o.err("nonid.findAllByIds", lambda: x.find_many([uuid4()]))
-        o.err("nonid.getById", lambda: x.get(uuid4()))
+        o.err("nonid.findById", lambda: x.find_by_id(uuid4()))
+        o.err("nonid.existsById", lambda: x.exists_by_id(uuid4()))
+        o.err("nonid.findAllByIds", lambda: x.find_all_by_ids([uuid4()]))
+        o.err("nonid.getById", lambda: x.get_by_id(uuid4()))
         dX = on(A)
         x.add(dX)
         o.p("nonid.add_routes_by_model.on_B", count_on(B, dX.id))
-        o.p("nonid.findAll_scatters", jbool(len(x.all()) == len(s.all())))
+        o.p("nonid.findAll_scatters", jbool(len(x.find_all()) == len(s.find_all())))
 
         dB6 = on(B)
         try:
@@ -150,8 +150,8 @@ def main() -> None:
         )
         sf = WalletRepository(Wallet, DUMMIES, reg_fail, sharding=EmbeddedBitsShardingStrategy())
         o.err("fail_policy.add_unregistered", lambda: sf.add(on(U)))
-        o.err("fail_policy.findById_unregistered", lambda: sf.find(sharded_uuid(U)))
-        o.err("fail_policy.findAllByIds_unregistered", lambda: sf.find_many([sharded_uuid(U)]))
+        o.err("fail_policy.findById_unregistered", lambda: sf.find_by_id(sharded_uuid(U)))
+        o.err("fail_policy.findAllByIds_unregistered", lambda: sf.find_all_by_ids([sharded_uuid(U)]))
         reg.close()
     finally:
         backend.stop()

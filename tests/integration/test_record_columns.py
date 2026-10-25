@@ -8,7 +8,7 @@ both modes:
 - a column may be called anything: `class` (a keyword), `keys` and `items` (`dict` methods),
   `order date` (a space), `2fa` (a leading digit). Each goes in by its keyword (`class_=`,
   `order_date=`, `_2fa=`), is stored under its real name, and comes back by key and by method,
-  through `add`, `get`, `find`, `find_where`, `update` and `update_all`;
+  through `add`, `get_by_id`, `find_by_id`, `find_all_where`, `update` and `update_all`;
 - a column the database fills (`filled`, `DEFAULT 7`) is a keyword defaulting to `UNSET`; left
   so, the insert does not send it and the database fills it;
 - `from_record` is handed an instance of the record class on every read path - the finders,
@@ -346,11 +346,11 @@ def test_columns_named_anything_go_in_by_keyword_and_come_back_by_key_and_method
     assert row["class"] == "class-1" and row["keys"] == "keys-01" and row["items"] == 1
     assert row["order date"] == datetime(2026, 2, 2, 9, 30) and row["2fa"] is None
 
-    assert odds.get(one.id) == odds.find(one.id)
-    assert odds.get(one.id).order_date == datetime(2026, 2, 2, 9, 30)
-    assert [o.klass for o in odds.find_where(ODDS.c["class"] == "class-1")] == ["class-1"]
+    assert odds.get_by_id(one.id) == odds.find_by_id(one.id)
+    assert odds.get_by_id(one.id).order_date == datetime(2026, 2, 2, 9, 30)
+    assert [o.klass for o in odds.find_all_where(ODDS.c["class"] == "class-1")] == ["class-1"]
     assert odds.find_one_where(ODDS.c["2fa"].is_(None)).id == one.id
-    assert [o.id for o in odds.find_many([one.id])] == [one.id]
+    assert [o.id for o in odds.find_all_by_ids([one.id])] == [one.id]
 
     updated = odds.update(one.evolve(klass="class-x", keys="keys-x", two_fa="2fa-x", items=None))
     assert (updated.klass, updated.keys, updated.two_fa, updated.items) == (
@@ -391,7 +391,7 @@ def test_a_batch_round_trips_every_awkward_column(odds, size, read_back):
         (f"new-{n}", f"new-2fa-{n}") for n in range(size)
     ]
     assert {rows[o.id.value]["order date"] for o in added} == {NOW}
-    assert sorted(o.keys for o in odds.all()) == [f"keys-{n:02d}" for n in range(size)]
+    assert sorted(o.keys for o in odds.find_all()) == [f"keys-{n:02d}" for n in range(size)]
 
 
 # ------------------------------------------------------------------ a column the database fills
@@ -416,7 +416,7 @@ def test_a_column_left_unset_is_not_sent_and_the_database_fills_it(odds):
     assert second["filled"] == 42
     assert stored(odds)[one.id.value]["filled"] == 7, "the database filled it"
     assert stored(odds)[two.id.value]["filled"] == 42
-    assert odds.get(one.id).filled == 7
+    assert odds.get_by_id(one.id).filled == 7
 
 
 def test_an_update_leaves_a_column_left_unset_as_it_is(odds):
@@ -443,14 +443,14 @@ def test_from_record_is_handed_the_record_class_on_every_read_path(odds, sharded
 
     one = through("add", lambda: repo.add(an_oddity(1, shard)))
     through("add_all", lambda: repo.add_all([an_oddity(2, shard), an_oddity(3, shard)]))
-    through("get", lambda: repo.get(one.id))
-    through("find", lambda: repo.find(one.id))
-    through("find_many", lambda: repo.find_many([one.id]))
-    through("find_where", lambda: repo.find_where(ODDS.c["keys"] == "keys-01"))
+    through("get_by_id", lambda: repo.get_by_id(one.id))
+    through("find_by_id", lambda: repo.find_by_id(one.id))
+    through("find_all_by_ids", lambda: repo.find_all_by_ids([one.id]))
+    through("find_all_where", lambda: repo.find_all_where(ODDS.c["keys"] == "keys-01"))
     through("find_one_where", lambda: repo.find_one_where(ODDS.c["keys"] == "keys-01"))
-    through("all", lambda: repo.all())
+    through("find_all", lambda: repo.find_all())
     one = through("update", lambda: repo.update(one.evolve(klass="x")))
-    through("update_all", lambda: repo.update_all(repo.all()))
+    through("update_all", lambda: repo.update_all(repo.find_all()))
     through("fetch", lambda: repo.by_fetch(shard))
     through("each", lambda: repo.by_each(shard))
     through("fetch_first", lambda: repo.first(shard))

@@ -211,7 +211,7 @@ def read() -> None:
         p(k + "params.owner", params.owner)
     except Exception as ex_:  # noqa: BLE001
         p(k + "params.decoded", f"no: {type(ex_).__name__}: {ex_}")
-    w = next(x for x in repo.all() if x.name == "priced")
+    w = next(x for x in repo.find_all() if x.name == "priced")
     p(k + "widget.created_date", j(w.created_date))
     p(k + "widget.updated_date", j(w.updated_date))
     p(k + "widget.id_shard", f"{read_shard(w.id.value).group}:{read_shard(w.id.value).member}")

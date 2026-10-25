@@ -14,7 +14,7 @@ coroutine::
             self.wallet_repository = wallet_repository
 
         async def perform(self, principal: str | None, params: Params) -> Wallet:
-            wallet = await self.wallet_repository.get(params.wallet_id)
+            wallet = await self.wallet_repository.get_by_id(params.wallet_id)
             return self.plan.update(wallet.deposit(params.amount))
 
 The clock, the name and the plan are the sync action's own code. The plan is in the same

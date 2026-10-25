@@ -10,7 +10,7 @@ written as coroutines::
         def from_record(self, record: WalletsRecord) -> Wallet: ...
 
         async def find_all_by_owner(self, owner_id: UUID) -> list[Wallet]:
-            return await self.find_where(WALLETS.c.owner_id == owner_id)
+            return await self.find_all_where(WALLETS.c.owner_id == owner_id)
 
 It opens no transaction, as the sync one opens none: inside a unit of work it joins the one the
 executor opened, outside one each statement commits itself.
@@ -88,7 +88,7 @@ class AsyncRepository[M: Persistable[Any, Any]](Protocol):
     async def update_all_no_result(self, models: Sequence[M]) -> None: ...
 
     @abstractmethod
-    async def all(self, *, shard: ShardIdentifier | None = None) -> list[M]: ...
+    async def find_all(self, *, shard: ShardIdentifier | None = None) -> list[M]: ...
 
 
 class AbstractAsyncRepository[M: Persistable[Any, Any], R: Mapping[str, Any], K](
@@ -253,17 +253,17 @@ class AbstractAsyncRepository[M: Persistable[Any, Any], R: Mapping[str, Any], K]
 
     # ------------------------------------------------------------------ reads
 
-    async def find(self, key: K) -> M | None:
+    async def find_by_id(self, key: K) -> M | None:
         """The row, or ``None``."""
         async with self._reader(key=key) as conn:
             row = (await conn.execute(self._by_id(key))).first()
         return self._read_back(row) if row is not None else None
 
-    async def get(self, key: K) -> M:
+    async def get_by_id(self, key: K) -> M:
         """The row, or raise."""
-        return self._found(await self.find(key), key)
+        return self._found(await self.find_by_id(key), key)
 
-    async def find_many(self, keys: Iterable[K]) -> list[M]:
+    async def find_all_by_ids(self, keys: Iterable[K]) -> list[M]:
         """The rows that exist, in no promised order - one query per shard the keys live on,
         the shards at the same time. Duplicates are collapsed; no keys is no query."""
         by_shard = self._keys_by_shard(keys)
@@ -277,14 +277,20 @@ class AbstractAsyncRepository[M: Persistable[Any, Any], R: Mapping[str, Any], K]
             return []
         return [model for found in await self._on_each(list(by_shard), read) for model in found]
 
-    async def find_where(
-        self, *criteria: ColumnElement[bool], shard: ShardIdentifier | None = None
+    async def find_all_where(
+        self,
+        condition: ColumnElement[bool],
+        *more: ColumnElement[bool],
+        shard: ShardIdentifier | None = None,
     ) -> list[M]:
-        """Live rows matching, on the shard named or on every shard."""
-        return self._read_all(await self._read(self._where(*criteria), shard))
+        """Live rows matching every condition, on the shard named or on every shard."""
+        return self._read_all(await self._read(self._where(condition, *more), shard))
 
     async def find_one_where(
-        self, *criteria: ColumnElement[bool], shard: ShardIdentifier | None = None
+        self,
+        condition: ColumnElement[bool],
+        *more: ColumnElement[bool],
+        shard: ShardIdentifier | None = None,
     ) -> M | None:
         """The one row matching, or ``None``; a shard holding two is refused.
 
@@ -292,7 +298,7 @@ class AbstractAsyncRepository[M: Persistable[Any, Any], R: Mapping[str, Any], K]
         shard in order that has the row; the reads after it are cancelled, and a shard after it
         that fails does not fail the read.
         """
-        stmt = self._one_where(*criteria)
+        stmt = self._one_where(condition, *more)
 
         async def read(each: ShardIdentifier) -> M | None:
             async with self._reader(shard=each) as conn:
@@ -300,20 +306,24 @@ class AbstractAsyncRepository[M: Persistable[Any, Any], R: Mapping[str, Any], K]
 
         return await self._first_answer(self._shards(shard), read)
 
-    async def all(self, *, shard: ShardIdentifier | None = None) -> list[M]:
-        return await self.find_where(shard=shard)
+    async def find_all(self, *, shard: ShardIdentifier | None = None) -> list[M]:
+        """Every live row, on the shard named or on every shard."""
+        return self._read_all(await self._read(self._where(), shard))
 
-    async def exists(self, key: K) -> bool:
+    async def exists_by_id(self, key: K) -> bool:
         stmt = self._presence(self.id_column == _to_column(key))
         async with self._reader(key=key) as conn:
             return (await conn.execute(stmt)).first() is not None
 
     async def exists_where(
-        self, *criteria: ColumnElement[bool], shard: ShardIdentifier | None = None
+        self,
+        condition: ColumnElement[bool],
+        *more: ColumnElement[bool],
+        shard: ShardIdentifier | None = None,
     ) -> bool:
         """Whether any row matches - one row read per shard at most, the shards at once, the
         answer the sync one's: the first shard in order with a row settles it."""
-        stmt = self._presence(*criteria)
+        stmt = self._presence(condition, *more)
 
         async def read(each: ShardIdentifier) -> bool | None:
             async with self._reader(shard=each) as conn:
@@ -321,10 +331,18 @@ class AbstractAsyncRepository[M: Persistable[Any, Any], R: Mapping[str, Any], K]
 
         return await self._first_answer(self._shards(shard), read) is not None
 
-    async def count(
-        self, *criteria: ColumnElement[bool], shard: ShardIdentifier | None = None
+    async def count(self, *, shard: ShardIdentifier | None = None) -> int:
+        """How many live rows there are, on the shard named or on every shard."""
+        return sum(int(r[0]) for r in await self._read(self._count(), shard))
+
+    async def count_where(
+        self,
+        condition: ColumnElement[bool],
+        *more: ColumnElement[bool],
+        shard: ShardIdentifier | None = None,
     ) -> int:
-        return sum(int(r[0]) for r in await self._read(self._count(*criteria), shard))
+        """How many live rows match every condition, on the shard named or on every shard."""
+        return sum(int(r[0]) for r in await self._read(self._count(condition, *more), shard))
 
     async def _read(self, stmt: Any, shard: ShardIdentifier | None) -> list[Row[Any]]:
         """Run a read on the shard named, or on every shard at once when none is."""

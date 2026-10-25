@@ -185,7 +185,7 @@ class FreshPlanAction(Action[NoParams, Wallet]):
 
 class StaleUpdateAction(Action[IdParams, Wallet]):
     def perform(self, principal, params):
-        w = wallet_repo.get(ShardedId[Wallet](params.wallet_id))
+        w = wallet_repo.get_by_id(ShardedId[Wallet](params.wallet_id))
         return self.plan.update(w.copy().version(999).build())
 
 
@@ -199,7 +199,7 @@ class TwoShardAction(Action[NoParams, Wallet]):
 class PartialAction(Action[IdParams, Wallet]):
     def perform(self, principal, params):
         g = self.plan.add(new_wallet(GLOBAL))
-        mx = wallet_repo.get(ShardedId[Wallet](params.wallet_id))
+        mx = wallet_repo.get_by_id(ShardedId[Wallet](params.wallet_id))
         self.plan.update(mx.copy().version(999).build())
         return g
 

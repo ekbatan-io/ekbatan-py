@@ -295,7 +295,7 @@ def test_a_handler_may_start_another_unit_of_work(
     dispatch.drain_once()
 
     assert notifier.calls == 1
-    written = notification_repository.all()
+    written = notification_repository.find_all()
     assert len(written) == 1
     assert written[0].recipient == "ada@example.com"
     # MySQL's JSON column keeps a number with a fraction as a double, so the scale goes there -
@@ -543,7 +543,7 @@ def test_a_chained_action_s_own_event_is_fanned_out_and_dispatched_in_turn(
     assert opened[0].action_name == "WalletCreateAction"
     assert opened[0].model_type == "Wallet"
 
-    audited = [n for n in notification_repository.all() if n.kind == "WALLET_OPENED"]
+    audited = [n for n in notification_repository.find_all() if n.kind == "WALLET_OPENED"]
     assert len(audited) == auditor.calls, (
         "the second hop's own unit of work committed, one row per dispatch"
     )
