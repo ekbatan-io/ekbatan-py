@@ -243,8 +243,14 @@ INI holds only text, so:
   `true`/`false` becomes one: `connect_timeout = 10` is a number, `application_name = "10"` text,
   `sslmode = require` text. Only lowercase `true` and `false` count; `yes` stays text.
 
-A value filled in from an environment variable is text inside `data-source-properties`, in every
-format; a datasource's own keys still turn it into their type (`pool-size: ${POOL:10}`).
+A value filled in from an environment variable follows the same quote rule inside
+`data-source-properties`. Written without quotes in YAML or INI, a number or `true`/`false` is
+typed: `connect_timeout: ${CONNECT_TIMEOUT:10}` and `connect_timeout = %(ENV_CONNECT_TIMEOUT)s` give
+the number 10, which PyMySQL needs. Written in quotes it stays text: `application_name: "${APP}"`
+keeps `123` as `"123"` - as `10` and `"10"` differ in YAML itself. TOML and JSON allow a placeholder
+only inside a quoted string, so there a filled-in value is always text: write the number itself, or
+use YAML or INI, when it must come from the environment. A datasource's own keys turn a filled-in
+value into their type in every format (`pool-size: ${POOL:10}`).
 
 ## Errors
 

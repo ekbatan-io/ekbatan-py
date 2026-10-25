@@ -35,7 +35,11 @@ set but empty is used as given. A filled-in value is inserted as it is and never
 **Types.** YAML, TOML and JSON say what each value is. INI says nothing, so the datasource's own
 keys are turned into their declared types (``pool_size = 20`` is the number 20), and inside
 ``data-source-properties`` a quoted value is text while an unquoted number or ``true``/``false``
-becomes one. A value filled in from an environment variable is text in ``data-source-properties``.
+becomes one. A value filled in from an environment variable follows the same rule there: written
+without quotes in YAML or INI (``connect_timeout: ${T:10}``, ``connect_timeout = %(ENV_T)s``) a
+number or ``true``/``false`` is typed, and written in quotes it stays text - as ``10`` and
+``"10"`` differ in YAML itself. TOML and JSON allow a placeholder only inside a quoted string, so
+there it is always text.
 
 **No error shows a value**: each names the key's path or the variable instead. The INI, YAML and
 JSON readers quote the offending line in their own messages, so those are always rephrased.
@@ -181,6 +185,29 @@ def _section(tree: Any, name: str, steps: tuple[str, ...]) -> Any:
 # -- reading ----------------------------------------------------------------------------------
 
 
+class _Plain(str):
+    """A YAML string written without quotes, holding a placeholder - so what fills it in is given
+    a type by the quote rule, as an unquoted INI value is, where a quoted one stays text."""
+
+    __slots__ = ()
+
+
+def _yaml_loader() -> Any:
+    """``yaml.SafeLoader``, keeping one fact the plain loader drops: whether a string holding a
+    ``${...}`` was written with quotes. Nothing else about loading changes."""
+    import yaml
+
+    class _Loader(yaml.SafeLoader):
+        pass
+
+    def string(loader: Any, node: Any) -> str:
+        value: str = loader.construct_scalar(node)
+        return _Plain(value) if node.style is None and "${" in value else value
+
+    _Loader.add_constructor("tag:yaml.org,2002:str", string)
+    return _Loader
+
+
 @dataclass(frozen=True)
 class _Text:
     """A value that arrived as text with no type: from INI, or from an environment variable.
@@ -197,7 +224,9 @@ def _read_structured(kind: str, text: str, name: str) -> Any:
         import yaml
 
         try:
-            return yaml.safe_load(text)
+            # A SafeLoader subclass: as safe as `safe_load`, and it keeps whether a string
+            # was quoted.
+            return yaml.load(text, Loader=_yaml_loader())
         except yaml.YAMLError as error:
             mark = getattr(error, "problem_mark", None)
             where = f" at line {mark.line + 1}, column {mark.column + 1}" if mark else ""
@@ -254,7 +283,9 @@ def _fill(node: Any, path: str, variables: _Lookup) -> Any:
             f"{path}: environment variable {name!r} is not set, and the placeholder has no default"
         )
 
-    return _Text(_DOLLAR.sub(one, node), quoted=True)
+    # Typed by the quote rule only when the YAML string was written without quotes; TOML and
+    # JSON cannot hold a placeholder outside a quoted string, so theirs stays text.
+    return _Text(_DOLLAR.sub(one, node), quoted=not isinstance(node, _Plain))
 
 
 class _EnvironmentInterpolation(configparser.Interpolation):
@@ -344,11 +375,12 @@ def _read_ini(text: str, name: str, variables: _Lookup) -> Any:
                     "file an environment variable is written '%(ENV_NAME)s'"
                 )
             value = parser.get(section, key)
-            filled = "%(ENV_" in raw
             quoted = len(value) >= 2 and value[0] == value[-1] and value[0] in "'\""
             if key in node and isinstance(node[key], dict):
                 raise ValidationError(f"{name}: [{section}] {key} collides with a section")
-            node[key] = _Text(value[1:-1] if quoted else value, quoted=quoted or filled)
+            # A filled-in variable follows the quote rule like any other value: unquoted, a number
+            # or true/false is typed; quoted, it stays text.
+            node[key] = _Text(value[1:-1] if quoted else value, quoted=quoted)
     return _lists(tree, name)
 
 
@@ -495,7 +527,8 @@ def _data_source(node: Any, path: str) -> DataSourceConfig:
 
 
 def _properties(node: Any, path: str) -> Any:
-    """``data-source-properties``, names as written; INI's text given a type by the quote rule."""
+    """``data-source-properties``, names as written; text from INI or from an environment
+    variable given a type by the quote rule."""
     if isinstance(node, _Text):
         if node.quoted:
             return node.value

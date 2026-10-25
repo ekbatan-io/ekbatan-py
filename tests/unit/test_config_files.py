@@ -335,14 +335,64 @@ def test_a_doubled_dollar_is_a_literal_placeholder_sign(tmp_path):
     )
 
 
-def test_a_value_filled_in_driver_settings_stays_text(tmp_path):
-    text = YAML.replace("connect_timeout: 10", "application_name: ${APP}")
-    layout = loaded(tmp_path, "e.yaml", text, {**ENV, "APP": "123"})
+def _properties_of(layout):
+    return layout.groups[0].members[0].primary_config().data_source_properties
 
-    assert (
-        layout.groups[0].members[0].primary_config().data_source_properties["application_name"]
-        == "123"
-    )
+
+@pytest.mark.parametrize(
+    ("written", "value", "read"),
+    [
+        ("connect_timeout: ${T}", "10", 10),
+        ("connect_timeout: ${T:10}", None, 10),
+        ("verify: ${T}", "true", True),
+        ("ratio: ${T}", "0.5", 0.5),
+        ("application_name: ${T}", "wallet", "wallet"),
+        ('application_name: "${T}"', "123", "123"),
+        ("application_name: '${T}'", "123", "123"),
+        ("options: -c statement_timeout=${T}", "5000", "-c statement_timeout=5000"),
+    ],
+)
+def test_a_variable_in_yaml_driver_settings_is_typed_by_the_quote_rule(
+    tmp_path, written, value, read
+):
+    """Written without quotes, what fills a placeholder in is typed - a number or true/false -
+    as `10` is in YAML itself; written in quotes it stays text, as `"10"` does. PyMySQL refuses a
+    text `connect_timeout` from deep inside the driver, which is what an untyped `${T}` used to
+    hand it."""
+    text = YAML.replace("connect_timeout: 10", written)
+    environ = {**ENV, "T": value} if value is not None else ENV
+    key = written.split(":", 1)[0]
+
+    found = _properties_of(loaded(tmp_path, "e.yaml", text, environ))[key]
+
+    assert found == read and type(found) is type(read), (found, read)
+
+
+@pytest.mark.parametrize(("written", "read"), [("%(ENV_T)s", 10), ('"%(ENV_T)s"', "10")])
+def test_a_variable_in_ini_driver_settings_is_typed_by_the_same_rule(tmp_path, written, read):
+    text = INI.replace("connect_timeout = 10", f"connect_timeout = {written}")
+    assert text != INI
+
+    found = _properties_of(loaded(tmp_path, "e.ini", text, {**ENV, "T": "10"}))["connect_timeout"]
+
+    assert found == read and type(found) is type(read), (found, read)
+
+
+@pytest.mark.parametrize(
+    ("name", "source", "old", "new"),
+    [
+        ("e.toml", "TOML", "connect_timeout = 10", 'connect_timeout = "${T}"'),
+        ("e.json", "JSON", '"connect_timeout": 10', '"connect_timeout": "${T}"'),
+    ],
+)
+def test_a_variable_in_toml_or_json_driver_settings_stays_text(tmp_path, name, source, old, new):
+    """Both formats allow a placeholder only inside a quoted string, so it is always text."""
+    text = globals()[source].replace(old, new)
+    assert text != globals()[source]
+
+    found = _properties_of(loaded(tmp_path, name, text, {**ENV, "T": "10"}))["connect_timeout"]
+
+    assert found == "10"
 
 
 def test_the_ini_style_in_yaml_is_refused_with_a_hint(tmp_path):
@@ -463,8 +513,10 @@ def test_ini_driver_settings_follow_the_quote_rule(tmp_path, written_as, becomes
     assert type(primary.data_source_properties["probe"]) is type(becomes)
 
 
-def test_ini_an_environment_value_in_driver_settings_stays_text(tmp_path):
-    text = INI.replace("connect_timeout = 10", "application_name = %(ENV_APP)s")
+def test_ini_an_environment_value_in_driver_settings_stays_text_when_quoted(tmp_path):
+    """The quote rule decides, as for any other INI value: quoted, a filled-in `123` stays the
+    text `"123"`; unquoted it would be the number."""
+    text = INI.replace("connect_timeout = 10", 'application_name = "%(ENV_APP)s"')
     layout = loaded(tmp_path, "e.ini", text, {**ENV, "APP": "123"})
 
     assert (

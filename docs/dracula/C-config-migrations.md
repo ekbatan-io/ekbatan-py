@@ -160,7 +160,8 @@ Not repeated: urls that name the driver (`postgresql+psycopg://` vs `jdbc:postgr
 - **Could match Java?** partly - `migrate` could check its first argument's type to accept a `DataSourceConfig` or a url, as Java's overloads do.
 - **Surprise:** medium
 
-### `data_source_properties` keep their types, allow groups, and use Python driver names
+### `data_source_properties` keep their types, allow groups, and use Python driver names - settled by the user (2026-10-25)
+- **Settled by the user (2026-10-25), with a fix (`EKB-0559`):** the trap is gone. A variable filled in follows the quote rule: written without quotes in YAML (`connect_timeout: ${T:10}`) or INI (`connect_timeout = %(ENV_T)s`) a number or `true`/`false` is typed, and quoted it stays text - as YAML and INI type their own values. The YAML reader keeps whether a string holding a placeholder was quoted (a `SafeLoader` subclass). TOML and JSON allow a placeholder only inside a quoted string, so there it stays text, as the docs say. Run before the fix: `connect_timeout: ${T:10}` came in as `'10'`, and PyMySQL refused it with `TypeError: '<' not supported between instances of 'int' and 'str'`. The rest - typed values, groups, Python driver names - is forced by Python's drivers and kept.
 - **What:** Java turns every value into text and refuses nested blocks and lists. Python passes
   values as written (`10` stays a number), allows groups and lists, and also refuses `passwd`. The
   names are the Python driver's, so Java's `ApplicationName` is `application_name` here. A trap
