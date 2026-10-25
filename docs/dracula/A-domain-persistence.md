@@ -175,7 +175,8 @@ Checked by running (2026-10-12, scratch scripts, SQLite file database): findings
   query library cannot.
 - **Surprise:** medium
 
-### 10. Connections come from `with` blocks, are public, and the "all shards" ones give pairs
+### 10. Connections come from `with` blocks, are public, and the "all shards" ones give pairs - settled by the user (2026-10-25)
+- **Settled by the user (2026-10-25)**: kept as it is. The `with` block is forced: jOOQ borrows and returns a connection per statement by itself, a SQLAlchemy connection has to be given back. Python has no `protected` and no overloading by type, and the `(shard, conn)` pairs and `None` are Python's way. Renaming the helpers to `_db()` and turning on ruff's `SLF001` - a lint warning in place of Java's compile-time `protected` - was weighed and left.
 - **What:** `db()`, `readonly_db()`, `tx_db_else_db()` are context managers (`with self.db() as
   conn:`), not methods returning a context you call straight away. They are public (Java's are
   `protected`), take keyword arguments `key=` / `model=` / `shard=` instead of overloads, and
