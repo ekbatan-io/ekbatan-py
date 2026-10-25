@@ -212,7 +212,7 @@ Opt a repository in by passing a `ShardingStrategy` to `super().__init__`. The b
 **Sync**
 
 ```python
-class WalletRepository(ModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]):
+class WalletRepository(ModelRepository[Wallet, WalletsRecord, UUID]):
     def __init__(self, registry: DatabaseRegistry) -> None:
         super().__init__(
             Wallet, WALLETS, registry, sharding=EmbeddedBitsShardingStrategy()
@@ -222,7 +222,7 @@ class WalletRepository(ModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]
 **Async**
 
 ```python
-class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]):
+class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, UUID]):
     def __init__(self, registry: AsyncDatabaseRegistry) -> None:
         super().__init__(
             Wallet, WALLETS, registry, sharding=EmbeddedBitsShardingStrategy()

@@ -38,7 +38,7 @@ The base class changes and your own queries become `async def`. The mapping stay
 inside the repository: `to_record` and `from_record` are plain `def`, as mapping waits on nothing.
 
 ```python
-class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]):
+class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, UUID]):
     def to_record(self, wallet: Wallet) -> WalletsRecord: ...
     def from_record(self, record: WalletsRecord) -> Wallet: ...
 
@@ -71,7 +71,7 @@ class WalletDepositMoneyAction(AsyncAction["WalletDepositMoneyAction.Params", Wa
         self.wallet_repository = wallet_repository
 
     async def perform(self, principal: str | None, params: Params) -> Wallet:
-        wallet = await self.wallet_repository.get_by_id(params.wallet_id)
+        wallet = await self.wallet_repository.get_by_id(params.wallet_id.value)
         return self.plan.update(wallet.deposit(params.amount))
 ```
 

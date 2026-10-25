@@ -164,7 +164,7 @@ recommendation everywhere - in your code and on the database - see
 **Sync**
 
 ```python
-class WalletRepository(ModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]):
+class WalletRepository(ModelRepository[Wallet, WalletsRecord, UUID]):
     def __init__(self, registry: DatabaseRegistry) -> None:
         super().__init__(Wallet, WALLETS, registry)
 
@@ -178,7 +178,7 @@ class WalletRepository(ModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]
 **Async**
 
 ```python
-class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]):
+class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, UUID]):
     def __init__(self, registry: AsyncDatabaseRegistry) -> None:
         super().__init__(Wallet, WALLETS, registry)
 
@@ -224,7 +224,7 @@ class WalletDepositMoneyAction(Action["WalletDepositMoneyAction.Params", Wallet]
         self.wallet_repository = wallet_repository
 
     def perform(self, principal: str | None, params: Params) -> Wallet:
-        wallet = self.wallet_repository.get_by_id(params.wallet_id)
+        wallet = self.wallet_repository.get_by_id(params.wallet_id.value)
         return self.plan.update(wallet.deposit(params.amount))
 ```
 
@@ -237,7 +237,7 @@ class WalletDepositMoneyAction(AsyncAction["WalletDepositMoneyAction.Params", Wa
         self.wallet_repository = wallet_repository
 
     async def perform(self, principal: str | None, params: Params) -> Wallet:
-        wallet = await self.wallet_repository.get_by_id(params.wallet_id)
+        wallet = await self.wallet_repository.get_by_id(params.wallet_id.value)
         return self.plan.update(wallet.deposit(params.amount))
 ```
 

@@ -128,8 +128,11 @@ piece for piece; see `docs/JAVA-MODEL-LEDGER.md`.
 ### The mapping is typed by the table's record
 
 Every repository is generic in its model, its table's record and its id, in Java's order:
-`ModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]` (and `EntityRepository`, the
-`Abstract` base and the `ekbatan.aio` twins alike). `to_record(model) -> WalletsRecord` and
+`ModelRepository[Wallet, WalletsRecord, UUID]` (and `EntityRepository`, the `Abstract` base and
+the `ekbatan.aio` twins alike). The third is the type the id column holds, as Java's `DB_ID`: a
+`UUID`, so a read by id takes `wallet.id.value`, as Java's takes `wallet.id.getValue()`, and a key
+of another type is refused. A schemagen forced type that converts the id column makes its user
+type - a typed id - the key, as a jOOQ forced type changes `DB_ID`. `to_record(model) -> WalletsRecord` and
 `from_record(record: WalletsRecord) -> Wallet` are the repository's to write. No `dict[str, Any]`
 mapping in examples or docs: a generated schema has its records, a hand-written one writes them
 beside its tables in the same style. (`to_row` / `from_row` until `EKB-0409`; renamed outright,

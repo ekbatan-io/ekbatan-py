@@ -106,7 +106,8 @@ Checked by running (2026-10-12, scratch scripts, SQLite file database): findings
   (and a database named `eventlog` on MySQL/MariaDB, as Java uses).
 - **Surprise:** high
 
-### 6. A repository's key is the typed id, not the raw UUID
+### 6. ~~A repository's key is the typed id, not the raw UUID~~ matched (`EKB-0541`)
+- **Matched** (`EKB-0541`, the user's decision 2026-10-25, with their correction of the same day): a repository's key is the type the id column holds, as Java's `DB_ID` - `ModelRepository[Wallet, WalletsRecord, UUID]`, `EntityRepository[Notification, NotificationsRecord, UUID]`, and their `ekbatan.aio` twins. `find_by_id`, `get_by_id`, `find_all_by_ids`, `exists_by_id`, `id_matches` and `shard_for` take that type - `wallet.id.value` for a plain uuid column, where Java writes `wallet.id.getValue()` - and refuse a key of another type with a `TypeError` naming the type the column holds (a typed id on a uuid column: "pass its .value"), the nearest a run comes to Java's compile error. A schemagen forced type that converts the id column - as a jOOQ forced type changes `DB_ID` - makes its user type the key: the typed id is taken and handed to the column unconverted for the converter, and a raw `UUID` is refused. Code holding a model still unwraps the model's own id where the column is plain: inserts, updates, deletes, and the sharding strategy's `shard_for(model)`. See `docs/REPO-KEYS-LEDGER.md`.
 - **What:** Python repositories are `ModelRepository[Wallet, ShardedId[Wallet]]` and
   `find(wallet.id)` takes the `ShardedId`. Java repositories are
   `ModelRepository<Wallet, WalletsRecord, Wallets, UUID>` and `findById(UUID)` takes the raw

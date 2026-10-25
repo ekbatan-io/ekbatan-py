@@ -57,7 +57,7 @@ from ekbatan.aio import AsyncAction, AsyncActionExecutor, AsyncDatabaseRegistry,
 from ekbatan.config_files import load_sharding_config
 
 
-class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]):
+class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, UUID]):
     def to_record(self, wallet: Wallet) -> WalletsRecord: ...          # plain def
     def from_record(self, record: WalletsRecord) -> Wallet: ...
 
@@ -71,7 +71,7 @@ class WalletDepositMoneyAction(AsyncAction["WalletDepositMoneyAction.Params", Wa
         self.wallet_repository = wallet_repository
 
     async def perform(self, principal: str | None, params: Params) -> Wallet:
-        wallet = await self.wallet_repository.get_by_id(params.wallet_id)
+        wallet = await self.wallet_repository.get_by_id(params.wallet_id.value)
         return self.plan.update(wallet.deposit(params.amount))
 
 

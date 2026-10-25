@@ -76,7 +76,7 @@ class WalletDepositMoneyAction(Action["WalletDepositMoneyAction.Params", Wallet]
         self.wallet_repository = wallet_repository
 
     def perform(self, principal: str | None, params: Params) -> Wallet:
-        wallet = self.wallet_repository.get_by_id(params.wallet_id)
+        wallet = self.wallet_repository.get_by_id(params.wallet_id.value)
         return self.plan.update(wallet.deposit(params.amount))
 ```
 
@@ -95,7 +95,7 @@ class WalletDepositMoneyAction(AsyncAction["WalletDepositMoneyAction.Params", Wa
         self.wallet_repository = wallet_repository
 
     async def perform(self, principal: str | None, params: Params) -> Wallet:
-        wallet = await self.wallet_repository.get_by_id(params.wallet_id)
+        wallet = await self.wallet_repository.get_by_id(params.wallet_id.value)
         return self.plan.update(wallet.deposit(params.amount))
 ```
 
@@ -206,8 +206,8 @@ def perform(self, principal: str | None, params: Params) -> Order:
 ```python
 async def perform(self, principal: str | None, params: Params) -> Order:
     customer, quote = await asyncio.gather(
-        self.customer_repository.get_by_id(params.customer_id),   # each read on a connection of its own
-        self.quote_repository.get_by_id(params.quote_id),         # neither touches the plan
+        self.customer_repository.get_by_id(params.customer_id.value),   # each read on a connection of its own
+        self.quote_repository.get_by_id(params.quote_id.value),         # neither touches the plan
     )
     return self.plan.add(build_order(customer, quote))   # staged here, after both
 ```

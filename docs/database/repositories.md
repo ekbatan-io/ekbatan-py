@@ -7,7 +7,7 @@ asks.
 **Sync**
 
 ```python
-class WalletRepository(ModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]):
+class WalletRepository(ModelRepository[Wallet, WalletsRecord, UUID]):
     def __init__(self, registry: DatabaseRegistry, *, clock: Clock | None = None) -> None:
         super().__init__(Wallet, WALLETS, registry,
                          sharding=EmbeddedBitsShardingStrategy(), clock=clock)
@@ -19,7 +19,7 @@ class WalletRepository(ModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]
 **Async**
 
 ```python
-class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]):
+class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, UUID]):
     def __init__(self, registry: AsyncDatabaseRegistry, *, clock: Clock | None = None) -> None:
         super().__init__(Wallet, WALLETS, registry,
                          sharding=EmbeddedBitsShardingStrategy(), clock=clock)
@@ -39,9 +39,12 @@ Four classes, in layers:
 | `ModelRepository[M, R, K]` | extend this for a model |
 | `EntityRepository[M, R, K]` | extend this for an entity |
 
-`M` is the model, `R` the table's record and `K` the id: `ModelRepository[Wallet, WalletsRecord,
-ShardedId[Wallet]]`. An application extends `ModelRepository` or `EntityRepository` and nothing
-else. In async mode the same four live in `ekbatan.aio` with an `Async` prefix -
+`M` is the model, `R` the table's record and `K` the type the id column holds: `UUID` for a plain
+uuid column - `ModelRepository[Wallet, WalletsRecord, UUID]` - so the reads by id take
+`wallet.id.value`, and a typed id there is refused, saying to pass its `.value`. A schemagen
+forced type that converts the id column to a typed id makes that typed id the key, and then a raw
+`UUID` is refused. An application extends `ModelRepository` or
+`EntityRepository` and nothing else. In async mode the same four live in `ekbatan.aio` with an `Async` prefix -
 `AsyncModelRepository`, `AsyncEntityRepository` - and every read and write is awaited. The rules
 are the same code.
 

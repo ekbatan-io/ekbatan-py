@@ -51,8 +51,10 @@ website/             Astro. The only part that does not run through uv
   subclass schemagen writes beside the table (`WalletsRecord` beside `WALLETS`), with a
   keyword `__init__`, `__getitem__` overloads for mypy only, and a `column_<name>()` method per
   column (`EKB-0485`); repositories are `ModelRepository[Wallet, WalletsRecord,
-  ShardedId[Wallet]]`. `columns_by_field_name` / `model_by_field_name` are the by-name
-  mapping, chosen in a line, never a default.
+  UUID]` - the key is the type the id column holds, as Java's `DB_ID`: a read by id takes
+  `wallet.id.value`, and a forced type converting the id column makes the typed id the key
+  (`EKB-0541`). `columns_by_field_name` /
+  `model_by_field_name` are the by-name mapping, chosen in a line, never a default.
 - `to_record` builds the record by keyword - `WalletsRecord(id=..., version=..., ...)`; a column
   whose name is no Python name has a sanitized keyword (`class_=`, `order_date=`, `_2fa=`), and
   one the database fills defaults to `UNSET` (left out of the record and the INSERT). The INSERT

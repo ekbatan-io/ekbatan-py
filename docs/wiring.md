@@ -101,7 +101,7 @@ class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
     def deposit(self, amount: Decimal) -> "Wallet": ...
 
 
-class WalletRepository(ModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]):
+class WalletRepository(ModelRepository[Wallet, WalletsRecord, UUID]):
     def __init__(self, registry: DatabaseRegistry) -> None:
         super().__init__(Wallet, WALLETS, registry)
 
@@ -112,7 +112,7 @@ class WalletDepositMoneyAction(Action["WalletDepositMoneyAction.Params", Wallet]
         self.wallet_repository = wallet_repository
 
     def perform(self, principal: str | None, params: Params) -> Wallet:
-        return self.plan.update(self.wallet_repository.get_by_id(params.wallet_id).deposit(params.amount))
+        return self.plan.update(self.wallet_repository.get_by_id(params.wallet_id.value).deposit(params.amount))
 ```
 
 **Async**
@@ -131,7 +131,7 @@ class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
     def deposit(self, amount: Decimal) -> "Wallet": ...
 
 
-class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]):
+class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, UUID]):
     def __init__(self, registry: AsyncDatabaseRegistry) -> None:
         super().__init__(Wallet, WALLETS, registry)
 
@@ -142,7 +142,7 @@ class WalletDepositMoneyAction(AsyncAction["WalletDepositMoneyAction.Params", Wa
         self.wallet_repository = wallet_repository
 
     async def perform(self, principal: str | None, params: Params) -> Wallet:
-        wallet = await self.wallet_repository.get_by_id(params.wallet_id)
+        wallet = await self.wallet_repository.get_by_id(params.wallet_id.value)
         return self.plan.update(wallet.deposit(params.amount))
 ```
 

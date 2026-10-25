@@ -48,7 +48,7 @@ Ekbatan, which puts the shard in the same bits (see
 <div slot="sync">
 
 ```python
-class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
+class WalletRepository(ModelRepository[Wallet, WalletsRecord, UUID]):
     def __init__(self, registry: DatabaseRegistry) -> None:
         super().__init__(Wallet, WALLETS, registry,
                          sharding=EmbeddedBitsShardingStrategy())
@@ -58,7 +58,7 @@ class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
 <div slot="async">
 
 ```python
-class WalletRepository(AsyncModelRepository[Wallet, ShardedId[Wallet]]):
+class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, UUID]):
     def __init__(self, registry: AsyncDatabaseRegistry) -> None:
         super().__init__(Wallet, WALLETS, registry,
                          sharding=EmbeddedBitsShardingStrategy())
@@ -227,7 +227,7 @@ psql -p 5432 wallets -c "SELECT count(*) FROM wallets"   # 0
 psql -p 5433 wallets -c "SELECT count(*) FROM eventlog.events"    # 1
 ```
 
-`wallet_repository.get_by_id(mx.id)` finds it with no lookup table and no extra query: the shard was read out of
+`wallet_repository.get_by_id(mx.id.value)` finds it with no lookup table and no extra query: the shard was read out of
 the id. `wallet_repository.find_all_where(...)` has no id to read, so it asks both.
 
 ## 6. (Optional) Cross-shard transfer

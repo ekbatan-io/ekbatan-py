@@ -309,8 +309,10 @@ Mechanism, not behaviour:
   unresolved, the builder generator wrote `ShardedId[Any]`, accepting every model's id.
 - **`isinstance(x, ShardedId[Wallet])` raises**, as Java refuses `instanceof ShardedId<Wallet>`.
   `isinstance(x, ShardedId)` is the check both languages allow.
-- **Here `ShardedId` is still a `TypedValue`**, which is how the repository knows to unwrap it
-  for a column. Its equality keeps it apart from `Id` all the same.
+- **Here `ShardedId` is still a `TypedValue`**, which is how the repository knows to unwrap a
+  model's id for its column - and to refuse one handed to a read by id on a plain uuid column,
+  which takes the raw value as Java's does (`EKB-0541`). Its equality keeps it apart from `Id` all
+  the same.
 - **`ShardedId.shard` refuses a uuid that carries no shard.** Java reads shard bits out of any
   uuid, a random version 4 one included, and routes it to a shard nobody chose - `(247, 28)` in
   the run that checked it. Listed under "Noticed in the Java".
@@ -336,7 +338,11 @@ against a table, and is abstract for Java's reason: `to_record` and `from_record
 repository's to write. An application extends `ModelRepository` or `EntityRepository`, as in Java.
 The type parameters follow Java's order - model, record, id - less the table, which here is a
 `Table` value rather than a generated type: `AbstractRepository<Wallet, WalletsRecord, Wallets,
-UUID>` there, `ModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]` here.
+UUID>` there, `ModelRepository[Wallet, WalletsRecord, UUID]` here. The key is what the id column
+holds in both - a `UUID`, so a read by id takes `wallet.id.value` as Java's takes
+`wallet.id.getValue()` - and a forced type that converts the id column changes it in both, as a
+jOOQ forced type changes `DB_ID`. A key of another type is refused (`EKB-0541`; until then this
+port's key was the typed id, unwrapped).
 
 The reason this port had for merging the two - that its `Repository` "works as it stands",
 mapping by field name - stopped being true in `EKB-0217`, when the mapping became something
