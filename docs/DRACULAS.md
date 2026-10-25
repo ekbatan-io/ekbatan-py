@@ -111,7 +111,7 @@ whatever is decided about the rest.
 | 45 | A model names its builder as a type argument, in a different order from Java; leaving it out fails only when `builder()` or `copy()` is called. **Settled by the user (2026-10-24)**: kept as it is - the error at `builder()` or `copy()` says what to write and where | forced | partly | H | A4 |
 | 46 | ~~Built-in reads see the open transaction's uncommitted rows~~ **fixed** (`EKB-0259`): the built-in reads use `db()`, outside the open transaction, as Java's do - see Part 1, bug 8 | choice | yes | M | A7 |
 | 47 | A repository's key type is the typed id, not the raw UUID | choice | yes | M | A6 |
-| 48 | Read methods are named differently (`find`, `find_where`, `all`), return `None` not `Optional` | choice + convention | partly | M | A8 |
+| 48 | ~~Read methods are named differently (`find`, `find_where`, `all`)~~ **names matched** (`EKB-0538`, the user's decision 2026-10-25): `find_by_id`, `get_by_id`, `find_all_by_ids`, `find_all`, `exists_by_id`, `count`, `count_where`, `find_one_where`, `find_all_where`, `exists_where` - Java's names in snake case, sync and async, the old ones gone. What stays Python's: a missing row is `None`, not an `Optional`; a `*_where` read takes one condition or several, and `shard=` | choice + convention | partly | M | A8 |
 | 49 | Tables are SQLAlchemy written by hand; ~~`to_row` returns a dict~~ the mapping is typed by a generated record since `EKB-0408` (bug 12) - a `dict` class with `column_` getters since `EKB-0485` | choice | partly | M | A9 |
 | 50 | Connections come from `with` blocks, are public, and "all shards" gives pairs | forced + convention | partly | M | A10 |
 | 51 | `fetch_one` means "exactly one", not jOOQ's "at most one" | choice | yes | M | A11 |

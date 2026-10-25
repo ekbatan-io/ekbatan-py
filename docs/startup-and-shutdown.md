@@ -1154,7 +1154,7 @@ server while its query runs, and ekbatan raises `BlockingCallError` instead:
 ```python
 @app.get("/wallets/{wallet_id}")
 async def read_wallet(wallet_id: str, request: Request):        # async def ...
-    return WalletRepository(request.app.state.registry).get(...)  # ... calling the sync API
+    return WalletRepository(request.app.state.registry).get_by_id(...)  # ... calling the sync API
 ```
 
 Any one of three fixes works:
@@ -1162,11 +1162,11 @@ Any one of three fixes works:
 ```python
 # 1. In async code, use ekbatan.aio: an async repository on an AsyncDatabaseRegistry.
 async def read_wallet(wallet_id: str, request: Request):
-    return await AsyncWalletRepository(request.app.state.registry).get(...)
+    return await AsyncWalletRepository(request.app.state.registry).get_by_id(...)
 
 # 2. Make the endpoint a plain def: FastAPI runs it on a thread for you.
 def read_wallet(wallet_id: str, request: Request):
-    return WalletRepository(request.app.state.registry).get(...)
+    return WalletRepository(request.app.state.registry).get_by_id(...)
 
 # 3. Keep async def, and send the sync call to a thread yourself.
 async def read_wallet(wallet_id: str, request: Request):

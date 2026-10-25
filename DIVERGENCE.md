@@ -344,8 +344,8 @@ every repository writes.
 
 Mechanism, not behaviour:
 
-- **The promise is a `Protocol`** - Python's interface. Java's ten methods in snake case, with
-  `find_all` spelled `all`, plus three the plumbing here reads where Java's reads something
+- **The promise is a `Protocol`** - Python's interface. Java's ten methods in snake case,
+  plus three the plumbing here reads where Java's reads something
   else: `model_type` (this registry learns the type from the repository), `sharding` (Java's
   `shardingStrategy()`) and `shard_of` (Java's executor asks the strategy directly).
 - **A repository without its mapping cannot be created**, where Java's does not compile - the

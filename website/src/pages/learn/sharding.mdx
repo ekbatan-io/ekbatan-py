@@ -227,8 +227,8 @@ psql -p 5432 wallets -c "SELECT count(*) FROM wallets"   # 0
 psql -p 5433 wallets -c "SELECT count(*) FROM eventlog.events"    # 1
 ```
 
-`wallet_repository.get(mx.id)` finds it with no lookup table and no extra query: the shard was read out of
-the id. `wallet_repository.find_where(...)` has no id to read, so it asks both.
+`wallet_repository.get_by_id(mx.id)` finds it with no lookup table and no extra query: the shard was read out of
+the id. `wallet_repository.find_all_where(...)` has no id to read, so it asks both.
 
 ## 6. (Optional) Cross-shard transfer
 
@@ -295,8 +295,8 @@ taken.
 
 ## What just happened
 
-- `wallet_repository.get(wallet_id)` — routes by the id's bits.
-- `wallet_repository.find_where(...)` — has no id to route by, so it **scatters** across every shard.
+- `wallet_repository.get_by_id(wallet_id)` — routes by the id's bits.
+- `wallet_repository.find_all_where(...)` — has no id to route by, so it **scatters** across every shard.
 - Every action body. Every endpoint. Every test that does not assert on placement.
 
 **A predicate read hits every shard.** In sync mode the shards are visited one at a time, so

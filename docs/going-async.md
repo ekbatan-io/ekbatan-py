@@ -43,7 +43,7 @@ class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, ShardedId[Wal
     def from_record(self, record: WalletsRecord) -> Wallet: ...
 
     async def find_all_by_owner(self, owner_id: UUID) -> list[Wallet]:
-        return await self.find_where(WALLETS.c.owner_id == owner_id)
+        return await self.find_all_where(WALLETS.c.owner_id == owner_id)
 
     async def total_balance(self) -> Decimal:
         query = select(func.coalesce(func.sum(WALLETS.c.balance), 0)).where(
@@ -57,7 +57,7 @@ class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, ShardedId[Wal
 
 The handler writes notifications through the same `NotificationRepository`, built over its own registry.
 
-Every inherited read and write - `get`, `find_where`, `add`, `update`, `count` - is now a
+Every inherited read and write - `get_by_id`, `find_all_where`, `add`, `update`, `count` - is now a
 coroutine, and a read across shards asks them all at once.
 
 ## 3. The actions
@@ -71,7 +71,7 @@ class WalletDepositMoneyAction(AsyncAction["WalletDepositMoneyAction.Params", Wa
         self.wallet_repository = wallet_repository
 
     async def perform(self, principal: str | None, params: Params) -> Wallet:
-        wallet = await self.wallet_repository.get(params.wallet_id)
+        wallet = await self.wallet_repository.get_by_id(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 ```
 
@@ -225,7 +225,7 @@ The example's test drives the endpoints with FastAPI's `TestClient`, unchanged. 
 HTTP into the service, await on the loop the app runs on:
 
 ```python
-wallet = client.portal.call(lambda: service.wallet_repository.get(wallet_id))
+wallet = client.portal.call(lambda: service.wallet_repository.get_by_id(wallet_id))
 ```
 
 And an action on its own, without a database:

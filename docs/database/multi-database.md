@@ -110,7 +110,7 @@ from ekbatan import SystemClock
 
 now = SystemClock().instant()          # datetime(2026, 10, 19, 8, 30, 0, 123456) - UTC, no zone
 wallet = wallet_repository.add(Wallet.create_wallet(..., now).build())
-wallet_repository.get(wallet.id).created_date == now   # True: the same value, to the microsecond
+wallet_repository.get_by_id(wallet.id).created_date == now   # True: the same value, to the microsecond
 ```
 
 The default clock gives the current **UTC time with no zone attached**. That is exactly what a

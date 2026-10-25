@@ -174,7 +174,7 @@ the duration.
 
 ```python
 # refused in an async def: BlockingCallError
-wallet = wallet_repository.get(wallet_id)
+wallet = wallet_repository.get_by_id(wallet_id)
 
 # right
 wallet = await asyncio.to_thread(wallet_repository.get, wallet_id)
@@ -184,7 +184,7 @@ from starlette.concurrency import run_in_threadpool
 wallet = await run_in_threadpool(wallet_repository.get, wallet_id)
 
 # right, with ekbatan.aio: an async repository, awaited
-wallet = await wallet_repository.get(wallet_id)
+wallet = await wallet_repository.get_by_id(wallet_id)
 ```
 
 Not inside a sync transaction, though: `asyncio.to_thread` and `run_in_threadpool` copy the

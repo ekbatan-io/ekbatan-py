@@ -141,7 +141,8 @@ Checked by running (2026-10-12, scratch scripts, SQLite file database): findings
 - **Could match Java?** yes - use the plain primary connection (`db()`) in `_reader`.
 - **Surprise:** medium
 
-### 8. The read methods have different names, not just snake_case
+### 8. ~~The read methods have different names, not just snake_case~~ names matched (`EKB-0538`)
+- **Matched** (`EKB-0538`, the user's decision 2026-10-25): the reads are Java's names in snake case - `find_by_id`, `get_by_id`, `find_all_by_ids`, `find_all`, `exists_by_id`, `count`, `count_where`, `find_one_where`, `find_all_where`, `exists_where` - on the sync repository and its `ekbatan.aio` twin; the old names are gone, with no alias. `count()` counts every live row and `count_where(...)` the matching ones, as Java's `count()` / `countWhere(c)`. A `*_where` read needs one condition, as Java's do - called with none it is refused - and still takes several, and `shard=`. A missing row stays `None`: Python's way of saying a value may be missing. See `docs/REPO-NAMES-LEDGER.md`.
 - **What:** `find` / `get` / `find_many` / `find_where` / `find_one_where` / `all` / `exists` /
   `exists_where` / `count(*criteria)` stand for Java's `findById` / `getById` / `findAllByIds` /
   `findAllWhere` / `findOneWhere` / `findAll` / `existsById` / `existsWhere` / `count()` +

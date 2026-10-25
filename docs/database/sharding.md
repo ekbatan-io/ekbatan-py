@@ -237,9 +237,9 @@ What it changes about the inherited reads and writes:
 
 | | routes by |
 | --- | --- |
-| `get`, `find`, `find_many`, `exists`, `update`, `delete` | the shard packed into the id |
+| `get_by_id`, `find_by_id`, `find_all_by_ids`, `exists_by_id`, `update`, `delete` | the shard packed into the id |
 | `add` | the shard packed into the id the model was created with |
-| `find_where`, `find_one_where`, `exists_where`, `count` | **every shard** — a predicate says nothing about placement |
+| `find_all`, `find_all_where`, `find_one_where`, `exists_where`, `count`, `count_where` | **every shard** — a predicate says nothing about placement |
 | anything passed `shard=` | that shard, and only that one |
 
 A read across every shard visits them in shard order. `find_one_where` and `exists_where` stop at
@@ -248,7 +248,7 @@ that one is never asked. If a shard fails, the whole read fails with that shard'
 a note naming it - `ekbatan: reading shard 1:0 (mexico) failed, so the whole read failed`. There
 are no partial results.
 
-`find_many(ids)` is the one worth calling out: it **groups the ids by shard and queries each
+`find_all_by_ids(ids)` is the one worth calling out: it **groups the ids by shard and queries each
 shard once**, rather than one query per id. Duplicates are collapsed first, and an empty input
 returns an empty list without going near a database — never `IN ()`, and never an accidental
 full-table read.
@@ -405,7 +405,7 @@ Case and separators do not matter, so `fail`, `FAIL`,
 `useDefaultShard`, `use_default_shard` and `USE-DEFAULT-SHARD` all work, in code and in a
 config file; an empty value, or `None`, is the default.
 
-It is applied where routing resolves, so it covers **reads and writes alike** — `find(id)` on an
+It is applied where routing resolves, so it covers **reads and writes alike** — `find_by_id(id)` on an
 unregistered shard raises just as `add(model)` does. Leave it alone if your deployment is a
 **subset** of the layout: turning it on there refuses exactly the foreign-id reads the fallback
 exists for.

@@ -149,7 +149,7 @@ write inside the block uses it:
 
 ```python
 with tm.transaction():
-    wallet = wallet_repository.get(wallet_id)          # a primary read, by design
+    wallet = wallet_repository.get_by_id(wallet_id)          # a primary read, by design
     wallet_repository.update(wallet.close())           # joins this transaction
 ```
 
@@ -158,7 +158,7 @@ with tm.transaction():
 
 ```python
 async with tm.transaction():
-    wallet = await wallet_repository.get(wallet_id)    # a primary read, by design
+    wallet = await wallet_repository.get_by_id(wallet_id)    # a primary read, by design
     await wallet_repository.update(wallet.close())     # joins this transaction
 ```
 

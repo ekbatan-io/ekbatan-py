@@ -1649,7 +1649,7 @@ is what the event handler's action writes (step 11).
 
 <div data-mode="sync">
 
-`get`, `find_where`, `add`, `update`, counting and existence are inherited, and `to_record` and
+`get_by_id`, `find_all_where`, `add`, `update`, counting and existence are inherited, and `to_record` and
 `from_record` say how a row and a dataclass map onto each other, typed by the table's record
 (`WalletsRecord`, beside `WALLETS` in `schema.py`). What you add are the questions
 your business asks.
@@ -1658,8 +1658,7 @@ your business asks.
 
 <div data-mode="async">
 
-The repositories extend `AsyncModelRepository` and `AsyncEntityRepository`: `get`,
-`find_where`, `add`, `update`, counting and existence are inherited, and every one is awaited, as
+The repositories extend `AsyncModelRepository` and `AsyncEntityRepository`: `get_by_id`, `find_all_where`, `add`, `update`, counting and existence are inherited, and every one is awaited, as
 is every query you add. `to_record` and `from_record` say how a row and a dataclass map onto each
 other, as in sync, and stay plain `def` - mapping waits on nothing.
 A read with no shard named asks every shard at the same time.

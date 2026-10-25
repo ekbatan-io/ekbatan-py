@@ -1414,3 +1414,21 @@ HTTP layer made much smaller. Ledger: `docs/JAVA-MODEL-LEDGER.md`.
 | **The guide's verify step creates the wallet at 100.00** | the stipend tops up wallets below 100.00 every two seconds; a wallet at 0.00 would make the outbox rows the page lists non-deterministic | stop the stipend before verifying |
 | **The guide keeps `docker run` for its database** | Java's guide uses a compose file; the check script names and removes the container | a compose file |
 | **The SQLite examples run two shards, two files**, and their script's tour lost the daily-stipend step | the REST pieces, as briefed; no stipend in the REST examples | one file, and the stipend tour |
+
+## Repository read methods take Java's names (EKB-0538-)
+
+The decision (the user, 2026-10-25): the repository read methods take Java's names in snake case
+- `find_by_id`, `get_by_id`, `find_all_by_ids`, `find_all`, `exists_by_id`, `count`,
+`count_where`, `find_one_where`, `find_all_where`, `exists_where` - the old names gone with no
+alias, the async twins named the same; a missing row stays `None`, and a `*_where` read keeps
+taking several conditions and `shard=`. Ledger: `docs/REPO-NAMES-LEDGER.md`.
+
+| decision | why | the other way |
+| --- | --- | --- |
+| **A `*_where` read needs at least one condition**: the first is a required parameter, so a call with none is refused (Python's `TypeError`, and mypy flags it). Before, `find_where()`, `find_one_where()`, `exists_where()` and `count()` with no condition read every live row | Java's `findAllWhere` / `findOneWhere` / `existsWhere` / `countWhere` take exactly one `Condition`, so Java cannot make that call; the reads with no condition are `find_all()` and `count()`, as Java's `findAll()` / `count()`. The suite's and a probe's `find_where()` / `find_where(shard=...)` became `find_all()` / `find_all(shard=...)`; nothing called `exists_where` or `find_one_where` with none | keep accepting no condition |
+| **`count` is split**: `count(*, shard=None)` counts every live row, `count_where(condition, *more, shard=None)` the matching ones | the user's table; Java's `count()` and `countWhere(c)` | one `count(*criteria)` |
+| **The parameters stay `key` / `keys`** (Java's are `id` / `ids`) | `id` would hide Python's built-in of that name; only the method names were asked for, and a keyword call keeps working | name them `id` / `ids` |
+| **The framework's own event repositories keep their names** (`EventEntityRepository.count(shard)`, `find_all(shard)`, `find_by_action_id`; `EventNotificationRepository.find_due`) | they are not the read API an application's repository inherits; one test call the rename caught (`event_entity_repository.count(DEFAULT_SHARD)`) was put back | rename them too |
+| **History keeps the old names**: the ledgers, this file, the dracula detail lines that describe what was, `docs/behaviour-parity/A-repository.md` (Java's names), and the parity probes' recordings (`.out`, `.diff`, `.cmp.txt`) together with the probe labels that name entries in them (`probe("find_many", ...)`) | they record what was true, or name what a recording holds | rewrite them and re-record |
+| **The website's async gather snippet names its repositories by the rule too**: `self.customers.get` / `self.quotes.get` became `self.customer_repository.get_by_id` / `self.quote_repository.get_by_id` | the same line, and the repository-variable rule of `EKB-0529` | rename only the method |
+| **`find_one_where`'s refusal says "Use find_all_where when several rows are expected."** | it names the read to use, by its new name | - |

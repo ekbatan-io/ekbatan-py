@@ -189,7 +189,7 @@ class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, ShardedId[Wal
         return self.model_by_field_name(record)
 ```
 
-That is the whole repository - `get`, `find_where`, `add`, `update`, counting and existence are
+That is the whole repository - `get_by_id`, `find_all_where`, `add`, `update`, counting and existence are
 inherited. `WalletsRecord` is the table's record, which schemagen writes into `schema.py` beside
 `WALLETS`: a `dict` with a key per column, typed as the column reads - `record.column_owner_id()` (preferred),
 or `record["owner_id"]` - so mypy checks the mapping against the table. The mapping between a record and the model is yours to write, and
@@ -203,14 +203,14 @@ What you add here are the questions your application actually asks:
 
 ```python
     def find_all_by_owner(self, owner_id: UUID) -> list[Wallet]:
-        return self.find_where(WALLETS.c.owner_id == owner_id)
+        return self.find_all_where(WALLETS.c.owner_id == owner_id)
 ```
 
 **Async**
 
 ```python
     async def find_all_by_owner(self, owner_id: UUID) -> list[Wallet]:
-        return await self.find_where(WALLETS.c.owner_id == owner_id)
+        return await self.find_all_where(WALLETS.c.owner_id == owner_id)
 ```
 
 ### 3. An action
@@ -224,7 +224,7 @@ class WalletDepositMoneyAction(Action["WalletDepositMoneyAction.Params", Wallet]
         self.wallet_repository = wallet_repository
 
     def perform(self, principal: str | None, params: Params) -> Wallet:
-        wallet = self.wallet_repository.get(params.wallet_id)
+        wallet = self.wallet_repository.get_by_id(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 ```
 
@@ -237,7 +237,7 @@ class WalletDepositMoneyAction(AsyncAction["WalletDepositMoneyAction.Params", Wa
         self.wallet_repository = wallet_repository
 
     async def perform(self, principal: str | None, params: Params) -> Wallet:
-        wallet = await self.wallet_repository.get(params.wallet_id)
+        wallet = await self.wallet_repository.get_by_id(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 ```
 

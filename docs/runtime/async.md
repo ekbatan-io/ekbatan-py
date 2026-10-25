@@ -63,7 +63,7 @@ class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, ShardedId[Wal
     def from_record(self, record: WalletsRecord) -> Wallet: ...
 
     async def find_all_by_owner(self, owner_id: UUID) -> list[Wallet]:
-        return await self.find_where(WALLETS.c.owner_id == owner_id)
+        return await self.find_all_where(WALLETS.c.owner_id == owner_id)
 
 
 class WalletDepositMoneyAction(AsyncAction["WalletDepositMoneyAction.Params", Wallet]):
@@ -72,7 +72,7 @@ class WalletDepositMoneyAction(AsyncAction["WalletDepositMoneyAction.Params", Wa
         self.wallet_repository = wallet_repository
 
     async def perform(self, principal: str | None, params: Params) -> Wallet:
-        wallet = await self.wallet_repository.get(params.wallet_id)
+        wallet = await self.wallet_repository.get_by_id(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 
 
@@ -190,8 +190,8 @@ each); it is on by default, as on a sync pool. `scripts/bench-async.py` runs all
 
 ## Reads across shards run at once
 
-A read with no shard named - `find_where`, `all`, `count`, `exists_where`, `find_one_where`,
-and `find_many` across the shards its ids live on - asks every shard **at the same time**, so it
+A read with no shard named - `find_all_where`, `find_all`, `count`, `count_where`,
+`exists_where`, `find_one_where`, and `find_all_by_ids` across the shards its ids live on - asks every shard **at the same time**, so it
 costs about one shard's round trip rather than one per shard. The answer is the sync one:
 
 - rows come back first shard first, as in sync;

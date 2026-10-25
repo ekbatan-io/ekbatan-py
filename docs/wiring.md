@@ -112,7 +112,7 @@ class WalletDepositMoneyAction(Action["WalletDepositMoneyAction.Params", Wallet]
         self.wallet_repository = wallet_repository
 
     def perform(self, principal: str | None, params: Params) -> Wallet:
-        return self.plan.update(self.wallet_repository.get(params.wallet_id).deposit(params.amount))
+        return self.plan.update(self.wallet_repository.get_by_id(params.wallet_id).deposit(params.amount))
 ```
 
 **Async**
@@ -142,7 +142,7 @@ class WalletDepositMoneyAction(AsyncAction["WalletDepositMoneyAction.Params", Wa
         self.wallet_repository = wallet_repository
 
     async def perform(self, principal: str | None, params: Params) -> Wallet:
-        wallet = await self.wallet_repository.get(params.wallet_id)
+        wallet = await self.wallet_repository.get_by_id(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 ```
 

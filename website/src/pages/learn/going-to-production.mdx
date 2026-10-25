@@ -22,13 +22,13 @@ than one thread.
 
 ```python
 # refused inside an async def: BlockingCallError
-wallet = wallet_repository.get(wallet_id)
+wallet = wallet_repository.get_by_id(wallet_id)
 
 # right, with the sync API
 wallet = await run_in_threadpool(wallet_repository.get, wallet_id)
 
 # right, with ekbatan.aio: an async repository, awaited
-wallet = await wallet_repository.get(wallet_id)
+wallet = await wallet_repository.get_by_id(wallet_id)
 ```
 
 A plain `def` endpoint in FastAPI is already run in a threadpool, so the ordinary way of writing

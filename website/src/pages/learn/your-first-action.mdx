@@ -31,7 +31,7 @@ The shape of the surface, before we type a line:
                 WalletDepositMoneyAction.Params(wallet_id, amount, recipient))
                         ▼
         ┌─── Phase 1 — perform() ──────────────────┐
-        │  self.wallet_repository.get(wallet_id)             │
+        │  self.wallet_repository.get_by_id(wallet_id)             │
         │  wallet.deposit(amount)                  │
         │      ↳ attaches WalletMoneyDepositedEvent      │
         │  self.plan.update(updated)               │
@@ -154,7 +154,7 @@ class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, ShardedId[Wal
 </div>
 </ModeTabs>
 
-That is the whole repository. `get`, `find_where`, `add`, `update`, counting and existence are
+That is the whole repository. `get_by_id`, `find_all_where`, `add`, `update`, counting and existence are
 inherited. `WalletsRecord` is the table's record, which schemagen writes into `schema.py` beside
 `WALLETS`: a `dict` with a key per column, typed as the column reads - `record.column_owner_id()` (preferred),
 or `record["owner_id"]` - so mypy checks the mapping against the table. The mapping between a record and the model is yours to write, and
@@ -169,7 +169,7 @@ What you add are the questions your business actually asks:
 
 ```python
     def find_all_by_owner(self, owner_id: UUID) -> list[Wallet]:
-        return self.find_where(WALLETS.c.owner_id == owner_id)
+        return self.find_all_where(WALLETS.c.owner_id == owner_id)
 ```
 
 </div>
@@ -177,7 +177,7 @@ What you add are the questions your business actually asks:
 
 ```python
     async def find_all_by_owner(self, owner_id: UUID) -> list[Wallet]:
-        return await self.find_where(WALLETS.c.owner_id == owner_id)
+        return await self.find_all_where(WALLETS.c.owner_id == owner_id)
 ```
 
 </div>
@@ -207,7 +207,7 @@ class WalletDepositMoneyAction(Action["WalletDepositMoneyAction.Params", Wallet]
         self.wallet_repository = wallet_repository
 
     def perform(self, principal: str | None, params: Params) -> Wallet:
-        wallet = self.wallet_repository.get(params.wallet_id)
+        wallet = self.wallet_repository.get_by_id(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 ```
 
@@ -227,7 +227,7 @@ class WalletDepositMoneyAction(AsyncAction["WalletDepositMoneyAction.Params", Wa
         self.wallet_repository = wallet_repository
 
     async def perform(self, principal: str | None, params: Params) -> Wallet:
-        wallet = await self.wallet_repository.get(params.wallet_id)
+        wallet = await self.wallet_repository.get_by_id(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 ```
 

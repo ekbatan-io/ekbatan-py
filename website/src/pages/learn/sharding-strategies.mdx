@@ -98,13 +98,13 @@ persistence operation, before the transaction opens.
 > time-window routing, hot-key detection.
 
 The cost is that **the id stops being self-describing.** Any read that starts from an id alone —
-`wallet_repository.get(wallet_id)` — needs the strategy to find the row before it knows which database to
+`wallet_repository.get_by_id(wallet_id)` — needs the strategy to find the row before it knows which database to
 look in, and that is a round trip you pay implicitly on every lookup. Use embedded bits if you
 can; reach for this when you cannot.
 
 A strategy declares whether its ids are shard-aware. One that says no is fine in itself — it
 just has to route from something other than the id — but the moment an id-only path like
-`get(id)` is called on it, the repository raises `UnsupportedError` naming the strategy and
+`get_by_id(id)` is called on it, the repository raises `UnsupportedError` naming the strategy and
 telling you to override `shard_for()`. It is refused rather than guessed at, because guessing
 here means reading the right row from the wrong database and finding nothing.
 

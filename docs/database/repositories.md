@@ -13,7 +13,7 @@ class WalletRepository(ModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]
                          sharding=EmbeddedBitsShardingStrategy(), clock=clock)
 
     def find_all_by_owner(self, owner_id: UUID) -> list[Wallet]:
-        return self.find_where(WALLETS.c.owner_id == owner_id)
+        return self.find_all_where(WALLETS.c.owner_id == owner_id)
 ```
 
 **Async**
@@ -25,7 +25,7 @@ class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, ShardedId[Wal
                          sharding=EmbeddedBitsShardingStrategy(), clock=clock)
 
     async def find_all_by_owner(self, owner_id: UUID) -> list[Wallet]:
-        return await self.find_where(WALLETS.c.owner_id == owner_id)
+        return await self.find_all_where(WALLETS.c.owner_id == owner_id)
 ```
 
 ## The four classes
@@ -190,8 +190,8 @@ returns is the very `dict` the INSERT is given: no copy is made on the way.
 
 `from_record` is handed the table's record - a `WalletsRecord`, built from the result row, or,
 where an insert or update has no `RETURNING` (MySQL), the record `to_record` wrote. Every read
-the framework does hands it the same: `find`, `get`, `find_many`, `find_where`,
-`find_one_where`, `all`, the rows `add` and `update` read back, a read across shards, and a
+the framework does hands it the same: `find_by_id`, `get_by_id`, `find_all_by_ids`, `find_all_where`,
+`find_one_where`, `find_all`, the rows `add` and `update` read back, a read across shards, and a
 query of your own ended with `.fetch(self.from_record)`. Read each column by its method, as
 above - the preferred way. `record["owner_id"]` is fine too: the record is a `dict`, the value
 is the same, and mypy checks the key just as it checks the method.
@@ -270,23 +270,23 @@ framework otherwise has to rebuild the rows itself, and that is not free.
 **Sync**
 
 ```python
-repo.find(key)               # -> M | None
-repo.get(key)                # -> M, raises EntityNotFoundError
-repo.find_many(keys)         # -> list[M]
-repo.all(shard=...)          # -> list[M]
-repo.find_one_where(*criteria, shard=...)
-repo.find_where(*criteria, shard=...)
+repo.find_by_id(key)          # -> M | None
+repo.get_by_id(key)           # -> M, raises EntityNotFoundError
+repo.find_all_by_ids(keys)    # -> list[M]
+repo.find_all(shard=...)      # -> list[M]
+repo.find_one_where(condition, *more, shard=...)
+repo.find_all_where(condition, *more, shard=...)
 ```
 
 **Async**
 
 ```python
-await repo.find(key)               # -> M | None
-await repo.get(key)                # -> M, raises EntityNotFoundError
-await repo.find_many(keys)         # -> list[M]
-await repo.all(shard=...)          # -> list[M]
-await repo.find_one_where(*criteria, shard=...)
-await repo.find_where(*criteria, shard=...)
+await repo.find_by_id(key)          # -> M | None
+await repo.get_by_id(key)           # -> M, raises EntityNotFoundError
+await repo.find_all_by_ids(keys)    # -> list[M]
+await repo.find_all(shard=...)      # -> list[M]
+await repo.find_one_where(condition, *more, shard=...)
+await repo.find_all_where(condition, *more, shard=...)
 ```
 
 **Counting and existence**
@@ -294,17 +294,19 @@ await repo.find_where(*criteria, shard=...)
 **Sync**
 
 ```python
-repo.count(*criteria, shard=...)
-repo.exists(key)
-repo.exists_where(*criteria, shard=...)
+repo.count(shard=...)
+repo.count_where(condition, *more, shard=...)
+repo.exists_by_id(key)
+repo.exists_where(condition, *more, shard=...)
 ```
 
 **Async**
 
 ```python
-await repo.count(*criteria, shard=...)
-await repo.exists(key)
-await repo.exists_where(*criteria, shard=...)
+await repo.count(shard=...)
+await repo.count_where(condition, *more, shard=...)
+await repo.exists_by_id(key)
+await repo.exists_where(condition, *more, shard=...)
 ```
 
 Every one of them:
@@ -322,20 +324,22 @@ them:
 **Sync**
 
 ```python
-repo.find_where(WALLETS.c.state == "OPENED", WALLETS.c.balance < threshold)
+repo.find_all_where(WALLETS.c.state == "OPENED", WALLETS.c.balance < threshold)
 ```
 
 **Async**
 
 ```python
-await repo.find_where(WALLETS.c.state == "OPENED", WALLETS.c.balance < threshold)
+await repo.find_all_where(WALLETS.c.state == "OPENED", WALLETS.c.balance < threshold)
 ```
 
 Several criteria are `AND`ed. For anything else, build the expression yourself and pass it.
+A `*_where` read needs at least one condition - called with none, it is refused; the reads
+with no condition are `find_all()` and `count()`.
 
 ### No offset pagination, deliberately
 
-There is no `all(offset, limit)` and no `find_where(..., offset, limit)`. Offset
+There is no `find_all(offset, limit)` and no `find_all_where(..., offset, limit)`. Offset
 pagination does not work across shards - "rows 100 to 120" has no meaning when the rows are on
 four databases and each has its own ordering. Use keyset or temporal pagination, written on the
 concrete repository where you know the ordering key.
@@ -542,7 +546,7 @@ select(WALLETS).where(
 )
 ```
 
-The predicate helpers (`find_where`, `find_one_where`, `exists_where`, `count`) keep both the
+The predicate helpers (`find_all_where`, `find_one_where`, `exists_where`, `count_where`) keep both the
 soft-delete filter and the shard routing, so reach for those before reaching for a connection.
 
 ## Discovery via the registry

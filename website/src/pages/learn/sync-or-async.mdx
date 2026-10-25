@@ -65,7 +65,7 @@ A deposit, both ways:
 ```python
 class WalletDepositMoneyAction(Action["WalletDepositMoneyAction.Params", Wallet]):
     def perform(self, principal: str | None, params: Params) -> Wallet:
-        wallet = self.wallet_repository.get(params.wallet_id)
+        wallet = self.wallet_repository.get_by_id(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 
 
@@ -78,7 +78,7 @@ wallet = executor.execute(WalletDepositMoneyAction, params)
 ```python
 class WalletDepositMoneyAction(AsyncAction["WalletDepositMoneyAction.Params", Wallet]):
     async def perform(self, principal: str | None, params: Params) -> Wallet:
-        wallet = await self.wallet_repository.get(params.wallet_id)
+        wallet = await self.wallet_repository.get_by_id(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 
 
