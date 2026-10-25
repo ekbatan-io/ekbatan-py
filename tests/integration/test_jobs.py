@@ -454,10 +454,12 @@ class TestCustomizingTheScheduler:
 
 
 class TestShutdownHook:
-    """`register_shutdown_hook()` - opt-in, because CPython has one handler slot per signal."""
+    """`register_shutdown_hook` - on by default, as Java's. Its SIGTERM half takes the signal only
+    where nothing else handles it; a job finishing on a real SIGTERM, in a real process, is
+    measured in `test_jobs_at_exit.py`."""
 
     @staticmethod
-    def _idle_registry(registry, **hook):
+    def _idle_registry(registry, hook: bool | None = None):
         """A registry whose one job never becomes due, so nothing runs during these tests."""
         from db_scheduler.task.schedule import DisabledSchedule
 
@@ -477,52 +479,71 @@ class TestShutdownHook:
             .with_jobs([NeverDue()])
             .poll_interval(timedelta(seconds=1))
         )
-        if hook.get("hooked"):
-            builder = builder.register_shutdown_hook()
+        if hook is not None:
+            builder = builder.register_shutdown_hook(hook)
         return builder.build()
 
-    def test_it_is_off_unless_asked_for(self, registry):
+    @pytest.fixture(autouse=True)
+    def _sigterm_as_a_plain_worker_has_it(self):
+        """Nothing handles SIGTERM, as in a worker started with `python -m`; put back what the
+        test run had either way."""
         import signal
 
         before = signal.getsignal(signal.SIGTERM)
+        signal.signal(signal.SIGTERM, signal.SIG_DFL)
+        yield
+        signal.signal(signal.SIGTERM, before)
+
+    def test_it_is_on_by_default_and_takes_a_sigterm_nobody_handles(self, registry):
+        import signal
+
+        from ekbatan.distributedjobs import _shutdown
+
         jobs = self._idle_registry(registry)
         jobs.start()
         try:
-            assert signal.getsignal(signal.SIGTERM) is before, "a registry took SIGTERM uninvited"
+            assert signal.getsignal(signal.SIGTERM) is _shutdown._on_sigterm
         finally:
             jobs.stop()
 
-    def test_asking_for_it_drains_the_scheduler_on_sigterm(self, registry):
+    def test_stopping_gives_sigterm_back(self, registry):
+        """So nothing of the registry is left in a process that goes on without it."""
+        import signal
+
+        jobs = self._idle_registry(registry)
+        jobs.start()
+        jobs.stop()
+
+        assert signal.getsignal(signal.SIGTERM) is signal.SIG_DFL
+
+    def test_turned_off_it_takes_nothing(self, registry):
+        import signal
+
+        jobs = self._idle_registry(registry, hook=False)
+        jobs.start()
+        try:
+            assert signal.getsignal(signal.SIGTERM) is signal.SIG_DFL
+        finally:
+            jobs.stop()
+
+    def test_a_real_sigterm_stops_the_scheduler(self, registry, monkeypatch):
         """The whole point: a container stop finishes what is running instead of cutting it off.
 
         Without it the execution's row stays `picked` with a frozen heartbeat, and another
-        instance can only take it after the dead-execution window - 60 seconds on defaults.
+        instance can only take it after the dead-execution window - 60 seconds on defaults. The
+        signal is real; the re-raise and the exit after it, which would end the test run, are
+        replaced.
         """
         import os
         import signal
 
-        original = signal.getsignal(signal.SIGTERM)
-        ran: list[str] = []
-        signal.signal(signal.SIGTERM, lambda *_: ran.append("the app's handler"))
-        jobs = self._idle_registry(registry, hooked=True)
-        try:
-            jobs.start()
-            assert signal.getsignal(signal.SIGTERM) is not original, "the hook did not install"
-
-            os.kill(os.getpid(), signal.SIGTERM)
-
-            assert ran == ["the app's handler"], "the application's handler was displaced"
-            assert jobs.scheduler.scheduler_state.is_shutting_down, "it was not drained"
-        finally:
-            signal.signal(signal.SIGTERM, original)
-
-    def test_stopping_hands_the_signal_back(self, registry):
-        """So a second Ctrl-C from an impatient operator reaches whatever was there before."""
-        import signal
-
-        original = signal.getsignal(signal.SIGTERM)
-        jobs = self._idle_registry(registry, hooked=True)
+        ended: list[int] = []
+        monkeypatch.setattr(signal, "raise_signal", ended.append)
+        monkeypatch.setattr(os, "_exit", ended.append)
+        jobs = self._idle_registry(registry)
         jobs.start()
-        jobs.stop()
 
-        assert signal.getsignal(signal.SIGTERM) is original
+        os.kill(os.getpid(), signal.SIGTERM)
+
+        assert jobs.scheduler.scheduler_state.is_shutting_down, "it was not stopped"
+        assert ended == [signal.SIGTERM, 128 + signal.SIGTERM]

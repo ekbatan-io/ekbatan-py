@@ -35,7 +35,7 @@ from .._guards import refuse_if_forked
 from .._logtext import java_list
 from ..errors import ValidationError
 from ..persistence import DataSource, _taken
-from ._shutdown import ShutdownHook
+from . import _shutdown
 from .config import JobsConfig, JobsConfigBuilder
 
 if TYPE_CHECKING:
@@ -137,11 +137,10 @@ class JobRegistry:
 
     __slots__ = (
         "_created_in",
-        "_hook",
         "_job_names",
         "_names_requiring_registration",
+        "_register_shutdown_hook",
         "_scheduler",
-        "_stop_on_exit",
     )
 
     #: Whether :meth:`start` warns when nothing in the process handles SIGTERM. Off for
@@ -153,14 +152,12 @@ class JobRegistry:
         scheduler: Scheduler,
         job_names: Sequence[str],
         names_requiring_registration: Sequence[str],
-        shutdown_hook: bool = False,
-        stop_on_exit: bool = True,
+        register_shutdown_hook: bool = True,
     ) -> None:
         self._scheduler = scheduler
-        self._stop_on_exit = stop_on_exit
-        #: Built here and installed in `start()`, because a registry that was built and never
-        #: started has no business holding the process's signals.
-        self._hook = ShutdownHook(self.stop) if shutdown_hook else None
+        #: Acted on in `start()`, not here as Java's is: a registry that was built and never
+        #: started has nothing to stop, and no business holding the process's SIGTERM.
+        self._register_shutdown_hook = register_shutdown_hook
         self._job_names = list(job_names)
         #: The subset of `job_names` that must have a row in `scheduled_tasks` once started.
         #: Jobs whose schedule is disabled are excluded: db-scheduler deliberately writes no
@@ -182,9 +179,12 @@ class JobRegistry:
     def start(self) -> None:
         """Begin polling and executing registered jobs.
 
-        Logs one WARNING, once per process, when nothing handles SIGTERM - neither
-        :meth:`JobRegistryBuilder.register_shutdown_hook` nor anything else in the process - since
-        a container stop would then cut running jobs off. It installs and changes nothing.
+        With :meth:`JobRegistryBuilder.register_shutdown_hook` on - the default - this is where
+        the registry goes on `atexit`, and takes SIGTERM if nothing else handles it.
+
+        Logs one WARNING, once per process, when nothing handles SIGTERM after that - the hook is
+        off, or this runs off the main thread, where CPython lets nobody set a signal handler -
+        since a container stop would then cut running jobs off.
 
         Refused with :class:`~ekbatan.errors.ForkedProcessError` in a process this registry was
         copied into by ``fork()``: build it in the process that runs the jobs.
@@ -199,14 +199,13 @@ class JobRegistry:
         self._verify_every_job_registered()
         # Last, and only once the jobs are known to be registered: a hook that drained a
         # scheduler which had failed to start would be answering for nothing.
-        if self._stop_on_exit:
+        if self._register_shutdown_hook:
             # Unregistered first, so starting twice leaves one entry rather than two.
             atexit.unregister(self._stop_at_exit)
             atexit.register(self._stop_at_exit)
-        if self._hook is not None:
-            self._hook.install()
-        elif self._warns_when_sigterm_is_unhandled:
-            _warn_if_sigterm_is_unhandled(self._scheduler)
+            _shutdown.add(self)
+        if self._warns_when_sigterm_is_unhandled:
+            _warn_if_sigterm_is_unhandled(self._scheduler, self._register_shutdown_hook)
 
     def _verify_every_job_registered(self) -> None:
         """Confirm that starting actually registered the jobs, because nothing else will.
@@ -251,19 +250,15 @@ class JobRegistry:
         abandoned, leaving its row picked with a frozen heartbeat - so it is recovered later by
         the same dead-execution path as a crash.
         """
-        if self._stop_on_exit:
+        if self._register_shutdown_hook:
             # A stopped registry has nothing left to drain, and the entry would otherwise keep
             # it - and its pool - alive until the interpreter exits.
             atexit.unregister(self._stop_at_exit)
+            _shutdown.remove(self)
         self._drain()
 
     def _drain(self) -> None:
         LOG.info("Stopping JobRegistry")
-        if self._hook is not None:
-            # Before draining, and unconditionally: a second signal while this one is winding
-            # down has to reach whatever was there before us, which for an impatient operator
-            # pressing Ctrl-C twice is the default handler and an immediate exit.
-            self._hook.remove()
         self._scheduler.stop()
         LOG.info("JobRegistry stopped")
 
@@ -315,19 +310,21 @@ _sigterm_warned = False
 _sigterm_warned_lock = threading.Lock()
 
 
-def _warn_if_sigterm_is_unhandled(scheduler: Scheduler) -> None:
+def _warn_if_sigterm_is_unhandled(scheduler: Scheduler, hooked: bool) -> None:
     """Log one WARNING when nothing in this process handles SIGTERM. Changes no handler.
 
     SIGTERM is how a container is stopped. With its default handling CPython ends the process at
     once - no `atexit`, no `stop()` - so a job part way through is cut off, and its row waits out
     the dead-execution window before another instance runs it again. Anything else in the slot
-    means somebody owns the signal: uvicorn and gunicorn install theirs before the application
-    starts, as does asyncio's `add_signal_handler` and an application's own `signal.signal`. Only
-    the default is warned about; an ignored signal (`SIG_IGN`) was chosen by someone, and `None`
-    is a handler set outside Python.
+    means somebody owns the signal: the shutdown hook itself, uvicorn and gunicorn, which install
+    theirs before the application starts, asyncio's `add_signal_handler` and an application's own
+    `signal.signal`. Only the default is warned about; an ignored signal (`SIG_IGN`) was chosen by
+    someone, and `None` is a handler set outside Python.
 
-    `signal.getsignal` reads the process's handler from any thread, so a registry started off the
-    main thread - a FastAPI lifespan run in a thread pool - sees the same answer.
+    Called after the hook has had its chance, so the default still being there means the hook is
+    off (`hooked` false) or could not take the signal: it was started off the main thread - a
+    FastAPI lifespan run in a thread pool. `signal.getsignal` reads the process's handler from
+    any thread, so that registry sees the same answer.
     """
     global _sigterm_warned
     if signal.getsignal(signal.SIGTERM) != signal.SIG_DFL:
@@ -342,14 +339,27 @@ def _warn_if_sigterm_is_unhandled(scheduler: Scheduler) -> None:
         if isinstance(window, timedelta)
         else "after the dead-execution window"
     )
-    LOG.warning(
-        "Nothing in this process handles SIGTERM. Jobs still running when the process gets "
-        "SIGTERM (a container stop or a deploy) are cut off, and another instance runs them "
-        "again %s. To let them finish first, call register_shutdown_hook() on the job registry "
-        "builder, or call stop() on the JobRegistry from your own shutdown code, such as a "
-        "FastAPI lifespan.",
-        after,
+    cut_off = (
+        "Jobs still running when the process gets SIGTERM (a container stop or a deploy) are cut "
+        "off, and another instance runs them again %s. "
     )
+    if hooked:
+        LOG.warning(
+            "Nothing in this process handles SIGTERM, and the JobRegistry cannot: it was started "
+            "off the main thread, and only the main thread can set a signal handler. "
+            + cut_off
+            + "To let them finish first, start the JobRegistry on the main thread, or call its "
+            "stop() from a SIGTERM handler of your own.",
+            after,
+        )
+    else:
+        LOG.warning(
+            "Nothing in this process handles SIGTERM, and register_shutdown_hook is off. "
+            + cut_off
+            + "To let them finish first, turn register_shutdown_hook back on, or call stop() on "
+            "the JobRegistry from a SIGTERM handler of your own.",
+            after,
+        )
 
 
 def job_registry() -> JobRegistryBuilder:
@@ -365,10 +375,9 @@ class JobRegistryBuilder:
         "_heartbeat_interval",
         "_jobs",
         "_poll_interval",
+        "_register_shutdown_hook",
         "_scheduler_customizer",
-        "_shutdown_hook",
         "_shutdown_max_wait",
-        "_stop_on_exit",
         "_workers",
     )
 
@@ -380,8 +389,7 @@ class JobRegistryBuilder:
         self._shutdown_max_wait: timedelta | None = None
         self._scheduler_customizer: Callable[[SchedulerBuilder], None] | None = None
         self._workers: int | None = None
-        self._shutdown_hook = False
-        self._stop_on_exit = True
+        self._register_shutdown_hook = True
 
     def data_source(self, data_source: DataSource) -> Self:
         """The database db-scheduler will poll - Java's ``connectionProvider``. Required.
@@ -484,60 +492,35 @@ class JobRegistryBuilder:
         self._workers = count
         return self
 
-    def stop_on_exit(self, enabled: bool = True) -> Self:
-        """Drain when the interpreter exits. **On by default.**
+    def register_shutdown_hook(self, enabled: bool) -> Self:
+        """Whether running jobs finish before the process stops. **On by default**, as Java's.
 
-        Java's ``registerShutdownHook`` defaults to on because a JVM shutdown hook only adds to
-        a list. So does ``atexit``, which is what this uses: a registry that was started and
-        never stopped is stopped as the process exits, alongside whatever else registered, and
-        displacing nothing. OpenTelemetry's ``TracerProvider(shutdown_on_exit=True)`` and
-        Sentry's flush work the same way, and for the same reason.
+        Java's hook is a JVM shutdown hook, which runs however the process ends. CPython has a
+        separate mechanism for each way, and this uses both, from :meth:`JobRegistry.start`:
 
-        It covers a normal exit, an unhandled exception and **Ctrl-C**. It does **not** cover
-        SIGTERM on its own, measured: with SIGTERM's default disposition the process is killed
-        and no `atexit` hook runs - and under uvicorn neither, because uvicorn re-raises the
-        signal after its own shutdown. That is the JVM's other half, turning SIGTERM into an
-        orderly exit, and CPython does not do it. Under a server the lifespan's shutdown covers
-        SIGTERM; in a bare process :meth:`register_shutdown_hook` does.
+        - **The program ends by itself** - it returns, raises, or gets Ctrl-C: the registry is on
+          ``atexit``, so it is stopped, and its running jobs finish first.
+        - **It gets SIGTERM** - ``docker stop``, a Kubernetes rollout: if nothing else in the
+          process handles SIGTERM, the registry does, and logs one line saying so. On SIGTERM it
+          stops every registry that asked for this - their running jobs finish - and then the
+          process dies of the signal, as it would have: ``finally`` blocks and ``atexit`` do not
+          run. A second SIGTERM stops it at once.
 
-        :meth:`JobRegistry.stop` takes the entry off again, so a registry that was stopped is
-        not drained twice and is not kept alive by the list.
+        Where SIGTERM is already handled it stays out of the way: uvicorn and gunicorn set their
+        handler before the application starts, and the application's shutdown code - a FastAPI
+        lifespan - calls :meth:`JobRegistry.stop`. CPython has one handler per signal, so one
+        set after the registry started replaces its own.
+
+        Only the main thread can set a signal handler. A registry started elsewhere is on
+        ``atexit`` alone, and :meth:`JobRegistry.start` warns once if nothing handles SIGTERM.
+
+        Either way the wait is bounded by ``shutdown_max_wait``. Turned off, the registry is
+        neither on ``atexit`` nor on SIGTERM: you stop it yourself, and a job still running when
+        the process ends is cut off and run again elsewhere after the dead-execution window.
+        :meth:`JobRegistry.stop` takes all of it off again, and gives SIGTERM back once no
+        registry needs it.
         """
-        self._stop_on_exit = enabled
-        return self
-
-    def register_shutdown_hook(self, enabled: bool = True) -> Self:
-        """Drain on SIGTERM and SIGINT, instead of being cut off mid-execution. **Off by default.**
-
-        The additive half of Java's hook is :meth:`stop_on_exit`, and it is on. This is the other
-        half - catching SIGTERM so the drain runs on a container stop - and it is off, because
-        CPython has **one** handler slot per signal and installing one takes the application's
-        SIGTERM away from it. Every library read while deciding this leaves signals to whatever
-        owns the process - OpenTelemetry, Sentry and APScheduler never touch them; gunicorn,
-        uvicorn and the Celery, RQ, Dramatiq and Huey workers take them because they *are* the
-        process. That is a thing to be asked for, not assumed.
-
-        Asked for, it behaves: the handler that was there is kept and called afterwards, and
-        where there was none the default is restored and the signal re-raised, so the process
-        still dies of it. A hook that drained cleanly and then left the process alive would be
-        worse than the gap it closes. :meth:`stop` removes it again, so a second Ctrl-C from an
-        impatient operator reaches the default handler and exits at once.
-
-        Without it, a container stop ends the process with executions still `picked` and their
-        heartbeats frozen; another instance can only take them after the dead-execution window,
-        which is 60 seconds on the framework's defaults. With it, they finish - bounded by
-        ``shutdown_max_wait``.
-
-        **It needs the main thread**, because CPython only allows a signal handler to be
-        installed there, and it raises rather than silently doing nothing if it has not got one.
-        A service that already has somewhere to call :meth:`JobRegistry.stop` - a FastAPI
-        lifespan, a Django shutdown - wants none of this and should keep it off.
-
-        Left off in a process where nothing else handles SIGTERM either, :meth:`JobRegistry.start`
-        logs one WARNING saying so. Under uvicorn or gunicorn it does not: the server's handler is
-        already in place when the application starts.
-        """
-        self._shutdown_hook = enabled
+        self._register_shutdown_hook = enabled
         return self
 
     def customize_scheduler(self, customizer: Callable[[SchedulerBuilder], None]) -> Self:
@@ -588,10 +571,10 @@ class JobRegistryBuilder:
         )
         if self._scheduler_customizer is not None:
             self._scheduler_customizer(builder)
-        # Never registered with `atexit`: a test that starts a manual registry and forgets it
-        # should not have it drained, against a database the suite has already torn down, as
-        # the interpreter exits.
-        return ManualJobRegistry(builder.build(), names, requiring, stop_on_exit=False)
+        # Never under the hook: a test that starts a manual registry and forgets it should not
+        # have it drained, against a database the suite has already torn down, as the interpreter
+        # exits - nor have it take the test run's SIGTERM.
+        return ManualJobRegistry(builder.build(), names, requiring, register_shutdown_hook=False)
 
     def _prepare(self) -> tuple[list[str], list[Any], list[str]]:
         """Validate the jobs and turn them into recurring tasks. Shared by both build paths."""
@@ -683,8 +666,7 @@ class JobRegistryBuilder:
             builder.build(),
             names,
             names_requiring_registration,
-            self._shutdown_hook,
-            self._stop_on_exit,
+            register_shutdown_hook=self._register_shutdown_hook,
         )
 
 

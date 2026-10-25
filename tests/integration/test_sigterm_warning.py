@@ -1,4 +1,5 @@
-"""The SIGTERM warning, in real processes: a bare worker gets it, a uvicorn service does not.
+"""Who has SIGTERM, in real processes: a bare worker's registry takes it, a uvicorn service's
+leaves it to uvicorn, and the warning is left for a worker that turned the hook off.
 
 The unit tests prove the rule. These prove the fact the rule rests on - that by the time a
 FastAPI lifespan starts the registry, uvicorn's own SIGTERM handler is already installed - by
@@ -17,7 +18,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
-WARNING = "Nothing in this process handles SIGTERM."
+WARNING = "Nothing in this process handles SIGTERM"
+TOOK = "Nothing else in this process handles SIGTERM, so the JobRegistry does"
 
 JOBS = r"""
 import logging, sys
@@ -37,21 +39,21 @@ class Idle(DistributedJob):
     def schedule(self): return FixedDelay(timedelta(hours=1))
     def execute(self, ctx): pass
 
-def build(db, hooked=False):
+def build(db, hook=None):
     source = DataSource.from_config(DataSourceConfig(url=f"sqlite:///{db}"))
     metadata = MetaData()
     scheduled_tasks_table(metadata)
     metadata.create_all(source.sqlalchemy_engine)
     builder = job_registry().data_source(source).with_job(Idle())
-    if hooked:
-        builder = builder.register_shutdown_hook()
+    if hook is not None:
+        builder = builder.register_shutdown_hook(hook)
     return builder.build()
 """
 
 WORKER = r"""
 import sys
 from jobs import build
-jobs = build(sys.argv[1], hooked=sys.argv[2] == "1")
+jobs = build(sys.argv[1], hook=None if sys.argv[2] == "default" else sys.argv[2] == "on")
 jobs.start()
 jobs.stop()
 """
@@ -84,10 +86,10 @@ def write_scripts(tmp_path: Path) -> dict[str, str]:
     }
 
 
-def run_worker(tmp_path: Path, *, hooked: bool) -> str:
+def run_worker(tmp_path: Path, *, hook: str) -> str:
     env = write_scripts(tmp_path)
     done = subprocess.run(
-        [sys.executable, str(tmp_path / "worker.py"), env["JOBS_DB"], "1" if hooked else "0"],
+        [sys.executable, str(tmp_path / "worker.py"), env["JOBS_DB"], hook],
         env=env,
         capture_output=True,
         text=True,
@@ -104,16 +106,18 @@ def a_free_port() -> int:
         return probe.getsockname()[1]
 
 
-def test_a_bare_worker_with_nothing_on_sigterm_is_warned(tmp_path):
-    output = run_worker(tmp_path, hooked=False)
+def test_a_bare_worker_takes_sigterm_by_default_and_is_not_warned(tmp_path):
+    output = run_worker(tmp_path, hook="default")
+
+    assert output.count(TOOK) == 1, output
+    assert WARNING not in output, output
+
+
+def test_a_bare_worker_with_the_hook_off_is_warned(tmp_path):
+    output = run_worker(tmp_path, hook="off")
 
     assert output.count(WARNING) == 1, output
-
-
-def test_a_bare_worker_with_the_hook_is_not(tmp_path):
-    output = run_worker(tmp_path, hooked=True)
-
-    assert WARNING not in output, output
+    assert TOOK not in output, output
 
 
 def test_a_uvicorn_service_starting_jobs_in_its_lifespan_is_not(tmp_path):
@@ -149,3 +153,4 @@ def test_a_uvicorn_service_starting_jobs_in_its_lifespan_is_not(tmp_path):
     assert "Starting JobRegistry" in output, "the lifespan never started the jobs:\n" + output
     assert "JobRegistry stopped" in output, "the lifespan never stopped them:\n" + output
     assert WARNING not in output, output
+    assert TOOK not in output, "the registry took SIGTERM from uvicorn:\n" + output

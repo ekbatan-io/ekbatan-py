@@ -1,13 +1,13 @@
-"""A started registry drains when the process ends - measured in a real process, every way it ends.
+"""A started registry lets its running jobs finish when the process stops - measured in a real
+process, every way it stops.
 
-Java's `registerShutdownHook` defaults to on because a JVM shutdown hook only adds to a list.
-`atexit` is that list here, and `stop_on_exit` - on by default - puts the registry on it. What
-`atexit` does not do is run on SIGTERM: the JVM turns SIGTERM into an orderly exit and CPython
-kills the process. So SIGTERM is the one case left to `register_shutdown_hook()`, which is
-opt-in because it takes the process's one handler slot.
+Java's `registerShutdownHook` is on by default, and the JVM runs its shutdown hooks however the
+process ends. CPython has two mechanisms for that, and `register_shutdown_hook` - on by default
+here too - uses both: `atexit` when the program ends by itself, and a SIGTERM handler when
+nothing else in the process handles SIGTERM. Turned off, it uses neither.
 
 Each case below starts a child process with a job that is part way through a two-second body,
-ends the process, and reads whether the job got to finish. Two traps are handled on purpose,
+stops the process, and reads whether the job got to finish. Two traps are handled on purpose,
 because each produced a convincing wrong answer while this was being written:
 
 - A child started from a non-interactive shell inherits SIGINT as *ignored*, so Ctrl-C does
@@ -35,7 +35,7 @@ from ekbatan.distributedjobs import DistributedJob, job_registry
 ROOT = Path(__file__).resolve().parents[2]
 
 CHILD = r"""
-import signal, sys, time
+import os, signal, sys, time
 signal.signal(signal.SIGINT, signal.default_int_handler)  # what an interactive terminal gives
 
 from datetime import timedelta
@@ -47,8 +47,7 @@ from ekbatan.config import DataSourceConfig
 from ekbatan.distributedjobs import DistributedJob, job_registry
 from ekbatan.schema import scheduled_tasks_table
 
-log, db, end = Path(sys.argv[1]), sys.argv[2], sys.argv[5]
-stop_on_exit, hooked = sys.argv[3] == "1", sys.argv[4] == "1"
+log, db, hook, end, apps_own = Path(sys.argv[1]), sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
 
 import logging
 logging.basicConfig(filename=str(log), level=logging.INFO, format="%(message)s")
@@ -57,6 +56,13 @@ logging.getLogger("db_scheduler").setLevel(logging.WARNING)
 def note(line):
     with open(log, "a") as f:
         f.write(line + "\n")
+
+if apps_own == "1":
+    def the_apps_own(number, frame):
+        note("the app's own handler")
+        os._exit(7)
+
+    signal.signal(signal.SIGTERM, the_apps_own)
 
 source = DataSource.from_config(DataSourceConfig(url=f"sqlite:///{db}"))
 metadata = MetaData()
@@ -73,9 +79,8 @@ class Slow(DistributedJob):
 
 builder = job_registry().data_source(source).with_job(Slow())
 builder = builder.poll_interval(timedelta(milliseconds=100))
-builder = builder.stop_on_exit(stop_on_exit)
-if hooked:
-    builder = builder.register_shutdown_hook()
+if hook != "default":
+    builder = builder.register_shutdown_hook(hook == "on")
 builder.build().start()
 
 while "started" not in log.read_text():
@@ -87,8 +92,18 @@ time.sleep(60)
 """
 
 
-def run(tmp_path: Path, *, end: str, stop_on_exit: bool = True, hooked: bool = False):
-    """Start the child, end it the given way once the job is mid-body, and report."""
+def run(
+    tmp_path: Path,
+    *,
+    end: str,
+    hook: str = "default",
+    apps_own: bool = False,
+    again_after: str | None = None,
+):
+    """Start the child, stop it the given way once the job is mid-body, and report.
+
+    `again_after`: once this line is in the log, send the same signal a second time.
+    """
     script = tmp_path / "child.py"
     script.write_text(CHILD)
     log = tmp_path / "run.log"
@@ -100,26 +115,35 @@ def run(tmp_path: Path, *, end: str, stop_on_exit: bool = True, hooked: bool = F
             str(script),
             str(log),
             str(tmp_path / "jobs.db"),
-            "1" if stop_on_exit else "0",
-            "1" if hooked else "0",
+            hook,
             end,
+            "1" if apps_own else "0",
         ],
         env=env,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.PIPE,
     )
-    deadline = time.monotonic() + 30
-    while "running" not in log.read_text():
-        assert child.poll() is None, f"the child died early: {child.stderr.read().decode()}"
-        assert time.monotonic() < deadline, "the job never started"
-        time.sleep(0.05)
+    wait_for(child, log, "running")
     if end != "return":
         child.send_signal(getattr(signal, end))
+        if again_after is not None:
+            wait_for(child, log, again_after)
+            child.send_signal(getattr(signal, end))
     code = child.wait(timeout=30)
     return code, log.read_text().splitlines()
 
 
-# -- the table, case by case --------------------------------------------------------------------
+def wait_for(child: subprocess.Popen[bytes], log: Path, line: str) -> None:
+    deadline = time.monotonic() + 30
+    while line not in log.read_text():
+        assert child.poll() is None, (
+            f"the child ended before logging {line!r}: {child.stderr.read().decode()}"  # type: ignore[union-attr]
+        )
+        assert time.monotonic() < deadline, f"the child never logged {line!r}"
+        time.sleep(0.05)
+
+
+# -- on, as it is by default --------------------------------------------------------------------
 
 
 def test_a_normal_exit_lets_the_running_job_finish(tmp_path):
@@ -129,44 +153,139 @@ def test_a_normal_exit_lets_the_running_job_finish(tmp_path):
     assert "finished" in lines, "the registry was not drained at exit"
 
 
-def test_ctrl_c_lets_the_running_job_finish(tmp_path):
+def test_ctrl_c_lets_the_running_job_finish_once(tmp_path):
     code, lines = run(tmp_path, end="SIGINT")
 
     assert code == -signal.SIGINT, "and the process still dies of the signal (130 in a shell)"
     assert "finished" in lines
+    assert lines.count("JobRegistry stopped") == 1, "stopped more than once"
 
 
-def test_turned_off_the_running_job_is_cut_off(tmp_path):
-    code, lines = run(tmp_path, end="return", stop_on_exit=False)
+def test_sigterm_lets_the_running_job_finish(tmp_path):
+    """A container stop. Nothing else in this process handles SIGTERM, so the registry does: the
+    job finishes, and then the process still dies of the signal, as it would have."""
+    code, lines = run(tmp_path, end="SIGTERM")
+
+    assert code == -signal.SIGTERM, "drained, and then still died of the signal (143 in a shell)"
+    assert "finished" in lines, "the running job was cut off"
+    assert lines.count("JobRegistry stopped") == 1
+    assert any(line.startswith("Nothing else in this process handles SIGTERM") for line in lines)
+
+
+def test_a_second_sigterm_stops_the_process_at_once(tmp_path):
+    """For someone who will not wait: the first SIGTERM puts the default back before the jobs
+    are waited for, so a second one ends the process on the spot."""
+    code, lines = run(tmp_path, end="SIGTERM", again_after="Stopping JobRegistry")
+
+    assert code == -signal.SIGTERM
+    assert "finished" not in lines, "the second SIGTERM waited for the job"
+
+
+def test_an_application_that_handles_sigterm_keeps_it(tmp_path):
+    """Its handler was set before the registry started, so the registry leaves SIGTERM to it -
+    as it leaves it to uvicorn - and its shutdown code is what calls stop()."""
+    code, lines = run(tmp_path, end="SIGTERM", apps_own=True)
+
+    assert code == 7, "the application's own handler did not run"
+    assert "the app's own handler" in lines
+    assert "finished" not in lines, "the registry took SIGTERM from the application"
+    assert not any("Nothing else in this process handles SIGTERM" in line for line in lines)
+
+
+# -- turned off ---------------------------------------------------------------------------------
+
+
+def test_turned_off_a_normal_exit_cuts_the_job_off(tmp_path):
+    code, lines = run(tmp_path, end="return", hook="off")
 
     assert code == 0
     assert "finished" not in lines, "something drained a registry that asked not to be"
 
 
-def test_sigterm_alone_does_not_drain(tmp_path):
-    """The limit, pinned so nobody documents it away: CPython kills the process on SIGTERM
-    and no `atexit` hook runs. This is why `register_shutdown_hook()` exists."""
-    code, lines = run(tmp_path, end="SIGTERM")
-
-    assert code == -signal.SIGTERM
-    assert "finished" not in lines
-
-
-def test_sigterm_with_the_hook_drains(tmp_path):
-    code, lines = run(tmp_path, end="SIGTERM", hooked=True)
-
-    assert code == -signal.SIGTERM, "drained, and then still died of the signal"
-    assert "finished" in lines
-
-
-def test_ctrl_c_with_the_hook_drains_once(tmp_path):
-    """Both installed: the hook drains and takes the `atexit` entry off, so the exit does not
-    drain a second time."""
-    code, lines = run(tmp_path, end="SIGINT", hooked=True)
+def test_turned_off_ctrl_c_cuts_the_job_off(tmp_path):
+    code, lines = run(tmp_path, end="SIGINT", hook="off")
 
     assert code == -signal.SIGINT
-    assert "finished" in lines
-    assert lines.count("JobRegistry stopped") == 1, "drained by the hook and again at exit"
+    assert "finished" not in lines, "something drained a registry that asked not to be"
+
+
+def test_turned_off_sigterm_cuts_the_job_off(tmp_path):
+    code, lines = run(tmp_path, end="SIGTERM", hook="off")
+
+    assert code == -signal.SIGTERM
+    assert "finished" not in lines, "something drained a registry that asked not to be"
+
+
+# -- a copy made by fork() ----------------------------------------------------------------------
+
+FORKED = r"""
+import os, signal, sys
+from datetime import timedelta
+from pathlib import Path
+from sqlalchemy import MetaData
+from db_scheduler.task.schedule import FixedDelay
+from ekbatan import DataSource
+from ekbatan.config import DataSourceConfig
+from ekbatan.distributedjobs import DistributedJob, job_registry
+from ekbatan.schema import scheduled_tasks_table
+
+log, db = Path(sys.argv[1]), sys.argv[2]
+
+import logging
+logging.basicConfig(filename=str(log), level=logging.INFO, format="%(process)d %(message)s")
+logging.getLogger("db_scheduler").setLevel(logging.WARNING)
+
+source = DataSource.from_config(DataSourceConfig(url=f"sqlite:///{db}"))
+metadata = MetaData()
+scheduled_tasks_table(metadata)
+metadata.create_all(source.sqlalchemy_engine)
+
+class Idle(DistributedJob):
+    def name(self): return "idle"
+    def schedule(self): return FixedDelay(timedelta(hours=1))
+    def execute(self, ctx): pass
+
+jobs = job_registry().data_source(source).with_job(Idle()).build()
+jobs.start()
+
+child = os.fork()
+if child == 0:
+    # multiprocessing's Pool.terminate() and gunicorn's arbiter stop their workers like this.
+    signal.raise_signal(signal.SIGTERM)
+    os._exit(0)  # not reached: the child dies of the signal
+_, status = os.waitpid(child, 0)
+died_of = os.WTERMSIG(status) if os.WIFSIGNALED(status) else None
+with open(log, "a") as f:
+    f.write(f"child {child} ended: signal {died_of}\n")
+jobs.stop()
+"""
+
+
+def test_a_copy_made_by_fork_leaves_the_parents_registry_alone(tmp_path):
+    """The child inherits the handler and the parent's registry, but none of its threads: the
+    registry is the parent's to stop. The child just dies of SIGTERM, as it would have."""
+    script = tmp_path / "forked.py"
+    script.write_text(FORKED)
+    log = tmp_path / "run.log"
+    log.write_text("")
+    env = {**os.environ, "PYTHONPATH": str(ROOT / "src")}
+    done = subprocess.run(
+        [sys.executable, str(script), str(log), str(tmp_path / "jobs.db")],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert done.returncode == 0, done.stderr
+
+    lines = log.read_text().splitlines()
+    ended = [line for line in lines if line.startswith("child ")]
+    assert ended and ended[0].endswith(f"signal {int(signal.SIGTERM)}"), lines
+    child = ended[0].split()[1]
+    assert not [line for line in lines if line.startswith(f"{child} ")], (
+        f"the forked child stopped the parent's registry: {lines}"
+    )
+    assert sum(line.endswith(" JobRegistry stopped") for line in lines) == 1, lines
 
 
 # -- the list itself, in this process -----------------------------------------------------------
@@ -247,7 +366,7 @@ def test_turned_off_it_is_never_on_the_list(source, exit_hooks):
         .data_source(source)
         .with_job(NeverDue())
         .poll_interval(timedelta(seconds=1))
-        .stop_on_exit(False)
+        .register_shutdown_hook(False)
         .build()
     )
     jobs.start()

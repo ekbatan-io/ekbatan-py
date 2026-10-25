@@ -2,8 +2,9 @@
 
 SIGTERM is how a container is stopped. With its default handling CPython ends the process at once,
 so a job part way through is cut off and runs again elsewhere after the dead-execution window.
-The registry does not take the signal itself - that is `register_shutdown_hook()`, and it is
-opt-in - but it says so, once, when nobody has it. Anybody else holding the signal (uvicorn,
+`register_shutdown_hook` - on by default - takes the signal where nobody has it, so the warning is
+left for the two cases where it cannot: the hook is off, or the registry was started off the main
+thread, where CPython lets nobody set a signal handler. Anybody else holding the signal (uvicorn,
 gunicorn, asyncio, the application) means somebody owns shutdown, and it stays quiet.
 """
 
@@ -13,14 +14,20 @@ import asyncio
 import logging
 import signal
 import threading
+from collections.abc import Iterator
 from datetime import timedelta
 
 import pytest
 
 import ekbatan.distributedjobs as distributedjobs
-from ekbatan.distributedjobs import JobRegistry, ManualJobRegistry
+from ekbatan.distributedjobs import JobRegistry, ManualJobRegistry, _shutdown
 
 LOGGER = "io.ekbatan.distributedjobs.JobRegistry"
+
+WINDOW_AND_CUT_OFF = (
+    "Jobs still running when the process gets SIGTERM (a container stop or a deploy) are cut "
+    "off, and another instance runs them again after the dead-execution window (60 seconds). "
+)
 
 
 class FakeScheduler:
@@ -36,21 +43,29 @@ class FakeScheduler:
         return []
 
 
-def a_registry(*, hook: bool = False, cls: type[JobRegistry] = JobRegistry) -> JobRegistry:
-    # No jobs to verify, and kept off `atexit`: neither is what is being tested.
-    return cls(FakeScheduler(), [], [], shutdown_hook=hook, stop_on_exit=False)  # type: ignore[arg-type]
+#: The registries a test made, stopped after it: none is left on the exit list or holding SIGTERM.
+MADE: list[JobRegistry] = []
 
 
 @pytest.fixture(autouse=True)
-def _a_fresh_process(monkeypatch):
+def _a_fresh_process(monkeypatch) -> Iterator[None]:
     """Each test starts as a process that has not warned yet, with SIGTERM's default handling,
-    and leaves the real handlers as it found them."""
+    and leaves the real handlers, the exit list and the hook's registries as it found them."""
     before = {n: signal.getsignal(n) for n in (signal.SIGTERM, signal.SIGINT)}
     monkeypatch.setattr(distributedjobs, "_sigterm_warned", False)
     signal.signal(signal.SIGTERM, signal.SIG_DFL)
     yield
+    while MADE:
+        MADE.pop().stop()
     for number, handler in before.items():
         signal.signal(number, handler)
+
+
+def a_registry(*, hook: bool, cls: type[JobRegistry] = JobRegistry) -> JobRegistry:
+    # No jobs to verify: that is not what is being tested.
+    registry = cls(FakeScheduler(), [], [], register_shutdown_hook=hook)  # type: ignore[arg-type]
+    MADE.append(registry)
+    return registry
 
 
 def warnings_logged(caplog: pytest.LogCaptureFixture) -> list[str]:
@@ -61,23 +76,64 @@ def warnings_logged(caplog: pytest.LogCaptureFixture) -> list[str]:
     ]
 
 
-def test_nobody_handles_sigterm_so_it_warns(caplog):
+def start_off_the_main_thread(registry: JobRegistry) -> list[BaseException]:
+    failures: list[BaseException] = []
+
+    def start() -> None:
+        try:
+            registry.start()
+        except BaseException as error:
+            failures.append(error)
+
+    worker = threading.Thread(target=start)
+    worker.start()
+    worker.join()
+    return failures
+
+
+def test_the_hook_is_off_and_nobody_handles_sigterm_so_it_warns(caplog):
     caplog.set_level(logging.INFO, logger=LOGGER)
 
-    a_registry().start()
+    a_registry(hook=False).start()
 
     assert warnings_logged(caplog) == [
-        "Nothing in this process handles SIGTERM. Jobs still running when the process gets "
-        "SIGTERM (a container stop or a deploy) are cut off, and another instance runs them "
-        "again after the dead-execution window (60 seconds). To let them finish first, call "
-        "register_shutdown_hook() on the job registry builder, or call stop() on the "
-        "JobRegistry from your own shutdown code, such as a FastAPI lifespan."
+        "Nothing in this process handles SIGTERM, and register_shutdown_hook is off. "
+        + WINDOW_AND_CUT_OFF
+        + "To let them finish first, turn register_shutdown_hook back on, or call stop() on the "
+        "JobRegistry from a SIGTERM handler of your own."
     ]
+
+
+def test_started_off_the_main_thread_the_hook_cannot_take_sigterm_so_it_warns(caplog):
+    """A FastAPI lifespan can start the registry from a thread pool, and Starlette's TestClient
+    always does. CPython sets signal handlers from the main thread only."""
+    caplog.set_level(logging.INFO, logger=LOGGER)
+
+    failures = start_off_the_main_thread(a_registry(hook=True))
+
+    assert failures == [], "it refused instead of warning"
+    assert signal.getsignal(signal.SIGTERM) is signal.SIG_DFL
+    assert warnings_logged(caplog) == [
+        "Nothing in this process handles SIGTERM, and the JobRegistry cannot: it was started off "
+        "the main thread, and only the main thread can set a signal handler. "
+        + WINDOW_AND_CUT_OFF
+        + "To let them finish first, start the JobRegistry on the main thread, or call its "
+        "stop() from a SIGTERM handler of your own."
+    ]
+
+
+def test_on_the_main_thread_the_hook_takes_sigterm_so_it_is_silent(caplog):
+    caplog.set_level(logging.INFO, logger=LOGGER)
+
+    a_registry(hook=True).start()
+
+    assert warnings_logged(caplog) == []
+    assert signal.getsignal(signal.SIGTERM) is _shutdown._on_sigterm
 
 
 def test_it_warns_once_per_process_however_often_registries_start(caplog):
     caplog.set_level(logging.INFO, logger=LOGGER)
-    first, second = a_registry(), a_registry()
+    first, second = a_registry(hook=False), a_registry(hook=False)
 
     first.start()
     first.stop()
@@ -87,15 +143,15 @@ def test_it_warns_once_per_process_however_often_registries_start(caplog):
     assert len(warnings_logged(caplog)) == 1
 
 
-def test_it_changes_no_handler():
-    a_registry().start()
+def test_with_the_hook_off_it_changes_no_handler():
+    a_registry(hook=False).start()
 
     assert signal.getsignal(signal.SIGTERM) is signal.SIG_DFL
 
 
 def test_the_window_named_is_the_schedulers_own(caplog):
     caplog.set_level(logging.INFO, logger=LOGGER)
-    registry = a_registry()
+    registry = a_registry(hook=False)
     registry.scheduler.max_age_before_considered_dead = timedelta(minutes=5)  # type: ignore[misc]
 
     registry.start()
@@ -103,71 +159,60 @@ def test_the_window_named_is_the_schedulers_own(caplog):
     assert "(300 seconds)" in warnings_logged(caplog)[0]
 
 
-def test_with_the_hook_it_is_silent(caplog):
-    caplog.set_level(logging.INFO, logger=LOGGER)
-    registry = a_registry(hook=True)
-
-    registry.start()
-    try:
-        assert warnings_logged(caplog) == []
-    finally:
-        registry.stop()
-
-
+@pytest.mark.parametrize("hook", [True, False], ids=["hook on", "hook off"])
 @pytest.mark.parametrize(
     "handler",
     [lambda *_: None, signal.SIG_IGN],
     ids=["the application's own handler", "SIGTERM ignored on purpose"],
 )
-def test_somebody_else_holding_sigterm_keeps_it_silent(caplog, handler):
+def test_somebody_else_holding_sigterm_keeps_it_silent_and_keeps_it(caplog, handler, hook):
     caplog.set_level(logging.INFO, logger=LOGGER)
     signal.signal(signal.SIGTERM, handler)
 
-    a_registry().start()
+    a_registry(hook=hook).start()
 
     assert warnings_logged(caplog) == []
+    assert signal.getsignal(signal.SIGTERM) is handler, "the registry took SIGTERM from its owner"
 
 
-def test_an_asyncio_signal_handler_keeps_it_silent(caplog):
+def test_an_asyncio_signal_handler_keeps_it_silent_and_keeps_it(caplog):
     """`loop.add_signal_handler` - what an asyncio server uses - counts as somebody owning it."""
     caplog.set_level(logging.INFO, logger=LOGGER)
+    taken: list[object] = []
 
     async def started_inside_the_loop() -> None:
-        asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, lambda: None)
-        a_registry().start()
+        loop = asyncio.get_running_loop()
+        loop.add_signal_handler(signal.SIGTERM, lambda: None)
+        try:
+            a_registry(hook=True).start()
+            taken.append(signal.getsignal(signal.SIGTERM))
+        finally:
+            loop.remove_signal_handler(signal.SIGTERM)
 
     asyncio.run(started_inside_the_loop())
 
     assert warnings_logged(caplog) == []
+    assert taken and taken[0] is not _shutdown._on_sigterm
 
 
 @pytest.mark.parametrize("handled", [False, True], ids=["nobody handles it", "a handler is set"])
 def test_started_off_the_main_thread_it_reads_the_same_process_wide_answer(caplog, handled):
-    """A FastAPI lifespan can start the registry from a thread pool. The signal's handler is the
-    process's, and `getsignal` reads it from any thread."""
+    """The signal's handler is the process's, and `getsignal` reads it from any thread."""
     caplog.set_level(logging.INFO, logger=LOGGER)
     if handled:
         signal.signal(signal.SIGTERM, lambda *_: None)
-    failures: list[BaseException] = []
 
-    def start() -> None:
-        try:
-            a_registry().start()
-        except BaseException as error:
-            failures.append(error)
-
-    worker = threading.Thread(target=start)
-    worker.start()
-    worker.join()
+    failures = start_off_the_main_thread(a_registry(hook=False))
 
     assert failures == []
     assert len(warnings_logged(caplog)) == (0 if handled else 1)
 
 
-def test_a_manual_registry_is_silent(caplog):
+def test_a_manual_registry_is_silent_and_takes_nothing(caplog):
     """It runs nothing by itself - only what a test asks for, on the test's own thread."""
     caplog.set_level(logging.INFO, logger=LOGGER)
 
-    a_registry(cls=ManualJobRegistry).start()
+    a_registry(hook=False, cls=ManualJobRegistry).start()
 
     assert warnings_logged(caplog) == []
+    assert signal.getsignal(signal.SIGTERM) is signal.SIG_DFL

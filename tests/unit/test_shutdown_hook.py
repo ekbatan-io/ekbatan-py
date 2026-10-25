@@ -1,125 +1,198 @@
-"""Draining on SIGTERM without taking the signal away from the application.
+"""The SIGTERM half of `register_shutdown_hook`: one handler for the whole process.
 
-Java turns its equivalent on by default and nobody minds: a JVM shutdown hook is additive, any
-number can be registered, and none displaces another. CPython has one handler slot per signal
-and `signal.signal()` replaces what is there - so this is opt-in, and it puts back what it
-found.
+Java's JVM shutdown hook runs on SIGTERM as on any other exit. CPython has one handler per
+signal, so the registry takes SIGTERM only where nothing else handles it, and only from the main
+thread, where CPython allows it. On SIGTERM it stops every registry that asked for the hook - so
+their running jobs finish - and then the process dies of the signal, as it would have.
+
+The process-level behaviour - the job really finishing, the process really dying - is measured
+in real processes in `tests/integration/test_jobs_at_exit.py`. These pin the rules, in this
+process, with the signal itself replaced where it would end the test run.
 """
 
 from __future__ import annotations
 
+import logging
 import os
 import signal
 import threading
+from collections.abc import Iterator
 
 import pytest
 
-from ekbatan.distributedjobs._shutdown import ShutdownHook
-from ekbatan.errors import ValidationError
+from ekbatan.distributedjobs import _shutdown
+
+LOGGER = "io.ekbatan.distributedjobs.JobRegistry"
+
+
+class FakeRegistry:
+    """What the handler needs of a `JobRegistry`: `stop()`, which takes it off, as the real one."""
+
+    def __init__(self, name: str, log: list[str], fails: bool = False) -> None:
+        self.name, self.log, self.fails = name, log, fails
+
+    def stop(self) -> None:
+        _shutdown.remove(self)  # type: ignore[arg-type]
+        self.log.append(f"{self.name} stopped, SIGTERM {signal.getsignal(signal.SIGTERM)!r}")
+        if self.fails:
+            raise RuntimeError(f"{self.name} failed to stop")
+
+    def __repr__(self) -> str:
+        return self.name
 
 
 @pytest.fixture(autouse=True)
-def _leave_the_process_as_we_found_it():
-    """Every test here installs real handlers. Put the originals back either way."""
-    before = {n: signal.getsignal(n) for n in (signal.SIGTERM, signal.SIGINT)}
+def _leave_the_process_as_we_found_it() -> Iterator[None]:
+    """Every test here sets real handlers. Start from SIGTERM's default, with no registries, and
+    put the originals back either way."""
+    before = signal.getsignal(signal.SIGTERM)
+    signal.signal(signal.SIGTERM, signal.SIG_DFL)
+    _shutdown._registries.clear()
     yield
-    for number, handler in before.items():
-        signal.signal(number, handler)
+    _shutdown._registries.clear()
+    signal.signal(signal.SIGTERM, before)
 
 
-def test_it_drains_when_the_signal_arrives():
-    drained = threading.Event()
-    hook = ShutdownHook(drained.set)
-    hook.install()
-    # Nothing was there before us, so the hook would restore SIG_DFL and re-raise - which would
-    # kill the test runner. Give it something to hand back to instead.
-    hook._previous[signal.SIGTERM] = lambda *_: None
-
-    os.kill(os.getpid(), signal.SIGTERM)
-
-    assert drained.wait(2), "the hook did not drain"
+@pytest.fixture
+def ending(monkeypatch) -> list[str]:
+    """Stands in for the two calls that would end the test run: re-raising SIGTERM, and the exit
+    that follows if the process is still alive after it."""
+    ended: list[str] = []
+    monkeypatch.setattr(signal, "raise_signal", lambda number: ended.append(f"raise {number!r}"))
+    monkeypatch.setattr(os, "_exit", lambda code: ended.append(f"_exit {code}"))
+    return ended
 
 
-def test_the_application_keeps_its_own_handler():
-    """The thing that makes this safe to offer at all."""
-    ran: list[str] = []
-    signal.signal(signal.SIGTERM, lambda *_: ran.append("the app's handler"))
+def test_it_takes_a_sigterm_nobody_handles_and_says_so(caplog):
+    caplog.set_level(logging.INFO, logger=LOGGER)
 
-    hook = ShutdownHook(lambda: ran.append("jobs.stop()"))
-    hook.install()
-    os.kill(os.getpid(), signal.SIGTERM)
+    _shutdown.add(FakeRegistry("jobs", []))  # type: ignore[arg-type]
 
-    assert ran == ["jobs.stop()", "the app's handler"], "the app's handler was displaced"
-
-
-def test_removing_it_puts_back_exactly_what_was_there():
-    original = lambda *_: None  # noqa: E731
-    signal.signal(signal.SIGTERM, original)
-    hook = ShutdownHook(lambda: None)
-
-    hook.install()
-    assert signal.getsignal(signal.SIGTERM) is not original
-
-    hook.remove()
-    assert signal.getsignal(signal.SIGTERM) is original
-    hook.remove()  # and twice is not an error
+    assert signal.getsignal(signal.SIGTERM) is _shutdown._on_sigterm
+    assert [r.getMessage() for r in caplog.records if r.name == LOGGER] == [
+        "Nothing else in this process handles SIGTERM, so the JobRegistry does: on SIGTERM, "
+        "running jobs finish, then the process stops. A SIGTERM handler set after this "
+        "replaces it; register_shutdown_hook(False) turns it off."
+    ]
 
 
-def test_a_signal_that_was_being_ignored_stays_ignored():
-    signal.signal(signal.SIGTERM, signal.SIG_IGN)
-    drained = threading.Event()
-    hook = ShutdownHook(drained.set)
-    hook.install()
+@pytest.mark.parametrize(
+    "handler",
+    [lambda *_: None, signal.SIG_IGN],
+    ids=["the application's own handler", "SIGTERM ignored on purpose"],
+)
+def test_a_sigterm_somebody_handles_is_left_to_them(handler, caplog):
+    """uvicorn and gunicorn set theirs before the application starts; then they own shutdown,
+    and the application's shutdown code calls stop()."""
+    caplog.set_level(logging.INFO, logger=LOGGER)
+    signal.signal(signal.SIGTERM, handler)
 
-    os.kill(os.getpid(), signal.SIGTERM)
+    _shutdown.add(FakeRegistry("jobs", []))  # type: ignore[arg-type]
 
-    assert drained.wait(2), "it should still drain"
-    # and the process is still here, which is the assertion: SIG_IGN was honoured rather than
-    # turned into an exit.
-
-
-def test_a_failure_while_draining_does_not_strand_the_process():
-    """The hook exists so the process ends the way the operator asked. A drain that throws
-    must not turn a shutdown into a hang."""
-    ran: list[str] = []
-    signal.signal(signal.SIGTERM, lambda *_: ran.append("the app's handler"))
-
-    def boom() -> None:
-        raise RuntimeError("stop() failed")
-
-    hook = ShutdownHook(boom)
-    hook.install()
-    os.kill(os.getpid(), signal.SIGTERM)
-
-    assert ran == ["the app's handler"], "the shutdown did not continue past the failure"
+    assert signal.getsignal(signal.SIGTERM) is handler
+    assert not caplog.records
 
 
-def test_it_refuses_off_the_main_thread_rather_than_doing_nothing():
-    """`signal.signal` raises there. A hook that quietly failed to install would be discovered
-    during an outage, by its absence."""
-    failure: list[BaseException] = []
+def test_off_the_main_thread_it_takes_nothing_and_raises_nothing():
+    """CPython sets signal handlers from the main thread only. `start()` warns instead."""
+    failures: list[BaseException] = []
 
-    def off_main() -> None:
+    def add() -> None:
         try:
-            ShutdownHook(lambda: None).install()
+            _shutdown.add(FakeRegistry("jobs", []))  # type: ignore[arg-type]
         except BaseException as error:
-            failure.append(error)
+            failures.append(error)
 
-    worker = threading.Thread(target=off_main)
+    worker = threading.Thread(target=add)
     worker.start()
     worker.join()
 
-    assert failure and isinstance(failure[0], ValidationError)
-    assert "main thread" in str(failure[0])
+    assert failures == []
+    assert signal.getsignal(signal.SIGTERM) is signal.SIG_DFL
 
 
-def test_installing_twice_is_a_no_op_and_keeps_the_original():
-    original = lambda *_: None  # noqa: E731
-    signal.signal(signal.SIGTERM, original)
-    hook = ShutdownHook(lambda: None)
+def test_one_handler_serves_every_registry_and_the_last_to_stop_gives_sigterm_back():
+    first, second = FakeRegistry("first", []), FakeRegistry("second", [])
+    _shutdown.add(first)  # type: ignore[arg-type]
+    _shutdown.add(second)  # type: ignore[arg-type]
 
-    hook.install()
-    hook.install()
-    hook.remove()
+    _shutdown.remove(first)  # type: ignore[arg-type]
+    assert signal.getsignal(signal.SIGTERM) is _shutdown._on_sigterm, "given back too early"
 
-    assert signal.getsignal(signal.SIGTERM) is original, "the second install lost the original"
+    _shutdown.remove(second)  # type: ignore[arg-type]
+    assert signal.getsignal(signal.SIGTERM) is signal.SIG_DFL
+    _shutdown.remove(second)  # type: ignore[arg-type]  # and twice is not an error
+
+
+def test_a_handler_set_after_it_is_left_alone():
+    """It replaced the registry's - CPython has one per signal - and it is somebody else's now."""
+    registry = FakeRegistry("jobs", [])
+    _shutdown.add(registry)  # type: ignore[arg-type]
+    theirs = lambda *_: None  # noqa: E731
+    signal.signal(signal.SIGTERM, theirs)
+
+    _shutdown.remove(registry)  # type: ignore[arg-type]
+
+    assert signal.getsignal(signal.SIGTERM) is theirs
+
+
+def test_on_sigterm_every_registry_stops_then_the_process_dies_of_it(ending, caplog):
+    caplog.set_level(logging.INFO, logger=LOGGER)
+    log: list[str] = []
+    _shutdown.add(FakeRegistry("first", log))  # type: ignore[arg-type]
+    _shutdown.add(FakeRegistry("second", log))  # type: ignore[arg-type]
+
+    _shutdown._on_sigterm(signal.SIGTERM, None)
+
+    default = repr(signal.SIG_DFL)
+    assert log == [f"first stopped, SIGTERM {default}", f"second stopped, SIGTERM {default}"], (
+        "the default was not put back before the jobs were waited for"
+    )
+    assert ending == [f"raise {signal.SIGTERM!r}", "_exit 143"]
+    assert "Received SIGTERM: letting running jobs finish before the process stops" in [
+        r.getMessage() for r in caplog.records
+    ]
+
+
+def test_a_registry_that_fails_to_stop_keeps_neither_the_others_nor_the_process(ending, caplog):
+    """The point of the hook is that the process ends the way it was asked to."""
+    log: list[str] = []
+    _shutdown.add(FakeRegistry("first", log, fails=True))  # type: ignore[arg-type]
+    _shutdown.add(FakeRegistry("second", log))  # type: ignore[arg-type]
+
+    _shutdown._on_sigterm(signal.SIGTERM, None)
+
+    assert [line.split(",")[0] for line in log] == ["first stopped", "second stopped"]
+    assert ending == [f"raise {signal.SIGTERM!r}", "_exit 143"]
+    assert any(
+        r.levelno == logging.ERROR and "first" in r.getMessage() and r.exc_info
+        for r in caplog.records
+    ), "the failure was not logged"
+
+
+def test_with_no_registry_left_sigterm_is_what_it_was(ending):
+    """Left installed when the last registry stopped off the main thread, where it could not be
+    given back. With nothing to stop it is the default again: the process dies of the signal."""
+    registry = FakeRegistry("jobs", [])
+    _shutdown.add(registry)  # type: ignore[arg-type]
+    stopper = threading.Thread(target=_shutdown.remove, args=(registry,))
+    stopper.start()
+    stopper.join()
+    assert signal.getsignal(signal.SIGTERM) is _shutdown._on_sigterm
+
+    _shutdown._on_sigterm(signal.SIGTERM, None)
+
+    assert ending == [f"raise {signal.SIGTERM!r}", "_exit 143"]
+
+
+def test_a_copy_made_by_fork_forgets_the_parents_registries(ending):
+    """The child has the parent's registries but none of their threads - they are the parent's
+    to stop. Measured with a real fork in `test_jobs_at_exit.py`."""
+    log: list[str] = []
+    _shutdown.add(FakeRegistry("parent's", log))  # type: ignore[arg-type]
+
+    _shutdown._forget_after_fork()
+    _shutdown._on_sigterm(signal.SIGTERM, None)
+
+    assert log == []
+    assert ending == [f"raise {signal.SIGTERM!r}", "_exit 143"]

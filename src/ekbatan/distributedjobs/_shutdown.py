@@ -1,25 +1,21 @@
-"""Draining on SIGTERM, without taking the signal away from the application.
+"""The SIGTERM half of `register_shutdown_hook`: one handler for the whole process.
 
-Java's `JobRegistry` calls `registerShutdownHook(true)`, and a JVM shutdown hook is additive:
-any number can be registered, they all run, and none displaces another. That is why Java can
-turn it on by default and nobody minds.
+Java's `JobRegistry` turns on db-scheduler's JVM shutdown hook by default, and the JVM runs its
+shutdown hooks however the process ends: by itself, or on SIGTERM - what `docker stop` and
+Kubernetes send. CPython has a separate mechanism for each. `atexit` covers the first, and
+`JobRegistry.start()` puts each registry on it. This module covers the second.
 
-CPython has one handler slot per signal. `signal.signal()` **replaces** what is there and hands
-it back - verified by running, not assumed - so a library that installs one silently is taking
-the application's SIGTERM away from it. Hence two rules here:
+CPython has one handler per signal, set from the main thread only. So the handler is taken only
+where nothing else handles SIGTERM - a plain worker, where the signal would stop the process on
+the spot. uvicorn, gunicorn, asyncio's `add_signal_handler` and an application's own handler are
+left alone: they own shutdown then, and the application's shutdown code calls
+`JobRegistry.stop()`.
 
-**It is off unless asked.** `register_shutdown_hook(True)` is a sentence the application writes,
-so nothing about its process changes without it saying so.
-
-**What was there still runs.** The previous handler is kept and called afterwards. Where there
-was none, the default is put back and the signal re-raised, so the process still dies exactly as
-it would have - a hook that drained cleanly and then left the process alive would be a worse bug
-than the one it fixes.
-
-`atexit` cannot do this part: it does not fire on SIGTERM at all - measured, and not under
-uvicorn either - which is the case that matters: a container stop, a Kubernetes rollout, a
-`docker stop`. It does the other part. A started `JobRegistry` is on the `atexit` list by
-default, which covers a normal exit and Ctrl-C and, being additive, takes nothing from anyone.
+On SIGTERM the handler stops every registry that asked for the hook - so their running jobs
+finish, each bounded by `shutdown_max_wait` - and then the process dies of the signal, as it
+would have, only later. It does not turn SIGTERM into a normal exit, as Ctrl-C is turned: that
+would also run `finally` blocks and `atexit`, but would first wait for every non-daemon thread
+the application started, and one that never ends would keep the process alive until it is killed.
 """
 
 from __future__ import annotations
@@ -28,74 +24,88 @@ import logging
 import os
 import signal
 import threading
-from collections.abc import Callable
 from types import FrameType
+from typing import TYPE_CHECKING
 
-from ..errors import ValidationError
+if TYPE_CHECKING:
+    from . import JobRegistry
 
 LOG = logging.getLogger("io.ekbatan.distributedjobs.JobRegistry")
 
-#: What a container stop sends, and what an interactive Ctrl-C sends. Both mean "wind up".
-_SIGNALS = (signal.SIGTERM, signal.SIGINT)
+#: The started registries that asked for the hook and have not stopped, in the order they started.
+_registries: list[JobRegistry] = []
+#: Guards `_registries` and the handler's place. Reentrant: the handler runs on the main thread,
+#: between any two lines that thread was running - `add` and `remove` included - and the
+#: registries it stops take themselves off through `remove`.
+_lock = threading.RLock()
 
 
-class ShutdownHook:
-    """Runs ``drain`` when the process is asked to stop, then gets out of the way."""
+def add(registry: JobRegistry) -> None:
+    """Put a started registry under the hook, taking SIGTERM if nothing else handles it.
 
-    __slots__ = ("_drain", "_installed", "_previous")
+    Only from the main thread, the one CPython lets set a handler. Elsewhere the signal is left as
+    it is, and :meth:`JobRegistry.start` warns if nobody handles it.
+    """
+    with _lock:
+        if not any(known is registry for known in _registries):
+            _registries.append(registry)
+        if signal.getsignal(signal.SIGTERM) != signal.SIG_DFL:
+            return  # this module's handler, taken for an earlier registry, or somebody else's
+        if threading.current_thread() is not threading.main_thread():
+            return
+        signal.signal(signal.SIGTERM, _on_sigterm)
+    LOG.info(
+        "Nothing else in this process handles SIGTERM, so the JobRegistry does: on SIGTERM, "
+        "running jobs finish, then the process stops. A SIGTERM handler set after this "
+        "replaces it; register_shutdown_hook(False) turns it off."
+    )
 
-    def __init__(self, drain: Callable[[], None]) -> None:
-        self._drain = drain
-        self._previous: dict[int, object] = {}
-        self._installed = False
 
-    def install(self) -> None:
-        """Take the signals, keeping what was there.
+def remove(registry: JobRegistry) -> None:
+    """Take a stopped registry off. The last one off gives SIGTERM back - to its default, which is
+    what it was taken from - if the handler is still this module's and this is the main thread.
 
-        Refuses off the main thread rather than doing nothing: `signal.signal` raises there, and
-        a hook that quietly failed to install would be discovered during an outage, by its
-        absence.
-        """
-        if self._installed:
+    Left in place off the main thread, the handler with no registry to stop does what the default
+    does. Safe to call for a registry that was never added.
+    """
+    with _lock:
+        _registries[:] = [known for known in _registries if known is not registry]
+        if _registries or signal.getsignal(signal.SIGTERM) is not _on_sigterm:
             return
         if threading.current_thread() is not threading.main_thread():
-            raise ValidationError(
-                "register_shutdown_hook() needs the main thread - CPython only allows a signal "
-                "handler to be installed there. Build the JobRegistry on the main thread, or "
-                "leave the hook off and call JobRegistry.stop() from wherever your application "
-                "already handles shutdown."
-            )
-        for number in _SIGNALS:
-            self._previous[number] = signal.getsignal(number)
-            signal.signal(number, self._handle)
-        self._installed = True
-        LOG.info("shutdown hook installed on SIGTERM and SIGINT")
-
-    def remove(self) -> None:
-        """Put back exactly what was found. Safe to call twice."""
-        if not self._installed:
             return
-        for number, previous in self._previous.items():
-            if previous is not None:
-                signal.signal(number, previous)  # type: ignore[arg-type]
-        self._previous.clear()
-        self._installed = False
+        signal.signal(signal.SIGTERM, signal.SIG_DFL)
 
-    def _handle(self, number: int, frame: FrameType | None) -> None:
-        previous = self._previous.get(number)
+
+def _on_sigterm(number: int, frame: FrameType | None) -> None:
+    # The default back first: a second SIGTERM while the jobs finish - from someone who will not
+    # wait - stops the process at once, as it would have without this.
+    signal.signal(signal.SIGTERM, signal.SIG_DFL)
+    registries = list(_registries)
+    if registries:
+        LOG.info("Received SIGTERM: letting running jobs finish before the process stops")
+    # One after the other, here on the main thread. A thread started from here would wait for any
+    # lock the interrupted main thread holds - logging's, for one - while the main thread waited
+    # for it; on the main thread those locks are its own, and reentrant.
+    for registry in registries:
         try:
-            self._drain()
+            registry.stop()
         except BaseException:
-            # Never leave the process alive because draining failed. The point of the hook is
-            # that the process still ends the way the operator asked it to.
-            LOG.exception("the shutdown hook failed to drain; continuing with the shutdown")
+            LOG.exception("Stopping %r on SIGTERM failed; stopping the process anyway", registry)
+    signal.raise_signal(signal.SIGTERM)
+    # Still alive: this process ignores SIGTERM's default action, as PID 1 in a container does.
+    # End it as SIGTERM would have - no `finally`, no `atexit` - with the status a shell reports.
+    os._exit(128 + signal.SIGTERM)
 
-        if callable(previous):
-            previous(number, frame)  # the application's own handler, unchanged
-            return
-        if previous is signal.SIG_IGN:
-            return  # it was being ignored before us, and still should be
-        # There was nothing but the default. Put it back and re-raise, so the process dies of
-        # this signal rather than surviving it - which is what every caller expects.
-        signal.signal(number, signal.SIG_DFL)
-        os.kill(os.getpid(), number)
+
+def _forget_after_fork() -> None:
+    """In a child made by fork(): the registries are the parent's, with none of their threads, and
+    the parent stops them. The handler stays, and with nothing to stop does what the default does.
+    """
+    global _lock
+    _registries.clear()
+    _lock = threading.RLock()  # another thread may have held it at the fork, and it stays held
+
+
+if hasattr(os, "register_at_fork"):  # not on Windows, which has no fork
+    os.register_at_fork(after_in_child=_forget_after_fork)
