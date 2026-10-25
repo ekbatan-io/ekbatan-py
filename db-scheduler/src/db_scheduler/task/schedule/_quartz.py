@@ -755,7 +755,7 @@ class _Part:
 
         whole = start.replace(microsecond=0)
         before = _shift(whole, -1)
-        found = []
+        found: list[datetime] = []
         with self._lock:
             for iterator in self._iterators:
                 with contextlib.suppress(CroniterBadDateError):

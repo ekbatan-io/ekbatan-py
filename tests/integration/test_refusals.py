@@ -770,6 +770,7 @@ def test_silent_on_a_plain_thread_while_a_loop_runs_elsewhere(registry, wallet_r
 
 
 def test_silent_in_a_fastapi_def_endpoint(registry, wallet_repository):
+    pytest.importorskip("fastapi")  # the `examples` group
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
@@ -788,6 +789,7 @@ def test_silent_in_a_fastapi_def_endpoint(registry, wallet_repository):
 def test_a_fastapi_async_def_endpoint_that_calls_the_sync_api_is_refused(
     registry, wallet_repository
 ):
+    pytest.importorskip("fastapi")  # the `examples` group
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 

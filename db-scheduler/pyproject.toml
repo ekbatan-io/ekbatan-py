@@ -77,3 +77,9 @@ ignore = ["E501", "TID252"]
 python_version = "3.13"
 strict = true
 files = ["src", "tests"]
+
+[[tool.mypy.overrides]]
+# croniter ships no type information (no `py.typed`), and no stub package is a dev dependency.
+# Its two call sites type what they hand on, so nothing untyped leaves them.
+module = ["croniter", "croniter.*"]
+ignore_missing_imports = true

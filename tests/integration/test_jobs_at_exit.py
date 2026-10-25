@@ -165,10 +165,11 @@ def test_sigterm_lets_the_running_job_finish(tmp_path):
     """A container stop. Nothing else in this process handles SIGTERM, so the registry does: the
     job finishes, and then the process still dies of the signal, as it would have."""
     code, lines = run(tmp_path, end="SIGTERM")
+    log = "\n".join(lines)  # the whole of it, which pytest would shorten in a list's repr
 
-    assert code == -signal.SIGTERM, "drained, and then still died of the signal (143 in a shell)"
-    assert "finished" in lines, "the running job was cut off"
-    assert lines.count("JobRegistry stopped") == 1
+    assert code == -signal.SIGTERM, f"drained, and then still died of the signal:\n{log}"
+    assert "finished" in lines, f"the running job was cut off:\n{log}"
+    assert lines.count("JobRegistry stopped") == 1, log
     assert any(line.startswith("Nothing else in this process handles SIGTERM") for line in lines)
 
 

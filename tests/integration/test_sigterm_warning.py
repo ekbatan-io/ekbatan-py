@@ -16,6 +16,8 @@ import sys
 import time
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 
 WARNING = "Nothing in this process handles SIGTERM"
@@ -121,6 +123,9 @@ def test_a_bare_worker_with_the_hook_off_is_warned(tmp_path):
 
 
 def test_a_uvicorn_service_starting_jobs_in_its_lifespan_is_not(tmp_path):
+    # uvicorn and FastAPI are the `examples` group, which CI's fast job installs.
+    pytest.importorskip("uvicorn")
+    pytest.importorskip("fastapi")
     env = write_scripts(tmp_path)
     log = tmp_path / "uvicorn.log"
     with log.open("w") as sink:

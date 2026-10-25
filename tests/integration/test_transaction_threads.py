@@ -142,6 +142,7 @@ def test_a_to_thread_thread_may_open_a_transaction_of_its_own(registry, wallet_r
 
 
 def test_anyio_s_to_thread_is_refused(registry):
+    pytest.importorskip("anyio")  # the `examples` group
     import anyio
     import anyio.to_thread
 
@@ -151,6 +152,7 @@ def test_anyio_s_to_thread_is_refused(registry):
 
 
 def test_starlette_s_run_in_threadpool_is_refused(registry):
+    pytest.importorskip("starlette")  # the `examples` group
     from starlette.concurrency import run_in_threadpool
 
     manager = registry.default
@@ -187,6 +189,7 @@ def test_a_greenlet_spawned_inside_a_transaction_finds_none(registry):
 
 @pytest.fixture
 def client_for() -> Iterator[Any]:
+    pytest.importorskip("fastapi")  # the `examples` group
     from fastapi.testclient import TestClient
 
     opened: list[Any] = []
