@@ -434,10 +434,10 @@ def _as_json_object(value: Any, complaint: str) -> Mapping[str, Any]:
 
     `None` is normalised rather than refused, which is the one place this parts company with
     Java. There an action always takes a params object, so a null reaching the check is a
-    mistake; here `execute(SomeAction(), None)` is simply how a parameterless action is invoked.
-    The rule that makes both coherent: `None` means "no parameters" and has an unambiguous
-    empty-object form, while `"MXN"` means "one unnamed parameter" and does not - storing it
-    would mean inventing a key that no reader on either side knows to look for.
+    mistake; here `execute(principal, SomeAction, None)` is simply how a parameterless action
+    is invoked. The rule that makes both coherent: `None` means "no parameters" and has an
+    unambiguous empty-object form, while `"MXN"` means "one unnamed parameter" and does not -
+    storing it would mean inventing a key that no reader on either side knows to look for.
     """
     if value is None:
         return {}

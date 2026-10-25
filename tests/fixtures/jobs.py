@@ -48,6 +48,7 @@ class WalletStipendJob(DistributedJob):
         for wallet in self.wallet_repository.find_all():
             if wallet.state is WalletState.OPENED:
                 self.executor.execute(
+                    None,
                     WalletDepositMoneyAction,
                     WalletDepositMoneyAction.Params(
                         wallet_id=wallet.id, amount=self.amount, recipient="stipend@example.com"

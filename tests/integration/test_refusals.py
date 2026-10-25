@@ -683,7 +683,7 @@ def test_the_sync_executor_is_refused_before_the_action_runs(executor, registry,
     )
 
     async def on_the_loop() -> None:
-        ready.execute(Watched, params)
+        ready.execute(None, Watched, params)
 
     with pytest.raises(BlockingCallError) as error:
         asyncio.run(on_the_loop())
@@ -691,7 +691,7 @@ def test_the_sync_executor_is_refused_before_the_action_runs(executor, registry,
     assert performed == [], "refused before perform()"
     assert count(registry) == 0
     # Off the loop the very same call runs.
-    assert ready.execute(Watched, params).balance == Decimal("1")
+    assert ready.execute(None, Watched, params).balance == Decimal("1")
     assert performed == [True]
 
 

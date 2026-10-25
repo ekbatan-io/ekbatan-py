@@ -106,12 +106,14 @@ def test_an_action_can_be_run_by_type(registry, clock, wallet_repository, notifi
     )
 
     wallet = executor.execute(
+        None,
         WalletCreateAction,
         WalletCreateAction.Params(
             owner_id=uuid4(), currency="EUR", initial_balance=Decimal("10.00")
         ),
     )
     deposited = executor.execute(
+        None,
         WalletDepositMoneyAction,
         WalletDepositMoneyAction.Params(
             wallet_id=wallet.id, amount=Decimal("5.00"), recipient="ada@x"
@@ -127,7 +129,7 @@ def test_an_instance_is_refused_and_the_message_says_what_to_do(executor):
     here let one run anyway - registered or not."""
     instance = WalletCreateAction(executor.clock)
     with pytest.raises(ValidationError) as refused:
-        executor.execute(instance, None)  # type: ignore[arg-type]
+        executor.execute(None, instance, None)  # type: ignore[arg-type]
 
     message = str(refused.value)
     assert f"pass {type(instance).__name__}, not an instance of it" in message
@@ -162,7 +164,7 @@ def test_running_an_unregistered_type_names_it(executor):
     with pytest.raises(
         ValidationError, match="no instance of WalletDepositThenFailAction is registered"
     ):
-        executor.execute(WalletDepositThenFailAction, None)  # type: ignore[arg-type]
+        executor.execute(None, WalletDepositThenFailAction, None)  # type: ignore[arg-type]
 
 
 def test_the_unregistered_message_gives_only_advice_that_works(executor):
@@ -171,7 +173,7 @@ def test_the_unregistered_message_gives_only_advice_that_works(executor):
     from fixtures.actions import WalletDepositThenFailAction
 
     with pytest.raises(ValidationError) as raised:
-        executor.execute(WalletDepositThenFailAction, None)  # type: ignore[arg-type]
+        executor.execute(None, WalletDepositThenFailAction, None)  # type: ignore[arg-type]
     message = str(raised.value)
     assert "Register it on the ActionRegistry" in message
     assert "pass the instance" not in message
@@ -230,4 +232,4 @@ def test_running_nothing_says_so(executor):
     from ekbatan.errors import ValidationError
 
     with pytest.raises(ValidationError, match="an action type is required"):
-        executor.execute(None, None)
+        executor.execute(None, None, None)

@@ -154,7 +154,7 @@ def test_assert_throws_fails_when_nothing_or_something_else_is_raised():
 
 def test_async_run_action_hands_back_what_was_staged_and_leaves_no_plan_behind():
     staged = asyncio.run(
-        async_run_action(AsyncCreateAction(VirtualClock(JAN_1)), CreateParams(name="w"))
+        async_run_action(None, AsyncCreateAction(VirtualClock(JAN_1)), CreateParams(name="w"))
     )
 
     assert [m.name for m in staged.added(TestModel)] == ["w by None"]
@@ -169,8 +169,8 @@ def test_two_runs_at_once_on_one_loop_each_see_their_own_plan():
     async def both() -> tuple[object, object]:
         clock = VirtualClock(JAN_1)
         return await asyncio.gather(
-            async_run_action(AsyncCreateAction(clock), CreateParams(name="a")),
-            async_run_action(AsyncCreateAction(clock), CreateParams(name="b")),
+            async_run_action(None, AsyncCreateAction(clock), CreateParams(name="a")),
+            async_run_action(None, AsyncCreateAction(clock), CreateParams(name="b")),
         )
 
     first, second = asyncio.run(both())

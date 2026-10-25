@@ -6,7 +6,7 @@ all. Which action runs, the retry policy, how a plan is split by shard, the cros
 and every log line and span attribute are the sync executor's code. What is here awaits
 ``perform``, the transaction and the writes::
 
-    wallet = await executor.execute(WalletDepositMoneyAction, params)
+    wallet = await executor.execute(principal, WalletDepositMoneyAction, params)
 """
 
 from __future__ import annotations
@@ -78,14 +78,16 @@ class AsyncActionExecutor(_ExecutorCore):
 
     async def execute[P, R](
         self,
+        principal: str | None,
         action: type[AsyncAction[P, R]],
         params: P,
-        *,
-        principal: str | None = None,
+        /,
         config: ExecutionConfiguration | None = None,
     ) -> R:
-        """Run one unit of work and commit what it staged."""
-        running, policy = self._running(action, config)
+        """Run one unit of work and commit what it staged - Java's order, as the sync
+        :meth:`~ekbatan.action.ActionExecutor.execute`: the principal, the action, its params, and
+        an optional configuration."""
+        running, policy = self._running(principal, action, config)
         name = type(running).__name__
         retried = 0
 

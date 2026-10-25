@@ -57,6 +57,7 @@ def test_running_an_action_reports_what_it_staged(clock):
     wallet = a_wallet()
 
     staged = run_action(
+        None,
         DepositAction(wallet, clock),
         WalletDepositMoneyAction.Params(
             wallet_id=wallet.id, amount=Decimal("50.00"), recipient="ada@x"
@@ -79,6 +80,7 @@ def test_it_reports_what_was_emitted(clock):
     wallet = a_wallet()
 
     staged = run_action(
+        None,
         DepositAction(wallet, clock),
         WalletDepositMoneyAction.Params(
             wallet_id=wallet.id, amount=Decimal("50.00"), recipient="ada@x"
@@ -92,6 +94,7 @@ def test_it_reports_what_was_emitted(clock):
 
 def test_an_insert_and_its_event_are_both_visible(clock):
     staged = run_action(
+        None,
         WalletCreateAction(clock),
         WalletCreateAction.Params(
             owner_id=uuid4(), currency="EUR", initial_balance=Decimal("10.00")
@@ -105,6 +108,7 @@ def test_an_insert_and_its_event_are_both_visible(clock):
 
 def test_an_entity_stages_without_emitting(clock):
     staged = run_action(
+        None,
         CreateNotificationAction(clock),
         CreateNotificationAction.Params(
             wallet_id=ShardedId[Wallet].random(), kind="X", recipient="ada@x"
@@ -122,10 +126,10 @@ def test_the_action_sees_the_clock_it_was_given(clock):
         def perform(self, principal: str | None, params: None) -> datetime:
             return self.clock.instant()
 
-    assert run_action(ReadsTheClockAction(clock), None).result == clock.instant()
+    assert run_action(None, ReadsTheClockAction(clock), None).result == clock.instant()
 
     clock.advance(timedelta(hours=2))
-    assert run_action(ReadsTheClockAction(clock), None).result == clock.instant()
+    assert run_action(None, ReadsTheClockAction(clock), None).result == clock.instant()
 
 
 def test_the_action_sees_the_principal_it_was_given(clock):
@@ -133,8 +137,19 @@ def test_the_action_sees_the_principal_it_was_given(clock):
         def perform(self, principal: str | None, params: None) -> str | None:
             return principal
 
-    assert run_action(ReadsThePrincipalAction(clock), None, principal="ada").result == "ada"
-    assert run_action(ReadsThePrincipalAction(clock), None).result is None
+    assert run_action("ada", ReadsThePrincipalAction(clock), None).result == "ada"
+    assert run_action(None, ReadsThePrincipalAction(clock), None).result is None
+
+
+def test_run_action_takes_the_principal_first_and_refuses_the_old_order(clock):
+    """As `execute` does, in Java's order: run_action(principal, action, params)."""
+
+    class ReadsThePrincipalAction(Action[None, str | None]):
+        def perform(self, principal: str | None, params: None) -> str | None:
+            return principal
+
+    with pytest.raises(TypeError, match=r"run_action takes the principal first, as execute does"):
+        run_action(ReadsThePrincipalAction(clock), None, None)  # type: ignore[arg-type]
 
 
 def test_a_refusal_is_an_ordinary_exception(clock):
@@ -143,6 +158,7 @@ def test_a_refusal_is_an_ordinary_exception(clock):
 
     with pytest.raises(ValidationError, match="amount"):
         run_action(
+            None,
             DepositAction(wallet, clock),
             WalletDepositMoneyAction.Params(
                 wallet_id=wallet.id, amount=Decimal("-1"), recipient="ada@x"
@@ -159,13 +175,14 @@ def test_the_plan_behaves_as_it_does_in_production(clock):
             return self.plan.update(once.deposit(Decimal("1.00")))
 
     with pytest.raises(ValidationError, match="already staged"):
-        run_action(StagesTwiceAction(clock), None)
+        run_action(None, StagesTwiceAction(clock), None)
 
 
 def test_the_binding_is_gone_afterwards(clock):
     from ekbatan import current_plan
 
     run_action(
+        None,
         WalletCreateAction(clock),
         WalletCreateAction.Params(
             owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1.00")
@@ -179,6 +196,7 @@ def test_the_plan_cannot_be_emptied_from_outside(clock):
     """A caller holding the real map could empty the plan, and the executor would then commit a
     unit of work that had quietly become a no-op."""
     staged = run_action(
+        None,
         WalletCreateAction(clock),
         WalletCreateAction.Params(
             owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1.00")
@@ -196,7 +214,7 @@ def test_a_unit_of_work_touching_two_types_is_countable_across_both(clock):
     A per-type count stops telling you whether anything *extra* was staged the moment a unit of
     work touches two types, which is when it matters most.
     """
-    staged = run_action(CreatesBothAction(clock), None)
+    staged = run_action(None, CreatesBothAction(clock), None)
 
     assert len(staged.additions) == 2, "one of each, and nothing else"
     assert staged.updates == []

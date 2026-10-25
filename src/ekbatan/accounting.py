@@ -57,7 +57,7 @@ def count_statements(registry: _ShardRegistry[Any]) -> Iterator[StatementCount]:
     """Count everything sent through this registry inside the block::
 
     with count_statements(registry) as cost:
-        executor.execute(deposit, params)
+        executor.execute(principal, WalletDepositMoneyAction, params)
 
     assert cost.transactions == 1
     assert cost.writes["wallets"] == 1

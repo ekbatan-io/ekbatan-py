@@ -256,9 +256,10 @@ def test_a_parameterless_action_writes_an_empty_object_not_a_null(write, registr
     """Where this parts company with Java's `should_reject_null_action_params`.
 
     There an action always takes a params object, so a null reaching the check is a mistake.
-    Here `execute(SomeAction(), None)` is how a parameterless action is invoked and is common,
-    so the column gets `{}` - which a reader typed against `Mapping` can still use. Written as
-    JSON `null`, as it was, every parameterless action left a row a typed reader cannot read.
+    Here `execute(principal, SomeAction, None)` is how a parameterless action is invoked and is
+    common, so the column gets `{}` - which a reader typed against `Mapping` can still use.
+    Written as JSON `null`, as it was, every parameterless action left a row a typed reader
+    cannot read.
     """
     write(ItemCreated(model_id=an_id(), description="a"), params=None)
 

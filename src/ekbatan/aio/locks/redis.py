@@ -8,7 +8,7 @@ on the others.
     provider = AsyncRedisKeyedLockProvider(redis.asyncio.Redis(host="localhost"))
 
     async with provider.acquire("wallet:" + str(wallet_id), timedelta(seconds=30)):
-        await executor.execute(WalletDepositMoneyAction, params)
+        await executor.execute(principal, WalletDepositMoneyAction, params)
 
 **The owner field.** Redisson's is ``<client id>:<thread id>``. Here the second half is a number
 drawn once per outermost acquisition rather than a thread id: the holder is a task, re-entry is

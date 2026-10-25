@@ -4,7 +4,7 @@ An action is a singleton: one instance per type, built once at startup with the 
 needs, shared across every concurrent invocation. The registry is where that instance lives,
 so a caller holding the executor can run an action without also holding the wiring::
 
-    executor.execute(CloseWallet, WalletIdParams(wallet_id=id))
+    executor.execute(principal, CloseWallet, WalletIdParams(wallet_id=id))
 
 without knowing what ``CloseWallet`` was constructed with. That is the difference between an
 HTTP handler that depends on the executor and one that depends on every repository its actions

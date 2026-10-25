@@ -133,6 +133,7 @@ class NotifyingHandler(AsyncEventHandler[WalletMoneyDepositedEvent]):
 
     async def handle(self, envelope: EventEnvelope[WalletMoneyDepositedEvent]) -> None:
         await self.executor.execute(
+            None,
             AsyncCreateNotificationAction,
             CreateNotificationAction.Params(
                 wallet_id=ShardedId[Wallet].of(envelope.model_id or ""),

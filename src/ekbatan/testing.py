@@ -13,7 +13,9 @@ deposit emits one event is a slow test of the wrong thing.
 hands back the same information as data, for a test that reads better as plain ``assert``::
 
     staged = run_action(
-        WalletDepositMoneyAction(clock, wallet_repository), WalletDepositMoneyAction.Params(...)
+        None,
+        WalletDepositMoneyAction(clock, wallet_repository),
+        WalletDepositMoneyAction.Params(...),
     )
 
     assert staged.updated(Wallet)[0].balance == Decimal("150.00")
@@ -35,7 +37,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Self, overload
 
-from .action.action import Action, _Binding
+from .action.action import Action, _ActionCore, _Binding
 from .action.plan import ActionPlan
 from .clock import Clock, SystemClock
 from .domain import Model, ModelEvent, Persistable
@@ -105,12 +107,15 @@ class StagedWork[R]:
 
 
 def run_action[P, R](
+    principal: str | None,
     action: Action[P, R],
     params: P,
-    *,
-    principal: str | None = None,
+    /,
 ) -> StagedWork[R]:
     """Run one unit of work against a bare plan and report what it staged.
+
+    The principal first, as :meth:`~ekbatan.action.ActionExecutor.execute` and ``perform`` take
+    it - Java's order. A call in the old order, the action first, is refused naming this one.
 
     The plan stamps from **the action's own clock**, which is the one you handed its
     constructor. There is no override here for the same reason the executor refuses a second
@@ -118,10 +123,23 @@ def run_action[P, R](
     arrangement exists to make unwritable. Pass a ``VirtualClock`` to the action if a test
     needs a fixed instant.
     """
+    _principal_first("run_action", principal, action)
     plan = ActionPlan(action.clock)
     with _Binding(plan):
         result = action.perform(principal, params)
     return StagedWork(result=result, plan=plan, clock=action.clock)
+
+
+def _principal_first(helper: str, principal: object, action: object) -> None:
+    """Refuse a call in the old order - the action first - naming Java's."""
+    if (principal is not None and not isinstance(principal, str)) or not isinstance(
+        action, _ActionCore
+    ):
+        raise TypeError(
+            f"{helper} takes the principal first, as execute does - "
+            f"{helper}(principal, action, params), the principal a str or None and the action an "
+            f"instance - not a {type(principal).__name__} and then a {type(action).__name__}"
+        )
 
 
 # -- Java's ActionSpec / ActionAssert, method for method ----------------------------------------
@@ -366,7 +384,7 @@ class ActionSpec[P, R]:
         return self
 
     def execute(self, params: P) -> ActionAssert[R]:
-        return ActionAssert(run_action(self._action, params, principal=self._principal))
+        return ActionAssert(run_action(self._principal, self._action, params))
 
     def assert_throws[E: Exception](
         self,
@@ -382,7 +400,7 @@ class ActionSpec[P, R]:
         """
         name = exception_type.__name__
         try:
-            run_action(self._action, params, principal=self._principal)
+            run_action(self._principal, self._action, params)
         except Exception as error:
             if not isinstance(error, exception_type):
                 raise AssertionError(f"Expected {name} but got {type(error).__name__}") from error

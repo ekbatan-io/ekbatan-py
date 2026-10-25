@@ -140,7 +140,7 @@ def test_an_action_holding_a_different_clock_is_accepted_as_in_java(executor, cl
         clock=clock,
     )
 
-    assert other.execute(ReadsTheClockAction, None) == datetime(1999, 1, 1)
+    assert other.execute(None, ReadsTheClockAction, None) == datetime(1999, 1, 1)
     (row,) = outbox()
     assert row["completion_date"] == datetime(2026, 1, 1, 10, 0)
 

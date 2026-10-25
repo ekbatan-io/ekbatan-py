@@ -190,8 +190,16 @@ class Service:
     bump_then_deposit: type
     delete: type
 
-    async def execute(self, action: type, params: Any, **options: Any) -> Any:
-        return await self.call(self.executor.execute, action, params, **options)
+    async def execute(
+        self,
+        action: type,
+        params: Any,
+        principal: str | None = None,
+        config: ExecutionConfiguration | None = None,
+    ) -> Any:
+        """The executor's ``execute(principal, action, params, config)``, in Java's order - this
+        helper keeps the action first, as the scenarios read it."""
+        return await self.call(self.executor.execute, principal, action, params, config)
 
     async def call(self, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         return await call(self.mode, fn, *args, **kwargs)

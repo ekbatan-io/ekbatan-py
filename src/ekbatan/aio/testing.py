@@ -3,7 +3,9 @@
 ::
 
     staged = await async_run_action(
-        WalletDepositMoneyAction(clock, wallet_repository), WalletDepositMoneyAction.Params(...)
+        None,
+        WalletDepositMoneyAction(clock, wallet_repository),
+        WalletDepositMoneyAction.Params(...),
     )
     assert staged.updated(Wallet)[0].balance == Decimal("150.00")
 
@@ -25,20 +27,22 @@ from typing import Self
 
 from ..action.action import _Binding
 from ..action.plan import ActionPlan
-from ..testing import ActionAssert, StagedWork, _check
+from ..testing import ActionAssert, StagedWork, _check, _principal_first
 from .action import AsyncAction
 
 __all__ = ["AsyncActionSpec", "async_run_action"]
 
 
 async def async_run_action[P, R](
+    principal: str | None,
     action: AsyncAction[P, R],
     params: P,
-    *,
-    principal: str | None = None,
+    /,
 ) -> StagedWork[R]:
     """Run one async unit of work against a bare plan and report what it staged - the async
-    :func:`~ekbatan.testing.run_action`. The plan stamps from the action's own clock."""
+    :func:`~ekbatan.testing.run_action`, the principal first as there. The plan stamps from the
+    action's own clock."""
+    _principal_first("async_run_action", principal, action)
     plan = ActionPlan(action.clock)
     with _Binding(plan):
         result = await action.perform(principal, params)
@@ -67,7 +71,7 @@ class AsyncActionSpec[P, R]:
         return self
 
     async def execute(self, params: P) -> ActionAssert[R]:
-        return ActionAssert(await async_run_action(self._action, params, principal=self._principal))
+        return ActionAssert(await async_run_action(self._principal, self._action, params))
 
     async def assert_throws[E: Exception](
         self,
@@ -78,7 +82,7 @@ class AsyncActionSpec[P, R]:
         """The action raises ``exception_type`` or a subclass - as the sync one, awaited."""
         name = exception_type.__name__
         try:
-            await async_run_action(self._action, params, principal=self._principal)
+            await async_run_action(self._principal, self._action, params)
         except Exception as error:
             if not isinstance(error, exception_type):
                 raise AssertionError(f"Expected {name} but got {type(error).__name__}") from error

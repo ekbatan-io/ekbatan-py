@@ -51,6 +51,7 @@ def test_nothing_reaches_a_database(registry, clock):
     stored = wallet_repository.add(a_wallet("100.00"))
 
     staged = run_action(
+        None,
         DepositAction(stored, clock),
         WalletDepositMoneyAction.Params(
             wallet_id=stored.id, amount=Decimal("50.00"), recipient="ada@x"

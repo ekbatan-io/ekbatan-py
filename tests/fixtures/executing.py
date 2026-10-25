@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ekbatan.action import ActionExecutor, ActionRegistry
+from ekbatan.action import ActionExecutor, ActionRegistry, ExecutionConfiguration
 from ekbatan.action.action import Action
 
 
@@ -33,6 +33,14 @@ def registered(executor: ActionExecutor, *actions: Action[Any, Any]) -> ActionEx
     )
 
 
-def run[P, R](executor: ActionExecutor, action: Action[P, R], params: P, **options: Any) -> R:
-    """Register ``action`` and execute it by its type."""
-    return registered(executor, action).execute(type(action), params, **options)
+def run[P, R](
+    executor: ActionExecutor,
+    action: Action[P, R],
+    params: P,
+    *,
+    principal: str | None = None,
+    config: ExecutionConfiguration | None = None,
+) -> R:
+    """Register ``action`` and execute it by its type, in Java's order -
+    ``execute(principal, type(action), params, config)``."""
+    return registered(executor, action).execute(principal, type(action), params, config)

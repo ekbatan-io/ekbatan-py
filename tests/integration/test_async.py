@@ -131,7 +131,7 @@ def test_a_request_waiting_past_pool_timeout_fails_fast(backend, dialect, clock)
 
             started = time.monotonic()
             with pytest.raises(sqlalchemy.exc.TimeoutError) as refused:
-                await executor.execute(AsyncWalletCreateAction, open_params())
+                await executor.execute(None, AsyncWalletCreateAction, open_params())
             waited = time.monotonic() - started
 
             assert 0.4 <= waited < 3, f"failed after {waited:.2f}s, not after pool_timeout"
@@ -142,7 +142,7 @@ def test_a_request_waiting_past_pool_timeout_fails_fast(backend, dialect, clock)
             release.set()
             await asyncio.gather(*holders)
             # The pool recovers: the next request gets a connection.
-            await executor.execute(AsyncWalletCreateAction, open_params())
+            await executor.execute(None, AsyncWalletCreateAction, open_params())
             assert checked_out(registry) == 0
             assert await wallet_repository.count() == 1, (
                 "only the request that got a connection wrote"
@@ -186,7 +186,10 @@ def test_requests_beyond_the_pool_wait_their_turn_and_all_commit(backend, dialec
             wallet_repository = AsyncWalletRepository(Wallet, WALLETS, registry, clock=clock)
             executor = executor_over(registry, wallet_repository, clock)
             made = await asyncio.gather(
-                *(executor.execute(AsyncWalletCreateAction, open_params(str(i))) for i in range(20))
+                *(
+                    executor.execute(None, AsyncWalletCreateAction, open_params(str(i)))
+                    for i in range(20)
+                )
             )
             assert len({w.id for w in made}) == 20
             assert await wallet_repository.count() == 20
@@ -433,7 +436,7 @@ def test_a_timeout_around_a_unit_of_work_commits_nothing(backend, clock, where):
             started = time.monotonic()
             with pytest.raises(TimeoutError):
                 async with asyncio.timeout(0.3):
-                    await executor.execute(action, params)
+                    await executor.execute(None, action, params)
             assert time.monotonic() - started < 2
 
             assert registry.default.current() is None, "nothing is left ambient"
@@ -578,7 +581,9 @@ def test_reads_gathered_in_perform_each_take_a_connection(backend, clock):
             # Each SELECT waits 0.2 s first, so two that run at once are seen at once.
             with slow_reads({"ekbatan_async_gather": 0.2}, seen):
                 first, second = await executor.execute(
-                    ReadsTwoAtOnceAction, {"first": a.id.value, "second": b.id.value}
+                    None,
+                    ReadsTwoAtOnceAction,
+                    {"first": a.id.value, "second": b.id.value},
                 )
             assert (first.id, second.id) == (a.id, b.id)
             assert seen["most"] == 2, "the two reads ran at once, each on a connection of its own"

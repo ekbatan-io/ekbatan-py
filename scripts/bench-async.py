@@ -165,7 +165,7 @@ async def run_sync(
     await asyncio.to_thread(repo.add_all_no_result, wallets)
 
     async def one(params: DepositParams) -> None:
-        await asyncio.to_thread(executor.execute, DepositMoneyAction, params)
+        await asyncio.to_thread(executor.execute, None, DepositMoneyAction, params)
 
     await drive(min(10, max(levels)), 100, one, wallets)  # warm the pool and the caches
     try:
@@ -192,7 +192,7 @@ async def run_async(
     await repo.add_all_no_result(wallets)
 
     async def one(params: DepositParams) -> None:
-        await executor.execute(AsyncDepositMoneyAction, params)
+        await executor.execute(None, AsyncDepositMoneyAction, params)
 
     await drive(min(10, max(levels)), 100, one, wallets)
     try:

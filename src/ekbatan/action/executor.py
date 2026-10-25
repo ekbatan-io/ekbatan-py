@@ -25,7 +25,7 @@ from ..errors import CrossShardError, StaleRecordError, ValidationError
 from ..persistence import DatabaseRegistry
 from ..repository import Repository, RepositoryRegistry
 from ..sharding import ShardIdentifier
-from .action import Action, _Binding
+from .action import Action, _ActionCore, _Binding
 from .outbox import EventPersister, SingleTableJsonEventPersister
 from .persister import ChangePersister
 from .plan import ActionPlan, PersistableChanges
@@ -188,6 +188,24 @@ class ExecutionConfigurationBuilder:
         )
 
 
+def _java_order(principal: object, action: object) -> str:
+    """The refusal for a call in any order but Java's. It names what was passed by type only: a
+    value may be anything, a password included."""
+    return (
+        f"execute takes the principal first, in Java's order - "
+        f"execute(principal, WalletDepositMoneyAction, params), the principal a str or None and "
+        f"the action its class - not {_what(principal)} and then {_what(action)}"
+    )
+
+
+def _what(value: object) -> str:
+    if value is None:
+        return "None"
+    if isinstance(value, type):
+        return f"the class {value.__name__}"
+    return f"a {type(value).__name__}"
+
+
 class _ExecutorCore:
     """Everything an executor is apart from waiting on the database - shared by
     :class:`ActionExecutor` and ``ekbatan.aio``'s ``AsyncActionExecutor``.
@@ -252,12 +270,18 @@ class _ExecutorCore:
     # ------------------------------------------------------------- the shared steps
 
     def _running(
-        self, action: Any, config: ExecutionConfiguration | None
+        self, principal: object, action: Any, config: ExecutionConfiguration | None
     ) -> tuple[Any, ExecutionConfiguration]:
-        """The registered instance for ``action``, and the policy for this call."""
+        """The registered instance for ``action``, and the policy for this call - after refusing
+        a call in any order but Java's, ``execute(principal, action, params)``. A call in the
+        old order, the action first, would otherwise hand the action class in as the principal."""
+        if principal is not None and not isinstance(principal, str):
+            raise TypeError(_java_order(principal, action))
         if action is None:
             raise ValidationError("an action type is required, registered with the executor")
         if not isinstance(action, type):
+            if not isinstance(action, _ActionCore):
+                raise TypeError(_java_order(principal, action))
             raise ValidationError(
                 f"execute takes the action's type, as Java's takes its class - pass "
                 f"{type(action).__name__}, not an instance of it, and register the instance with "
@@ -265,6 +289,8 @@ class _ExecutorCore:
                 f"you just built in a test, "
                 f"use ActionSpec.of(action)."
             )
+        if not issubclass(action, _ActionCore):
+            raise TypeError(_java_order(principal, action))
         return self.actions.get(action), config or self.config
 
     @staticmethod
@@ -444,7 +470,7 @@ class ActionExecutor(_ExecutorCore):
     An action is named by its type and found in the executor's
     :class:`~ekbatan.action.registry.ActionRegistry`, as Java's is by its class::
 
-        executor.execute(CloseWallet, WalletIdParams(wallet_id=id))
+        executor.execute(principal, CloseWallet, WalletIdParams(wallet_id=id))
 
     So a caller holding the executor runs an action without holding what it was built with, and
     everything a service can do is listed in one place. An instance is refused: it would run
@@ -490,22 +516,25 @@ class ActionExecutor(_ExecutorCore):
 
     def execute[P, R](
         self,
+        principal: str | None,
         action: type[Action[P, R]],
         params: P,
-        *,
-        principal: str | None = None,
+        /,
         config: ExecutionConfiguration | None = None,
     ) -> R:
         """Run one unit of work and commit what it staged.
 
-        Java's ``execute(principal, WalletDepositMoneyAction.class, params)``: the action is
-        named by its type, and the registered instance is the one that runs.
+        Java's ``execute(principal, WalletDepositMoneyAction.class, params)``, in Java's order: the
+        principal first - ``None`` when there is none - then the action, named by its type, and
+        its params; an :class:`ExecutionConfiguration` may follow, as Java's overload takes one.
+        The registered instance is the one that runs. A call in any other order is refused with
+        a ``TypeError`` that names this one.
 
         Refused with :class:`~ekbatan.errors.BlockingCallError` on an event loop's thread, before
         the action runs: in ``async def`` code, ``ekbatan.aio``'s ``AsyncActionExecutor``.
         """
         refuse_on_an_event_loop("the sync ActionExecutor.execute")
-        running, policy = self._running(action, config)
+        running, policy = self._running(principal, action, config)
         name = type(running).__name__
         retried = 0
 
