@@ -20,6 +20,7 @@ from db_scheduler.client import (
     ClientEvent,
     ClientEventContext,
     ScheduleOptions,
+    SchedulerClient,
     SchedulerClientName,
     StandardSchedulerClient,
     WhenExists,
@@ -32,11 +33,14 @@ from db_scheduler.exceptions import (
     TaskInstanceNotFoundException,
 )
 from db_scheduler.scheduled_execution import ScheduledExecutionsFilter
+from db_scheduler.serializer import JsonSerializer
 from db_scheduler.task import (
     SchedulableTaskInstance,
     TaskInstance,
     TaskInstanceId,
 )
+from db_scheduler.task.helper import Tasks
+from db_scheduler.testhelper import create_manual_scheduler
 
 NOW = datetime(2026, 1, 1, 12, 0)
 
@@ -430,3 +434,68 @@ class TestClientEvent:
             "RESCHEDULE",
             "CANCEL",
         ]
+
+
+class TestBuilder:
+    """Java's `SchedulerClient.Builder`: the client a process builds when it only creates work -
+    a web server queueing a one-time task for the instances that run a scheduler."""
+
+    def test_its_client_schedules_what_a_scheduler_over_the_same_table_runs(
+        self, engine: Any
+    ) -> None:
+        ran: list[str] = []
+        task = Tasks.one_time("send-receipt").execute(
+            lambda instance, context: ran.append(instance.id)
+        )
+        client = SchedulerClient.builder(engine, task).build()
+        table = client.task_repository.table
+        table.metadata.drop_all(engine)
+        table.metadata.create_all(engine)
+        try:
+            assert client.schedule_if_not_exists(TaskInstance[Any]("send-receipt", "r-1"), NOW)
+            assert [e.task_instance.id for e in client.get_scheduled_executions()] == ["r-1"]
+
+            scheduler = (
+                create_manual_scheduler(engine)
+                .table_name(table.name)
+                .clock(SettableClock(NOW + timedelta(minutes=1)))
+                .add_tasks(task)
+                .start()
+            )
+            scheduler.run_any_due_executions()
+
+            assert ran == ["r-1"]
+            assert client.get_scheduled_executions() == []
+        finally:
+            table.metadata.drop_all(engine)
+
+    def test_it_passes_on_every_setting_as_java_s_does(self, engine: Any) -> None:
+        from db_scheduler.jdbc import autodetect
+
+        serializer = JsonSerializer()
+        customization = autodetect(engine.dialect.name, None, True)
+        client = (
+            SchedulerClient.builder(engine)
+            .table_name("other_tasks")
+            .enable_priority()
+            .serializer(serializer)
+            .jdbc_customization(customization)
+            .build()
+        )
+        repository = client.task_repository
+
+        assert repository.table.name == "other_tasks"
+        assert repository.order_by_priority is True
+        assert repository.serializer is serializer
+        assert repository.customization is customization
+        assert repository.scheduler_name == SchedulerClientName().name
+
+    def test_one_list_of_tasks_is_taken_as_the_tasks(self, engine: Any) -> None:
+        """Java's `create(dataSource, List)` beside `create(dataSource, Task...)`."""
+        first = Tasks.one_time("first").execute(lambda instance, context: None)
+        second = Tasks.one_time("second").execute(lambda instance, context: None)
+
+        listed = SchedulerClient.builder(engine, [first, second])
+        spread = SchedulerClient.builder(engine, first, second)
+
+        assert listed._known_tasks == spread._known_tasks == [first, second]

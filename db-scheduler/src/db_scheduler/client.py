@@ -16,7 +16,7 @@ import logging
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Self
+from typing import TYPE_CHECKING, Any, Self
 
 from .clock import Clock, SystemClock
 from .event import SchedulerListeners
@@ -38,6 +38,12 @@ from .task import (
     TaskInstance,
     TaskInstanceId,
 )
+
+if TYPE_CHECKING:
+    from sqlalchemy import Engine
+
+    from .jdbc import JdbcCustomization
+    from .serializer import Serializer
 
 __all__ = [
     "DEFAULT_BATCH_SIZE",
@@ -117,6 +123,23 @@ class SchedulerClient:
     """Scheduling, rescheduling, cancelling and listing. No execution."""
 
     __slots__ = ()
+
+    @staticmethod
+    def builder(engine: Engine, *known_tasks: Any) -> SchedulerClientBuilder:
+        """Java's ``SchedulerClient.Builder.create(dataSource, knownTasks...)``: a client for a
+        process that schedules work and runs none - a web server handing one-time tasks to the
+        instances that run a scheduler, over the same table.
+
+        ``known_tasks`` are the tasks whose rows the client reads back: a row no known task
+        claims is dropped from what it lists. One list or tuple is taken as the tasks, as Java's
+        ``create(dataSource, List)`` takes one.
+        """
+        tasks: Sequence[Any]
+        if len(known_tasks) == 1 and isinstance(known_tasks[0], list | tuple):
+            tasks = known_tasks[0]
+        else:
+            tasks = known_tasks
+        return SchedulerClientBuilder(engine, tasks)
 
     def schedule(
         self,
@@ -452,3 +475,68 @@ class ClientEvent:
 
     def __repr__(self) -> str:
         return f"ClientEvent({self._context})"
+
+
+class SchedulerClientBuilder:
+    """Java's ``SchedulerClient.Builder``, setter for setter. Obtain via
+    :meth:`SchedulerClient.builder`; every setter returns the builder, as Java's do."""
+
+    __slots__ = (
+        "_engine",
+        "_jdbc_customization",
+        "_known_tasks",
+        "_priority",
+        "_serializer",
+        "_table_name",
+    )
+
+    def __init__(self, engine: Engine, known_tasks: Iterable[Any] = ()) -> None:
+        self._engine = engine
+        self._known_tasks: list[Any] = list(known_tasks)
+        self._serializer: Serializer | None = None
+        self._table_name: str | None = None
+        self._jdbc_customization: JdbcCustomization | None = None
+        self._priority = False
+
+    def serializer(self, serializer: Serializer) -> Self:
+        self._serializer = serializer
+        return self
+
+    def table_name(self, table_name: str) -> Self:
+        self._table_name = table_name
+        return self
+
+    def enable_priority(self) -> Self:
+        """Makes ``get_scheduled_executions`` return executions in priority order, as Java's."""
+        self._priority = True
+        return self
+
+    def jdbc_customization(self, jdbc_customization: JdbcCustomization) -> Self:
+        self._jdbc_customization = jdbc_customization
+        return self
+
+    def build(self) -> StandardSchedulerClient:
+        """Java's ``build()``: a system clock, a resolver over the known tasks, the dialect's
+        customization unless one was given, and a repository named ``SchedulerClient`` - a name
+        a client never writes into ``picked_by``, since it picks nothing."""
+        from .jdbc import JdbcTaskRepository, autodetect
+        from .resolver import TaskResolver
+
+        clock = SystemClock()
+        customization = self._jdbc_customization or autodetect(
+            self._engine.dialect.name,
+            getattr(self._engine.dialect, "server_version_info", None),
+            False,
+        )
+        repository = JdbcTaskRepository(
+            self._engine,
+            scheduler_name=SchedulerClientName().name,
+            serializer=self._serializer,
+            table_name=self._table_name,
+            clock=clock,
+            customization=customization,
+            order_by_priority=self._priority,
+            persist_timestamp_in_utc=customization.persist_timestamp_in_utc,
+            task_resolver=TaskResolver(SchedulerListeners(), clock, self._known_tasks),
+        )
+        return StandardSchedulerClient(repository, clock=clock)

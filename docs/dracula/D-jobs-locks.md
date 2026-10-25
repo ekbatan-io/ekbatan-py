@@ -88,7 +88,8 @@ marked unverified.
 - **Could match Java?** no for the default. Java users would have to set a JSON serializer on their side.
 - **Surprise:** medium
 
-### The db-scheduler port has no `SchedulerClient` builder
+### The db-scheduler port has no `SchedulerClient` builder - matched (2026-10-25)
+- **Matched (`EKB-0561`, the user's decision 2026-10-25):** `SchedulerClient.builder(engine, *known_tasks)` is Java's `SchedulerClient.Builder.create(dataSource, knownTasks...)`, with the same four setters (`table_name`, `serializer`, `jdbc_customization`, `enable_priority`) and a `build()` that wires the system clock, a resolver over the known tasks, the dialect's customization and a repository named `SchedulerClient`, as Java's does. Proven by a client scheduling a one-time task that a scheduler over the same table runs, on SQLite, PostgreSQL, MySQL and MariaDB; the README shows it.
 - **What:** Java has `SchedulerClient.Builder.create(dataSource, tasks).serializer(..).tableName(..).build()` for a process that only schedules work. The port has no builder. You construct `StandardSchedulerClient(task_repository)` yourself and wire `JdbcTaskRepository(engine, scheduler_name=..., customization=..., task_resolver=...)` by hand. That repository's defaults (for example `persist_timestamp_in_utc=True`) are not the ones the scheduler builder would pick.
 - **Python:** `db-scheduler/src/db_scheduler/client.py:176-189`; `jdbc/repository.py:55-67`. The README ("build a `StandardSchedulerClient` over the same table") shows no code for it.
 - **Java:** db-scheduler `SchedulerClient.java:342-385`.

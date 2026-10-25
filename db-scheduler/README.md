@@ -52,8 +52,19 @@ scheduler.schedule_if_not_exists(
 )
 ```
 
-An application server that only ever *creates* work does not need a scheduler — build a
-`StandardSchedulerClient` over the same table and let the workers pick the rows up.
+An application server that only ever *creates* work does not need a scheduler. It builds a
+client over the same table - Java's `SchedulerClient.Builder.create(dataSource, tasks...)` - and
+the workers pick the rows up:
+
+```python
+from db_scheduler.client import SchedulerClient
+
+client = SchedulerClient.builder(engine, send_email).build()
+client.schedule_if_not_exists(send_email.instance("welcome-42", {"to": "ada@example.com"}), when)
+```
+
+The builder takes Java's settings: `.table_name(...)`, `.serializer(...)`, `.jdbc_customization(...)`
+and `.enable_priority()`. The tasks it is given are the ones whose rows it reads back.
 
 Testing is the other half. `ManualScheduler` is the real scheduler with the threads and the
 clock taken out, so an hour of retry backoff is one `tick(timedelta(hours=1))`:

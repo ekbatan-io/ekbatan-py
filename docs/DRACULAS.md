@@ -168,7 +168,7 @@ whatever is decided about the rest.
 
 | # | Dracula | Why | Match Java? | Surprise | Area |
 |---|---|---|---|---|---|
-| 90 | The scheduler port has no `SchedulerClient` builder | choice | yes | M | D |
+| 90 | ~~The scheduler port has no `SchedulerClient` builder~~ **matched** (`EKB-0561`, the user's decision 2026-10-25): `SchedulerClient.builder(engine, *tasks)` with Java's `table_name`, `serializer`, `jdbc_customization` and `enable_priority`, building a `StandardSchedulerClient`; one list of tasks is taken as the tasks, as Java's `create(dataSource, List)` | choice | yes | M | D |
 | 91 | `build_manual()` and `ManualJobRegistry` exist only here | choice | yes | L | D |
 | 92 | Lock API: `None`, `release()`, `held`, a Protocol | convention | partly | L | D |
 | 93 | Lock providers: ~~`builder().engine(...)`~~ `builder().data_source(...)` since `EKB-0524`, as Java's `connectionProvider(...)`; public constructors; Redis provider not exported | convention | partly | L | D |
