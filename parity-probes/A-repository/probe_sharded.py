@@ -60,12 +60,12 @@ def main() -> None:
         s.add(dB)
         o.p("add_B.on_B", count_on(B, dB.id))
         o.p("add_B.on_A", count_on(A, dB.id))
-        o.p("findById_B", jbool(s.find_by_id(dB.id) is not None))
-        o.p("existsById_B", jbool(s.exists_by_id(dB.id)))
+        o.p("findById_B", jbool(s.find_by_id(dB.id.value) is not None))
+        o.p("existsById_B", jbool(s.exists_by_id(dB.id.value)))
         dU = on(U)
         s.add(dU)
         o.p("add_unregistered.on_A", count_on(A, dU.id))
-        o.p("findById_unregistered", jbool(s.find_by_id(dU.id) is not None))
+        o.p("findById_unregistered", jbool(s.find_by_id(dU.id.value) is not None))
 
         dA, dB2 = on(A), on(B)
         o.err("addAll_cross.A_then_B", lambda: s.add_all([dA, dB2]))
@@ -78,10 +78,10 @@ def main() -> None:
         s.add(dB2)
         o.err(
             "updateAll_cross",
-            lambda: s.update_all([s.get_by_id(dA.id).deposit(ONE), s.get_by_id(dB2.id).deposit(ONE)]),
+            lambda: s.update_all([s.get_by_id(dA.id.value).deposit(ONE), s.get_by_id(dB2.id.value).deposit(ONE)]),
         )
         dB3 = s.add(on(B))
-        o.p("update_on_B.version", s.update(s.get_by_id(dB3.id).deposit(ONE)).version)
+        o.p("update_on_B.version", s.update(s.get_by_id(dB3.id.value).deposit(ONE)).version)
 
         o.p("count_across", s.count())
         o.p("findAll_across", len(s.find_all()))
@@ -92,7 +92,7 @@ def main() -> None:
         o.p("existsWhere_across", jbool(s.exists_where(cond)))
         o.p("countWhere_across", s.count_where(cond))
         o.p("findAllWhere_across", len(s.find_all_where(cond)))
-        o.p("findAllByIds_across", len(s.find_all_by_ids([dB.id, dA.id, dU.id, sharded_uuid(B)])))
+        o.p("findAllByIds_across", len(s.find_all_by_ids([dB.id.value, dA.id.value, dU.id.value, sharded_uuid(B)])))
 
         owner_both = uuid4()
         s.add(on(A, owner_both))
@@ -110,7 +110,7 @@ def main() -> None:
         n.add(dB5)
         o.p("unsharded.add_B_id.on_A", count_on(A, dB5.id))
         o.p("unsharded.add_B_id.on_B", count_on(B, dB5.id))
-        o.p("unsharded.findById_row_on_B", jbool(n.find_by_id(dB.id) is not None))
+        o.p("unsharded.findById_row_on_B", jbool(n.find_by_id(dB.id.value) is not None))
         o.err("unsharded.addAll_mixed_ids", lambda: len(n.add_all([on(A), on(B)])))
 
         x = WalletRepository(Wallet, DUMMIES, reg, sharding=NonIdStrategy())

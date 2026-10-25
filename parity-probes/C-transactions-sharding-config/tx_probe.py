@@ -387,7 +387,7 @@ def accessors() -> None:
     p("acc.txDb_unknown_shard", r)
     LOGS.clear()
     key = ShardedId.generate(unknown)
-    with repo.db(key=key) as c:
+    with repo.db(key=key.value) as c:
         p("acc.db_by_id_unknown_shard", db(c))
     p("acc.db_by_id_unknown_shard.warned", yn(logs("is not registered") > 0))
     registry.close()

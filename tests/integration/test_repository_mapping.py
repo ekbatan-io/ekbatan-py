@@ -76,7 +76,7 @@ def test_asking_for_the_by_name_mapping_is_a_line_you_write(registry, clock):
     wallet = a_wallet()
 
     wallet_repository.add(wallet)
-    assert wallet_repository.get_by_id(wallet.id).balance == wallet.balance
+    assert wallet_repository.get_by_id(wallet.id.value).balance == wallet.balance
 
 
 def a_wallet() -> Wallet:

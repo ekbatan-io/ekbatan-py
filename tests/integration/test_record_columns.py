@@ -346,11 +346,11 @@ def test_columns_named_anything_go_in_by_keyword_and_come_back_by_key_and_method
     assert row["class"] == "class-1" and row["keys"] == "keys-01" and row["items"] == 1
     assert row["order date"] == datetime(2026, 2, 2, 9, 30) and row["2fa"] is None
 
-    assert odds.get_by_id(one.id) == odds.find_by_id(one.id)
-    assert odds.get_by_id(one.id).order_date == datetime(2026, 2, 2, 9, 30)
+    assert odds.get_by_id(one.id.value) == odds.find_by_id(one.id.value)
+    assert odds.get_by_id(one.id.value).order_date == datetime(2026, 2, 2, 9, 30)
     assert [o.klass for o in odds.find_all_where(ODDS.c["class"] == "class-1")] == ["class-1"]
     assert odds.find_one_where(ODDS.c["2fa"].is_(None)).id == one.id
-    assert [o.id for o in odds.find_all_by_ids([one.id])] == [one.id]
+    assert [o.id for o in odds.find_all_by_ids([one.id.value])] == [one.id]
 
     updated = odds.update(one.evolve(klass="class-x", keys="keys-x", two_fa="2fa-x", items=None))
     assert (updated.klass, updated.keys, updated.two_fa, updated.items) == (
@@ -416,7 +416,7 @@ def test_a_column_left_unset_is_not_sent_and_the_database_fills_it(odds):
     assert second["filled"] == 42
     assert stored(odds)[one.id.value]["filled"] == 7, "the database filled it"
     assert stored(odds)[two.id.value]["filled"] == 42
-    assert odds.get_by_id(one.id).filled == 7
+    assert odds.get_by_id(one.id.value).filled == 7
 
 
 def test_an_update_leaves_a_column_left_unset_as_it_is(odds):
@@ -443,9 +443,9 @@ def test_from_record_is_handed_the_record_class_on_every_read_path(odds, sharded
 
     one = through("add", lambda: repo.add(an_oddity(1, shard)))
     through("add_all", lambda: repo.add_all([an_oddity(2, shard), an_oddity(3, shard)]))
-    through("get_by_id", lambda: repo.get_by_id(one.id))
-    through("find_by_id", lambda: repo.find_by_id(one.id))
-    through("find_all_by_ids", lambda: repo.find_all_by_ids([one.id]))
+    through("get_by_id", lambda: repo.get_by_id(one.id.value))
+    through("find_by_id", lambda: repo.find_by_id(one.id.value))
+    through("find_all_by_ids", lambda: repo.find_all_by_ids([one.id.value]))
     through("find_all_where", lambda: repo.find_all_where(ODDS.c["keys"] == "keys-01"))
     through("find_one_where", lambda: repo.find_one_where(ODDS.c["keys"] == "keys-01"))
     through("find_all", lambda: repo.find_all())

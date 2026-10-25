@@ -57,14 +57,14 @@ def a_wallet(shard: ShardIdentifier, currency: str = "EUR") -> Wallet:
 
 def test_a_shard_can_be_named_by_id_by_row_or_directly(sharded_wallets):
     wallet = a_wallet(MEXICO)
-    assert sharded_wallets.shard_for(wallet.id) == MEXICO
+    assert sharded_wallets.shard_for(wallet.id.value) == MEXICO
     assert sharded_wallets.shard_of(wallet) == MEXICO
     assert sharded_wallets.shard_of_all([wallet, a_wallet(MEXICO)]) == MEXICO
 
 
 def test_an_id_naming_an_unconfigured_shard_falls_back(sharded_wallets):
     stranger = ShardedId[Wallet].generate(ShardIdentifier(9, 3))
-    assert sharded_wallets.shard_for(stranger) == GLOBAL, (
+    assert sharded_wallets.shard_for(stranger.value) == GLOBAL, (
         "a staging database with one shard still has to read production's ids"
     )
 
@@ -149,7 +149,7 @@ def test_a_write_inside_a_transaction_joins_it(registry, wallet_repository):
     except RuntimeError:
         pass
 
-    assert wallet_repository.find_by_id(wallet.id) is None, (
+    assert wallet_repository.find_by_id(wallet.id.value) is None, (
         "the repository wrote inside the caller's transaction, so the rollback took it"
     )
 
@@ -165,12 +165,12 @@ def test_a_built_in_read_inside_a_transaction_does_not_see_its_writes(registry, 
     )
     with registry.default.transaction():
         wallet_repository.add(wallet)
-        assert wallet_repository.find_by_id(wallet.id) is None
-        assert not wallet_repository.exists_by_id(wallet.id)
+        assert wallet_repository.find_by_id(wallet.id.value) is None
+        assert not wallet_repository.exists_by_id(wallet.id.value)
         # A query of your own on `tx_db_else_db()` joins the transaction and sees the row.
-        with wallet_repository.tx_db_else_db(key=wallet.id) as conn:
+        with wallet_repository.tx_db_else_db(key=wallet.id.value) as conn:
             assert conn.execute(select(WALLETS).where(WALLETS.c.id == wallet.id.value)).first()
-    assert wallet_repository.find_by_id(wallet.id) is not None
+    assert wallet_repository.find_by_id(wallet.id.value) is not None
 
 
 def test_dbs_visits_every_shard(sharded_registry, sharded_wallets):
@@ -238,7 +238,9 @@ def test_a_subclass_can_write_its_own_routed_query(sharded_registry, clock):
 
     assert wallet_repository.total_balance_on(GLOBAL) == Decimal("1.0000")
     assert wallet_repository.total_balance_on(MEXICO) == Decimal("1.0000")
-    assert wallet_repository.currency_of(there.id) == "MXN", "routed by the id, with no shard named"
+    assert wallet_repository.currency_of(there.id.value) == "MXN", (
+        "routed by the id, with no shard named"
+    )
 
 
 def test_column_refuses_a_name_the_table_does_not_have(wallet_repository):
@@ -259,7 +261,7 @@ def test_the_no_result_writes_write(wallet_repository):
         created_date=NOW,
     )
     wallet_repository.add_no_result(one)
-    assert wallet_repository.get_by_id(one.id).balance == Decimal("1.0000")
+    assert wallet_repository.get_by_id(one.id.value).balance == Decimal("1.0000")
 
     many = [
         Wallet.open(
@@ -275,13 +277,15 @@ def test_the_no_result_writes_write(wallet_repository):
     assert wallet_repository.count() == 4
 
     wallet_repository.update_no_result(
-        wallet_repository.get_by_id(one.id).evolve(balance=Decimal("9.00"))
+        wallet_repository.get_by_id(one.id.value).evolve(balance=Decimal("9.00"))
     )
-    assert wallet_repository.get_by_id(one.id).balance == Decimal("9.0000")
+    assert wallet_repository.get_by_id(one.id.value).balance == Decimal("9.0000")
 
-    refreshed = [wallet_repository.get_by_id(m.id).evolve(balance=Decimal("5.00")) for m in many]
+    refreshed = [
+        wallet_repository.get_by_id(m.id.value).evolve(balance=Decimal("5.00")) for m in many
+    ]
     wallet_repository.update_all_no_result(refreshed)
-    assert {w.balance for w in wallet_repository.find_all_by_ids([m.id for m in many])} == {
+    assert {w.balance for w in wallet_repository.find_all_by_ids([m.id.value for m in many])} == {
         Decimal("5.0000")
     }
 
@@ -543,7 +547,7 @@ def test_a_batch_is_one_statement_however_many_rows(registry, wallet_repository)
     assert seen.count("UPDATE") == 1, "250 rows, one UPDATE"
 
     seen.clear()
-    assert len(wallet_repository.find_all_by_ids([w.id for w in stored])) == 250
+    assert len(wallet_repository.find_all_by_ids([w.id.value for w in stored])) == 250
     assert seen.count("SELECT") == 1, "250 ids, one SELECT"
 
 
@@ -602,7 +606,9 @@ def test_no_sharding_says_it_resolves_nothing_from_an_id_and_still_reads_by_id(r
     wallet_repository = WalletRepository(Wallet, WALLETS, registry, sharding=strategy, clock=clock)
     stored = wallet_repository.add(a_wallet(GLOBAL))
 
-    assert wallet_repository.get_by_id(stored.id).id == stored.id, "reads by id are not refused"
+    assert wallet_repository.get_by_id(stored.id.value).id == stored.id, (
+        "reads by id are not refused"
+    )
 
 
 def test_a_cross_shard_refusal_names_the_two_shards_that_disagreed(sharded_registry, clock):
@@ -645,8 +651,8 @@ def test_a_row_whose_id_names_an_unregistered_shard_is_written_to_the_default(sh
 
     stored = sharded_wallets.add(stranger)
 
-    assert sharded_wallets.find_by_id(stored.id) is not None, "and it reads back from there"
-    assert sharded_wallets.exists_by_id(stored.id)
+    assert sharded_wallets.find_by_id(stored.id.value) is not None, "and it reads back from there"
+    assert sharded_wallets.exists_by_id(stored.id.value)
 
 
 def test_reads_across_shards_see_the_row_that_fell_back(sharded_wallets, sharded_registry):
@@ -657,7 +663,7 @@ def test_reads_across_shards_see_the_row_that_fell_back(sharded_wallets, sharded
 
     assert {w.id for w in sharded_wallets.find_all()} == {here.id, stranger.id}
     assert sharded_wallets.count() == 2
-    assert {w.id for w in sharded_wallets.find_all_by_ids([here.id, stranger.id])} == {
+    assert {w.id for w in sharded_wallets.find_all_by_ids([here.id.value, stranger.id.value])} == {
         here.id,
         stranger.id,
     }
@@ -683,8 +689,8 @@ def test_a_batch_mixing_the_default_shard_with_an_unregistered_one_is_allowed(sh
     """
     here, stranger = sharded_wallets.add_all([a_wallet(GLOBAL), a_wallet(UNREGISTERED)])
 
-    assert sharded_wallets.find_by_id(here.id) is not None
-    assert sharded_wallets.find_by_id(stranger.id) is not None
+    assert sharded_wallets.find_by_id(here.id.value) is not None
+    assert sharded_wallets.find_by_id(stranger.id.value) is not None
 
 
 # -- unknown_shard_policy is about routing, so it covers reads and writes alike ------------------
@@ -738,10 +744,10 @@ def test_unknown_shard_policy_fail_refuses_a_read_of_an_unregistered_shard(stric
     layout: the foreign-id read the fallback exists for is refused too, by design.
     """
     with pytest.raises(ValidationError, match="shard 9:3 is not registered"):
-        strict_wallets.find_by_id(ShardedId[Wallet].generate(UNREGISTERED))
+        strict_wallets.find_by_id(ShardedId[Wallet].generate(UNREGISTERED).value)
 
 
 def test_a_registered_shard_is_untouched_by_the_policy(strict_wallets):
     stored = strict_wallets.add(a_wallet(MEXICO))
 
-    assert strict_wallets.find_by_id(stored.id) is not None
+    assert strict_wallets.find_by_id(stored.id.value) is not None

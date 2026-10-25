@@ -69,7 +69,7 @@ class TestRunningJobs:
         jobs.scheduler.run_any_due_executions()
 
         assert job.runs == 1
-        assert wallet_repository.get_by_id(wallet.id).balance == Decimal("1.0000")
+        assert wallet_repository.get_by_id(wallet.id.value).balance == Decimal("1.0000")
 
     def test_a_slot_that_is_not_due_yet_does_not_run(
         self, registry, executor, wallet_repository, clock, wallet

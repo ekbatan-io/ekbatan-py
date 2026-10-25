@@ -57,13 +57,13 @@ probe("sharding.md:20 str(ShardIdentifier(0,0))", lambda: str(GLOBAL))
 # unknown shard: warn and route default
 unknown = ShardedId[Wallet].generate(ShardIdentifier(9, 9))
 logbuf.truncate(0); logbuf.seek(0)
-probe("sharding.md:349 find on unregistered shard falls back", lambda: repo.find_by_id(unknown))
+probe("sharding.md:349 find on unregistered shard falls back", lambda: repo.find_by_id(unknown.value))
 print("PROBE sharding.md:353 warning text:", [l for l in logbuf.getvalue().splitlines() if "not registered" in l])
 for pol in ["fail", "FAIL", "useDefaultShard", "use_default_shard", "USE-DEFAULT-SHARD", "", None]:
     def run(pol=pol):
         r2 = DatabaseRegistry.from_config(layout(pol))
         try:
-            return WalletRepository(r2).find_by_id(unknown)
+            return WalletRepository(r2).find_by_id(unknown.value)
         finally:
             r2.close()
     probe(f"sharding.md:376 unknown_shard_policy={pol!r} find(unknown)", run)
@@ -83,7 +83,7 @@ def no_id():
         def __init__(self, registry):
             ModelRepository.__init__(self, Wallet, WALLETS, registry, sharding=NoIdStrategy())
     r = R(reg)
-    return ("constructed", r.find_by_id(g.id))
+    return ("constructed", r.find_by_id(g.id.value))
 probe("sharding.md:316 vs :333 non-id strategy: refused at construction or first id call?", no_id)
 
 # cross-shard
@@ -95,8 +95,8 @@ class TouchBoth(Action[TwoParams, None]):
     def __init__(self, wallet_repository, clock):
         super().__init__(clock); self.wallet_repository = wallet_repository
     def perform(self, principal, params):
-        self.plan.update(self.wallet_repository.get_by_id(params.a).deposit(Decimal(1)))
-        self.plan.update(self.wallet_repository.get_by_id(params.b).deposit(Decimal(1)))
+        self.plan.update(self.wallet_repository.get_by_id(params.a.value).deposit(Decimal(1)))
+        self.plan.update(self.wallet_repository.get_by_id(params.b.value).deposit(Decimal(1)))
 ex = ActionExecutor(namespace="com.example.n6", registry=reg, repositories=[repo], actions=[TouchBoth(repo, clock)], events=EVENTS)
 probe("sharding.md:389 cross-shard refused, naming two shards", lambda: ex.execute(TouchBoth, TwoParams(a=g.id, b=m.id)))
 logbuf.truncate(0); logbuf.seek(0)

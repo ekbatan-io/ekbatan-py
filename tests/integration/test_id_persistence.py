@@ -216,7 +216,7 @@ def a_purse(id: Id[Purse]) -> Purse:
 
 def test_a_typed_id_round_trips_through_a_column(purses):
     stored = purses.add(a_purse(Id[Purse].random()))
-    found = purses.get_by_id(stored.id)
+    found = purses.get_by_id(stored.id.value)
 
     assert isinstance(found.id, Id), "it comes back wrapped, not as a bare uuid"
     assert found.id == stored.id
@@ -230,10 +230,10 @@ def test_a_typed_id_round_trips_through_a_column(purses):
 def test_lookups_accept_the_typed_id_or_the_raw_uuid(purses):
     stored = purses.add(a_purse(Id[Purse].random()))
 
-    assert purses.find_by_id(stored.id) is not None
+    assert purses.find_by_id(stored.id.value) is not None
     assert purses.find_by_id(stored.id.value) is not None, "a raw uuid still works"
-    assert purses.exists_by_id(stored.id) is True
-    assert [p.id for p in purses.find_all_by_ids([stored.id])] == [stored.id]
+    assert purses.exists_by_id(stored.id.value) is True
+    assert [p.id for p in purses.find_all_by_ids([stored.id.value])] == [stored.id]
     assert purses.count_where(PURSES.c.id == stored.id.value) == 1
 
 
@@ -243,11 +243,11 @@ def test_routing_reads_the_shard_off_the_id(sharded_purses):
     sharded_purses.add(here)
     sharded_purses.add(there)
 
-    assert sharded_purses.shard_for(there.id) == MEXICO
+    assert sharded_purses.shard_for(there.id.value) == MEXICO
     assert sharded_purses.shard_of(there) == MEXICO
     assert sharded_purses.count(shard=GLOBAL) == 1
     assert sharded_purses.count(shard=MEXICO) == 1
-    assert sharded_purses.find_by_id(there.id) is not None, "found without naming a database"
+    assert sharded_purses.find_by_id(there.id.value) is not None, "found without naming a database"
 
 
 def test_a_shard_identifier_can_be_handed_in_directly(sharded_purses):
@@ -265,7 +265,7 @@ def test_an_id_for_an_unconfigured_shard_still_stores_and_reads(sharded_purses):
     sharded_purses.add(stranger)
 
     assert sharded_purses.count(shard=GLOBAL) == 1, "it fell back to the default"
-    assert sharded_purses.find_by_id(stranger.id) is not None
+    assert sharded_purses.find_by_id(stranger.id.value) is not None
     assert stranger.id.shard == ShardIdentifier(7, 2), (
         "the id keeps saying what it always said; only this deployment differs"
     )

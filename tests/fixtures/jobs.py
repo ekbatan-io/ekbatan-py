@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import timedelta
 from decimal import Decimal
+from typing import Any
+from uuid import UUID
 
 from db_scheduler.task import ExecutionContext
 from db_scheduler.task.schedule import FixedDelay, Schedule
@@ -27,7 +29,7 @@ class WalletStipendJob(DistributedJob):
     def __init__(
         self,
         executor: ActionExecutor,
-        wallet_repository: AbstractRepository[Wallet, object],
+        wallet_repository: AbstractRepository[Wallet, Any, UUID],
         amount: Decimal = Decimal("1.00"),
     ) -> None:
         self.executor = executor
@@ -56,7 +58,7 @@ class WalletStipendJob(DistributedJob):
 class WalletReportJob(DistributedJob):
     """Reads and writes nothing. The shape of a reporting job."""
 
-    def __init__(self, wallet_repository: AbstractRepository[Wallet, object]) -> None:
+    def __init__(self, wallet_repository: AbstractRepository[Wallet, Any, UUID]) -> None:
         self.wallet_repository = wallet_repository
         self.last_count = 0
 

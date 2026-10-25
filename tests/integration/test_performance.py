@@ -109,7 +109,7 @@ def test_a_lookup_of_many_ids_is_one_statement_per_shard(wallet_repository, sql)
     stored = wallet_repository.add_all(some_wallets(30))
     sql.clear()
 
-    found = wallet_repository.find_all_by_ids([w.id for w in stored])
+    found = wallet_repository.find_all_by_ids([w.id.value for w in stored])
 
     assert len(found) == 30
     assert len(kind(sql, "SELECT")) == 1, "not one query per id"
@@ -117,7 +117,7 @@ def test_a_lookup_of_many_ids_is_one_statement_per_shard(wallet_repository, sql)
 
 def test_a_lookup_collapses_duplicate_ids(wallet_repository, sql):
     stored = wallet_repository.add_all(some_wallets(3))
-    asked = [w.id for w in stored] * 4
+    asked = [w.id.value for w in stored] * 4
     sql.clear()
 
     found = wallet_repository.find_all_by_ids(asked)
@@ -132,7 +132,7 @@ def test_a_lookup_of_many_ids_is_one_query_per_shard(registry, clock, sql):
     stored = wallet_repository.add_all(some_wallets(25))
     sql.clear()
 
-    assert len(wallet_repository.find_all_by_ids([w.id for w in stored])) == 25
+    assert len(wallet_repository.find_all_by_ids([w.id.value for w in stored])) == 25
     assert len(kind(sql, "SELECT")) == 1, "25 ids, one SELECT - as findAllByIds does"
 
 
@@ -180,7 +180,7 @@ def test_reads_do_not_touch_a_shard_they_have_no_business_on(sharded_registry, c
             lambda conn, cur, stmt, params, ctx, many, s=str(shard): touched.append(s),
         )
 
-    wallet_repository.find_by_id(wallet.id)
+    wallet_repository.find_by_id(wallet.id.value)
     assert touched == ["1:0"], "the id said which database; nothing else was asked"
 
 

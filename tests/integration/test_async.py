@@ -270,7 +270,7 @@ def test_a_read_across_shards_asks_them_at_once_and_keeps_the_sync_order(backend
                 counted = await wallet_repository.count()
                 anywhere = await wallet_repository.exists_where(WALLETS.c.id == there.id.value)
                 one = await wallet_repository.find_one_where(WALLETS.c.id == there.id.value)
-                many = await wallet_repository.find_all_by_ids([there.id, here.id])
+                many = await wallet_repository.find_all_by_ids([there.id.value, here.id.value])
 
         assert seen["most"] == 2, "the two shards were read at the same time"
         assert took < 0.7, f"{took:.2f}s - one after another would be 0.75s or more"
@@ -395,7 +395,7 @@ class SlowDepositAction(TwinAction[WalletDepositMoneyAction.Params, Wallet]):
     async def perform(
         self, principal: str | None, params: WalletDepositMoneyAction.Params
     ) -> Wallet:
-        wallet = await self.wallet_repository.get_by_id(params.wallet_id)
+        wallet = await self.wallet_repository.get_by_id(params.wallet_id.value)
         await asyncio.sleep(5)
         return self.plan.update(wallet.deposit(params.amount))
 
@@ -438,9 +438,9 @@ def test_a_timeout_around_a_unit_of_work_commits_nothing(backend, clock, where):
 
             assert registry.default.current() is None, "nothing is left ambient"
             assert checked_out(registry) == 0, "the connection went back"
-            assert (await wallet_repository.get_by_id(stored.id)).balance == Decimal("10.0000"), (
-                "not committed"
-            )
+            assert (await wallet_repository.get_by_id(stored.id.value)).balance == Decimal(
+                "10.0000"
+            ), "not committed"
             async with registry.default.connection() as conn:
                 events = await conn.execute(select(func.count()).select_from(EVENTS))
                 assert events.scalar_one() == 0
@@ -578,7 +578,7 @@ def test_reads_gathered_in_perform_each_take_a_connection(backend, clock):
             # Each SELECT waits 0.2 s first, so two that run at once are seen at once.
             with slow_reads({"ekbatan_async_gather": 0.2}, seen):
                 first, second = await executor.execute(
-                    ReadsTwoAtOnceAction, {"first": a.id, "second": b.id}
+                    ReadsTwoAtOnceAction, {"first": a.id.value, "second": b.id.value}
                 )
             assert (first.id, second.id) == (a.id, b.id)
             assert seen["most"] == 2, "the two reads ran at once, each on a connection of its own"

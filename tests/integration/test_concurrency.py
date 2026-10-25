@@ -214,7 +214,7 @@ def test_concurrent_updates_to_one_row_leave_exactly_one_winner_per_version(
 
     outcomes = _in_parallel(deposit)
 
-    final = wallet_repository.get_by_id(wallet.id)
+    final = wallet_repository.get_by_id(wallet.id.value)
     assert outcomes.count("ok") >= 1
     assert final.version == 1 + outcomes.count("ok"), (
         "the version moved once per committed deposit, and no more"

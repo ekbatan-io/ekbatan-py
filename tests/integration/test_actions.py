@@ -433,7 +433,7 @@ class StagesTwiceAction(Action[WalletDepositMoneyAction.Params, Wallet]):
         self.wallet_repository = wallet_repository
 
     def perform(self, principal: str | None, params: WalletDepositMoneyAction.Params) -> Wallet:
-        wallet = self.wallet_repository.get_by_id(params.wallet_id)
+        wallet = self.wallet_repository.get_by_id(params.wallet_id.value)
         once = self.plan.update(wallet.deposit(params.amount))
         return self.plan.update(once.deposit(params.amount))
 
@@ -446,7 +446,7 @@ class ComposesThenStagesAction(Action[WalletDepositMoneyAction.Params, Wallet]):
         self.wallet_repository = wallet_repository
 
     def perform(self, principal: str | None, params: WalletDepositMoneyAction.Params) -> Wallet:
-        wallet = self.wallet_repository.get_by_id(params.wallet_id)
+        wallet = self.wallet_repository.get_by_id(params.wallet_id.value)
         return self.plan.update(wallet.deposit(params.amount).deposit(params.amount))
 
 
@@ -459,7 +459,7 @@ class AsyncStagesTwiceAction(TwinAction[WalletDepositMoneyAction.Params, Wallet]
     async def perform(
         self, principal: str | None, params: WalletDepositMoneyAction.Params
     ) -> Wallet:
-        wallet = await self.wallet_repository.get_by_id(params.wallet_id)
+        wallet = await self.wallet_repository.get_by_id(params.wallet_id.value)
         once = self.plan.update(wallet.deposit(params.amount))
         return self.plan.update(once.deposit(params.amount))
 
@@ -473,7 +473,7 @@ class AsyncComposesThenStagesAction(TwinAction[WalletDepositMoneyAction.Params, 
     async def perform(
         self, principal: str | None, params: WalletDepositMoneyAction.Params
     ) -> Wallet:
-        wallet = await self.wallet_repository.get_by_id(params.wallet_id)
+        wallet = await self.wallet_repository.get_by_id(params.wallet_id.value)
         return self.plan.update(wallet.deposit(params.amount).deposit(params.amount))
 
 
@@ -493,7 +493,7 @@ def test_staging_one_row_twice_is_refused(executor, wallet_repository, outbox):
             ),
         )
 
-    assert wallet_repository.get_by_id(wallet.id).version == 1, "and nothing was written"
+    assert wallet_repository.get_by_id(wallet.id.value).version == 1, "and nothing was written"
     assert len(outbox()) == before
 
 
@@ -525,7 +525,7 @@ def test_composing_first_then_staging_once_works(executor, wallet_repository, ou
         ),
     )
 
-    stored = wallet_repository.get_by_id(wallet.id)
+    stored = wallet_repository.get_by_id(wallet.id.value)
     assert stored.balance == Decimal("10.0000"), "both changes landed"
     assert stored.version == 2, "one write, one version"
     assert stored == result, "and what the action returned is what the database holds"

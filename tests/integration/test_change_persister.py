@@ -65,7 +65,7 @@ def test_it_writes_the_rows_and_then_their_events(persister, registry, wallet_re
 
     write(persister, registry, registry.default_shard, {Wallet: staged})
 
-    assert wallet_repository.get_by_id(wallet.id).balance == Decimal("100.0000")
+    assert wallet_repository.get_by_id(wallet.id.value).balance == Decimal("100.0000")
     with registry.default.connection(readonly=True) as conn:
         rows = list(conn.execute(select(EVENTS.c.model_id, EVENTS.c.event_type)))
     assert [r.event_type for r in rows] == ["WalletCreatedEvent"]
@@ -99,7 +99,7 @@ def test_it_opens_no_transaction_of_its_own(persister, registry, wallet_reposito
     except RuntimeError:
         pass
 
-    assert wallet_repository.find_by_id(wallet.id) is None
+    assert wallet_repository.find_by_id(wallet.id.value) is None
     with registry.default.connection(readonly=True) as conn:
         assert conn.execute(select(func.count()).select_from(EVENTS)).scalar_one() == 0
 
@@ -122,7 +122,7 @@ def test_an_entity_is_written_and_emits_nothing(registry, notification_repositor
         {Notification: PersistableChanges(additions={note.id: note})},
     )
 
-    assert notification_repository.get_by_id(note.id).recipient == "ada@x"
+    assert notification_repository.get_by_id(note.id.value).recipient == "ada@x"
     with registry.default.connection(readonly=True) as conn:
         rows = list(conn.execute(select(EVENTS.c.event_type)))
     assert [r.event_type for r in rows] == [None], "an entity's changes are not events"

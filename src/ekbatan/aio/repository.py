@@ -5,7 +5,7 @@ same construction checks, mapping, shard routing, soft-delete filter, statements
 optimistic-lock rules, inherited rather than copied - with the methods that run a statement
 written as coroutines::
 
-    class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]):
+    class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, UUID]):
         def to_record(self, wallet: Wallet) -> WalletsRecord: ...    # plain def, as in sync
         def from_record(self, record: WalletsRecord) -> Wallet: ...
 
@@ -40,7 +40,6 @@ from ..repository import (
     _must_be_entity,
     _must_be_model,
     _RepositoryCore,
-    _to_column,
 )
 from ..sharding import ShardIdentifier, ShardingStrategy
 from .persistence import AsyncDatabaseRegistry, AsyncDb
@@ -254,18 +253,20 @@ class AbstractAsyncRepository[M: Persistable[Any, Any], R: Mapping[str, Any], K]
     # ------------------------------------------------------------------ reads
 
     async def find_by_id(self, key: K) -> M | None:
-        """The row, or ``None``."""
+        """The row with this id - what the id column holds - or ``None``."""
+        stmt = self._by_id(self._own_key(key, "find_by_id"))
         async with self._reader(key=key) as conn:
-            row = (await conn.execute(self._by_id(key))).first()
+            row = (await conn.execute(stmt)).first()
         return self._read_back(row) if row is not None else None
 
     async def get_by_id(self, key: K) -> M:
-        """The row, or raise."""
-        return self._found(await self.find_by_id(key), key)
+        """The row with this id, or raise."""
+        return self._found(await self.find_by_id(self._own_key(key, "get_by_id")), key)
 
     async def find_all_by_ids(self, keys: Iterable[K]) -> list[M]:
-        """The rows that exist, in no promised order - one query per shard the keys live on,
-        the shards at the same time. Duplicates are collapsed; no keys is no query."""
+        """The rows with these ids that exist, in no promised order - one query per shard the
+        keys live on, the shards at the same time. Duplicates are collapsed; no keys is no
+        query."""
         by_shard = self._keys_by_shard(keys)
 
         async def read(shard: ShardIdentifier) -> list[M]:
@@ -311,7 +312,8 @@ class AbstractAsyncRepository[M: Persistable[Any, Any], R: Mapping[str, Any], K]
         return self._read_all(await self._read(self._where(), shard))
 
     async def exists_by_id(self, key: K) -> bool:
-        stmt = self._presence(self.id_column == _to_column(key))
+        """Whether a live row has this id."""
+        stmt = self._presence(self.id_column == self._own_key(key, "exists_by_id"))
         async with self._reader(key=key) as conn:
             return (await conn.execute(stmt)).first() is not None
 

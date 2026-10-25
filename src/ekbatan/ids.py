@@ -6,7 +6,8 @@ too - and, when the id carries shard bits, so that routing can be read off the i
 asking anything else::
 
     def perform(self, principal: str | None, params: Params) -> Wallet:
-        wallet = self.wallet_repository.get_by_id(params.wallet_id)  # ShardedId[Wallet], not UUID
+        # params.wallet_id is a ShardedId[Wallet]; the repository takes its raw UUID
+        wallet = self.wallet_repository.get_by_id(params.wallet_id.value)
 
 Spelled as Java spells them, with the model as the type argument::
 
@@ -21,8 +22,11 @@ model is erased in both languages, measured on Java's own classes: two models' i
 are equal, and are one entry in a set. The checker is what holds the line, here as there.
 
 **``ShardedId`` is not an ``Id``**, as it is not in Java: two classes, and an ``Id`` never equals
-a ``ShardedId`` even with the same uuid. Raw UUIDs keep working everywhere; this is an option,
-not a tax.
+a ``ShardedId`` even with the same uuid. A repository's key is what its id column holds, as
+Java's ``DB_ID`` is: for a plain uuid column its reads by id take ``wallet.id.value`` where Java
+takes ``wallet.id.getValue()``, and a typed id there is refused - unless a forced type converts
+the column to the typed id, which it then takes. Everywhere else a raw UUID keeps working; this
+is an option, not a tax.
 """
 
 from __future__ import annotations

@@ -90,7 +90,7 @@ def main() -> None:
     p("b1.id_shard", sh(read_shard(w.id.value)))
     p("b1.widgets_shard0/shard1", counts("widgets"))
     p("b1.events_shard0/shard1", counts("eventlog.events"))
-    p("b1.found_by_id", yn(repo.find_by_id(w.id) is not None))
+    p("b1.found_by_id", yn(repo.find_by_id(w.id.value) is not None))
     fan.fanout.drain_once()
     p("b1.after_fanout.notifications_shard0/shard1", counts("eventlog.event_notifications"))
     p("b1.after_fanout.delivered_on_shard1", scalar(R1, "select count(*) from eventlog.events where delivered"))
@@ -107,7 +107,7 @@ def main() -> None:
     p("b2.id_shard", sh(read_shard(w5.id.value)))
     p("b2.widget_in_shard0/shard1", f"{scalar(R0, "select count(*) from widgets where name = 'b2'")}/{scalar(R1, "select count(*) from widgets where name = 'b2'")}")
     p("b2.event_in_shard0/shard1", f"{scalar(R0, f"select count(*) from eventlog.events where model_id = '{i5}'")}/{scalar(R1, f"select count(*) from eventlog.events where model_id = '{i5}'")}")
-    p("b2.found_by_id", yn(repo.find_by_id(w5.id) is not None))
+    p("b2.found_by_id", yn(repo.find_by_id(w5.id.value) is not None))
     fan.fanout.drain_once()
     hand.dispatch.drain_once()
     p("b2.handled_from_default_shard", scalar(R0, f"select concat(state, '/', attempts) from eventlog.event_notifications where model_id = '{i5}'"))
@@ -123,7 +123,7 @@ def main() -> None:
         p("b3.error_message", str(e))
     p("b3.widget_rows_anywhere", scalar(R0, "select count(*) from widgets where name = 'b3'") + scalar(R1, "select count(*) from widgets where name = 'b3'"))
     try:
-        frepo.find_by_id(w5.id)
+        frepo.find_by_id(w5.id.value)
         p("b3.read_unknown_shard", "read")
     except Exception as e:  # noqa: BLE001
         p("b3.read_unknown_shard", "refused")

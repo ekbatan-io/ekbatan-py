@@ -104,7 +104,7 @@ class BumpThenDepositAction(Action[WalletDepositMoneyAction.Params, Wallet]):
 
     def perform(self, principal: str | None, params: WalletDepositMoneyAction.Params) -> Wallet:
         self.attempts += 1
-        wallet = self.wallet_repository.get_by_id(params.wallet_id)
+        wallet = self.wallet_repository.get_by_id(params.wallet_id.value)
         if self.attempts == 1:
             # Outside the unit of work - there is no transaction open during `perform` - so
             # this commits at once and moves the version on under the read above.
@@ -126,7 +126,7 @@ class AsyncBumpThenDepositAction(AsyncAction[WalletDepositMoneyAction.Params, Wa
         self, principal: str | None, params: WalletDepositMoneyAction.Params
     ) -> Wallet:
         self.attempts += 1
-        wallet = await self.wallet_repository.get_by_id(params.wallet_id)
+        wallet = await self.wallet_repository.get_by_id(params.wallet_id.value)
         if self.attempts == 1:
             await self.wallet_repository.update(wallet.deposit(Decimal("1")))
         return self.plan.update(wallet.deposit(params.amount))
@@ -138,7 +138,7 @@ class DeleteWalletAction(Action[WalletCloseAction.Params, Wallet]):
         self.wallet_repository = wallet_repository
 
     def perform(self, principal: str | None, params: WalletCloseAction.Params) -> Wallet:
-        return self.plan.update(self.wallet_repository.get_by_id(params.wallet_id).delete())
+        return self.plan.update(self.wallet_repository.get_by_id(params.wallet_id.value).delete())
 
 
 class AsyncDeleteWalletAction(AsyncAction[WalletCloseAction.Params, Wallet]):
@@ -151,7 +151,9 @@ class AsyncDeleteWalletAction(AsyncAction[WalletCloseAction.Params, Wallet]):
         return "DeleteWalletAction"
 
     async def perform(self, principal: str | None, params: WalletCloseAction.Params) -> Wallet:
-        return self.plan.update((await self.wallet_repository.get_by_id(params.wallet_id)).delete())
+        return self.plan.update(
+            (await self.wallet_repository.get_by_id(params.wallet_id.value)).delete()
+        )
 
 
 class FailingOutbox:
@@ -302,10 +304,10 @@ def test_a_deposit_commits_the_row_and_its_event_together(mode, backend, clock):
             wallet = await svc.open_wallet("10")
             after = await svc.execute(svc.deposit, deposit(wallet, "5"))
             assert after.balance == Decimal("15")
-            assert (await svc.call(svc.wallet_repository.get_by_id, wallet.id)).balance == Decimal(
-                "15"
-            )
-            assert (await svc.call(svc.wallet_repository.get_by_id, wallet.id)).version == 2
+            assert (
+                await svc.call(svc.wallet_repository.get_by_id, wallet.id.value)
+            ).balance == Decimal("15")
+            assert (await svc.call(svc.wallet_repository.get_by_id, wallet.id.value)).version == 2
 
         balances, events = committed(backend)
         assert balances == {wallet.id.value: Decimal("15")}
@@ -409,9 +411,9 @@ def test_a_soft_deleted_row_is_hidden_from_every_read(mode, backend, clock):
             gone = await svc.open_wallet("20")
             await svc.execute(svc.delete, WalletCloseAction.Params(wallet_id=gone.id))
 
-            assert await svc.call(svc.wallet_repository.find_by_id, gone.id) is None
+            assert await svc.call(svc.wallet_repository.find_by_id, gone.id.value) is None
             with pytest.raises(EntityNotFoundError):
-                await svc.call(svc.wallet_repository.get_by_id, gone.id)
+                await svc.call(svc.wallet_repository.get_by_id, gone.id.value)
             assert [w.id for w in await svc.call(svc.wallet_repository.find_all)] == [kept.id]
             assert [w.id for w in await svc.call(svc.wallet_repository.find_all)] == [kept.id]
             assert (

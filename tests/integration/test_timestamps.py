@@ -103,7 +103,7 @@ def test_a_naive_time_reaches_the_driver_as_it_is_and_comes_back_equal(registry,
     if dialect != "sqlite":  # SQLAlchemy writes SQLite's DATETIME as text; see the next test
         assert to_driver, "and SQLAlchemy hands it to the driver untouched"
 
-    read = wallet_repository.get_by_id(written.id)
+    read = wallet_repository.get_by_id(written.id.value)
     assert read.created_date == PRECISE
     assert read.created_date.tzinfo is None
     assert read.created_date.microsecond == 123456
@@ -142,7 +142,7 @@ def test_an_aware_time_is_handed_to_the_driver_unchanged(registry, clock, dialec
         assert not type(failure).__module__.startswith("ekbatan"), f"the driver's: {failure!r}"
         return
 
-    read = wallet_repository.get_by_id(written.id)
+    read = wallet_repository.get_by_id(written.id.value)
     raw = _raw(registry, "created_date", WALLETS.fullname, written.id.value)
     if isinstance(raw, str):
         raw = datetime.fromisoformat(raw)

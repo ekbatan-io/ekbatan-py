@@ -254,7 +254,7 @@ def probe(urls) -> None:
 
     # e1 getById of a missing row
     missing = ShardedId[Wallet].generate(GLOBAL)
-    report("e1.get_missing", catching(lambda: repo.get_by_id(missing)))
+    report("e1.get_missing", catching(lambda: repo.get_by_id(missing.value)))
 
     # e2 a direct update with a stale version
     truncate()
@@ -331,7 +331,7 @@ def probe(urls) -> None:
     dead_repo = WalletRepository(Wallet, WALLETS, dead_registry,
                                  sharding=EmbeddedBitsShardingStrategy(), clock=clock)
     started = time.monotonic()
-    t7 = catching(lambda: dead_repo.get_by_id(ShardedId[Wallet].generate(GLOBAL)))
+    t7 = catching(lambda: dead_repo.get_by_id(ShardedId[Wallet].generate(GLOBAL).value))
     elapsed = time.monotonic() - started
     report("e7.unreachable.read", t7)
     p("e7.unreachable.is_ConnectivityError", isinstance(t7, E.ConnectivityError))

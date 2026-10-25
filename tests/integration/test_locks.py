@@ -483,7 +483,9 @@ def test_a_lease_can_wrap_a_whole_unit_of_work(locks, executor, wallet_repositor
         )
 
     assert updated.balance == Decimal("125.5000")
-    assert wallet_repository.get_by_id(wallet.id).balance == Decimal("125.5000"), "and it committed"
+    assert wallet_repository.get_by_id(wallet.id.value).balance == Decimal("125.5000"), (
+        "and it committed"
+    )
 
 
 def test_a_second_caller_waits_for_the_first_and_then_proceeds(
@@ -528,7 +530,7 @@ def test_a_second_caller_waits_for_the_first_and_then_proceeds(
 
     assert waiter.is_alive(), "still waiting, because the other holder has not let go"
     assert finished == []
-    assert wallet_repository.get_by_id(wallet.id).balance == Decimal("100.0000"), (
+    assert wallet_repository.get_by_id(wallet.id.value).balance == Decimal("100.0000"), (
         "and nothing was written"
     )
 
@@ -537,4 +539,4 @@ def test_a_second_caller_waits_for_the_first_and_then_proceeds(
 
     assert not waiter.is_alive(), "the wait ended when the holder released"
     assert finished and finished[0].balance == Decimal("110.0000")
-    assert wallet_repository.get_by_id(wallet.id).balance == Decimal("110.0000")
+    assert wallet_repository.get_by_id(wallet.id.value).balance == Decimal("110.0000")

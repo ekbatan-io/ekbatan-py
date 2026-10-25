@@ -58,7 +58,7 @@ def test_nothing_reaches_a_database(registry, clock):
     )
 
     assert staged.result.balance == Decimal("150.0000")
-    assert wallet_repository.get_by_id(stored.id).balance == Decimal("100.0000"), (
+    assert wallet_repository.get_by_id(stored.id.value).balance == Decimal("100.0000"), (
         "the database is untouched"
     )
-    assert wallet_repository.get_by_id(stored.id).version == 1
+    assert wallet_repository.get_by_id(stored.id.value).version == 1

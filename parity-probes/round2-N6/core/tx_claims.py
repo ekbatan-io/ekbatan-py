@@ -14,7 +14,7 @@ w = ex.execute(WalletCreateAction, OpenWalletParams(owner_id=uuid4(), currency="
 
 # actions.md:53 "plan.update returns the row ... stamped, version already moved"
 def stamped():
-    w2 = wallet_repository.get_by_id(w.id)
+    w2 = wallet_repository.get_by_id(w.id.value)
     from ekbatan.action.plan import ActionPlan
     from ekbatan.clock import SystemClock
     p = ActionPlan(SystemClock())
@@ -52,7 +52,7 @@ def action_in_tx():
             raise Boom()
     except Boom:
         pass
-    return str(wallet_repository.get_by_id(w.id).balance)
+    return str(wallet_repository.get_by_id(w.id.value).balance)
 probe("tm.md:82 action inside rolled-back block stays committed (balance 105?)", action_in_tx)
 
 # tm.md:120 a second manager for the same shard sees no transaction
@@ -67,10 +67,10 @@ probe("tm.md:120 second manager same shard current() inside first's block", seco
 def inherited_read():
     with tm.transaction() as tx:
         tx.execute(update(WALLETS).where(WALLETS.c.id == w.id.value).values(currency="GBP"))
-        got = wallet_repository.get_by_id(w.id).currency
+        got = wallet_repository.get_by_id(w.id.value).currency
         tx.rollback() if False else None
         raise_after = got
-    wallets_after = wallet_repository.get_by_id(w.id).currency
+    wallets_after = wallet_repository.get_by_id(w.id.value).currency
     return {"inside_inherited_get": raise_after, "after_commit": wallets_after}
 probe("tm.md:96 inherited get inside block (committed state?)", inherited_read)
 
@@ -83,7 +83,7 @@ def conn_join():
             b = c is tx.connection
     with tm.connection() as c:
         c.execute(update(WALLETS).where(WALLETS.c.id == w.id.value).values(currency="CHF"))
-    return {"connection_joins": a, "readonly_joins": b, "autocommit_write_kept": wallet_repository.get_by_id(w.id).currency}
+    return {"connection_joins": a, "readonly_joins": b, "autocommit_write_kept": wallet_repository.get_by_id(w.id.value).currency}
 probe("tm.md:156-160 tm.connection join / autocommit", conn_join)
 
 # repositories.md: db() opens its own connection inside a block

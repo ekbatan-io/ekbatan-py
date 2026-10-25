@@ -204,7 +204,7 @@ class WidgetRenameAction(Action[RenameParams, Widget]):
         self.widgets = widgets
 
     def perform(self, principal: str | None, params: RenameParams) -> Widget:
-        found = self.widgets.find_by_id(ShardedId["Widget"].of(params.id))
+        found = self.widgets.find_by_id(ShardedId["Widget"].of(params.id).value)
         if found is None:
             raise LookupError(f"widget {params.id} not visible to the action")
         return self.plan.update(found.copy().name(params.name).build())

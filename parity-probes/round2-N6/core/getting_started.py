@@ -49,7 +49,7 @@ class WalletDepositMoneyAction(Action[DepositParams, Wallet]):
         super().__init__(clock)
         self.wallet_repository = wallet_repository
     def perform(self, principal, params):
-        wallet = self.wallet_repository.get_by_id(params.wallet_id)
+        wallet = self.wallet_repository.get_by_id(params.wallet_id.value)
         return self.plan.update(wallet.deposit(params.amount))
 
 # getting-started.md:172-180 ActionExecutor(...) keyword constructor

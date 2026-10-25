@@ -53,7 +53,7 @@ class FlakyDepositAction(Action[WalletDepositMoneyAction.Params, Wallet]):
 
     def perform(self, principal: str | None, params: WalletDepositMoneyAction.Params) -> Wallet:
         self.attempts += 1
-        wallet = self.wallet_repository.get_by_id(params.wallet_id)
+        wallet = self.wallet_repository.get_by_id(params.wallet_id.value)
         staged = self.plan.update(wallet.deposit(params.amount))
         if self.remaining:
             self.remaining -= 1
@@ -77,7 +77,7 @@ class AsyncFlakyDepositAction(AsyncAction[WalletDepositMoneyAction.Params, Walle
         self, principal: str | None, params: WalletDepositMoneyAction.Params
     ) -> Wallet:
         self.attempts += 1
-        wallet = await self.wallet_repository.get_by_id(params.wallet_id)
+        wallet = await self.wallet_repository.get_by_id(params.wallet_id.value)
         staged = self.plan.update(wallet.deposit(params.amount))
         if self.remaining:
             self.remaining -= 1
@@ -108,7 +108,7 @@ def test_a_conflict_is_retried_once_by_default(executor, wallet_repository, outb
     )
 
     assert action.attempts == 2
-    assert wallet_repository.get_by_id(wallet.id).balance == Decimal("10.0000")
+    assert wallet_repository.get_by_id(wallet.id.value).balance == Decimal("10.0000")
 
 
 def test_a_retry_starts_from_an_empty_plan(executor, wallet_repository, outbox):
@@ -125,7 +125,7 @@ def test_a_retry_starts_from_an_empty_plan(executor, wallet_repository, outbox):
     assert len(deposits) == 1, (
         "the failed attempt's staged change must not be committed alongside the retry's"
     )
-    assert wallet_repository.get_by_id(wallet.id).balance == Decimal("10.0000")
+    assert wallet_repository.get_by_id(wallet.id.value).balance == Decimal("10.0000")
 
 
 def test_retries_can_be_switched_off(executor, wallet_repository, outbox):
@@ -144,7 +144,7 @@ def test_retries_can_be_switched_off(executor, wallet_repository, outbox):
         )
 
     assert action.attempts == 1
-    assert wallet_repository.get_by_id(wallet.id).balance == Decimal("0.0000")
+    assert wallet_repository.get_by_id(wallet.id.value).balance == Decimal("0.0000")
     assert len(outbox()) == before
 
 
@@ -177,7 +177,7 @@ def test_a_row_goes_to_the_shard_its_id_names(sharded, sharded_registry):
 
     assert wallet_repository.count(shard=GLOBAL) == 1
     assert wallet_repository.count(shard=MEXICO) == 1
-    assert wallet_repository.find_by_id(there.id).currency == "MXN"
+    assert wallet_repository.find_by_id(there.id.value).currency == "MXN"
     assert _events_on(sharded_registry, GLOBAL) == 1
     assert _events_on(sharded_registry, MEXICO) == 1, (
         "events live on the same shard as the rows they describe, or the write spans two "
@@ -372,7 +372,7 @@ def test_the_event_store_can_be_replaced_without_touching_anything_else(
     assert [name for name, _ in written] == ["WalletCreateAction", "WalletDepositMoneyAction"]
     assert [e.event_type for e in written[1][1]] == ["WalletMoneyDepositedEvent"]
     assert outbox() == [], "nothing reached the default table"
-    assert wallet_repository.get_by_id(wallet.id).balance == Decimal("5.0000"), (
+    assert wallet_repository.get_by_id(wallet.id.value).balance == Decimal("5.0000"), (
         "the state change still committed"
     )
 
@@ -484,7 +484,7 @@ class CreateOnGlobalThenFailOnMexicoAction(Action[StaleOnMexico, None]):
                 created_date=self.clock.instant(),
             )
         )
-        stale = self.wallet_repository.get_by_id(params.wallet_id)
+        stale = self.wallet_repository.get_by_id(params.wallet_id.value)
         # Two versions behind, so the `WHERE version = ?` matches nothing.
         self.plan.update(stale.evolve(version=stale.version + 5).deposit(Decimal("1.00")))
         return None
@@ -510,7 +510,7 @@ class AsyncCreateOnGlobalThenFailOnMexicoAction(AsyncAction[StaleOnMexico, None]
                 created_date=self.clock.instant(),
             )
         )
-        stale = await self.wallet_repository.get_by_id(params.wallet_id)
+        stale = await self.wallet_repository.get_by_id(params.wallet_id.value)
         self.plan.update(stale.evolve(version=stale.version + 5).deposit(Decimal("1.00")))
         return None
 
@@ -581,5 +581,5 @@ def test_an_action_run_inside_an_open_transaction_commits_on_its_own(
         wallet = _new_wallet(executor, "5.00")
         raise RuntimeError("the caller's transaction fails")
 
-    assert wallet_repository.get_by_id(wallet.id).balance == Decimal("5.0000")
+    assert wallet_repository.get_by_id(wallet.id.value).balance == Decimal("5.0000")
     assert [row["action_name"] for row in outbox()] == ["WalletCreateAction"]

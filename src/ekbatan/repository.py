@@ -159,8 +159,9 @@ class Repository[M: Persistable[Any, Any]](Protocol):
             raise TypeError(
                 "Repository takes one type argument now - it is Java's Repository interface, the "
                 "promise the framework asks of a repository. The class that implements it is "
-                "AbstractRepository[Model, Record, Id]; an application extends "
-                "ModelRepository[Model, Record, Id] or EntityRepository[Model, Record, Id]."
+                "AbstractRepository[Model, Record, Key], Key being the id column's type "
+                "(UUID); an application extends ModelRepository[Model, Record, Key] or "
+                "EntityRepository[Model, Record, Key]."
             )
         return super().__class_getitem__(params)  # type: ignore[misc]
 
@@ -250,6 +251,9 @@ class _RepositoryCore[M: Persistable[Any, Any], R: Mapping[str, Any], K](ABC):
                 f"{table.name} has {len(pk)} primary key columns; a repository needs exactly one"
             )
         self.id_column = pk[0]
+        #: What a read by id takes: the type the id column holds - its converter's user type
+        #: where the column is converted - or ``None`` where nothing says, and nothing is refused.
+        self._key_type, self._key_converted = _key_type(self.id_column)
         self.state_column = table.c.get(state_column)
 
         self._fields = {f.name: f for f in dataclasses.fields(model_type)}
@@ -380,9 +384,41 @@ class _RepositoryCore[M: Persistable[Any, Any], R: Mapping[str, Any], K](ABC):
     # ------------------------------------------------------- where the queries run
 
     def shard_for(self, key: K) -> ShardIdentifier:
-        """The shard an id names, after falling back for one this deployment does not have."""
+        """The shard an id names, after falling back for one this deployment does not have.
+
+        The id is the id column's own type, as at every read by id. A shard identifier is taken
+        too, and named back: a caller that already knows the shard need not make an id to say so.
+        """
+        if not isinstance(key, ShardIdentifier):
+            self._own_key(key, "shard_for")
         self._require_id_based()
         return self.registry.effective_shard(self.sharding.shard_for_id(key))
+
+    def _own_key(self, key: K, method: str) -> K:
+        """``key``, refused unless it is the id column's own type.
+
+        A repository's key is what its id column holds, as Java's ``DB_ID`` is: a ``UUID`` for a
+        plain uuid column, so a read by id takes ``wallet.id.value`` where Java takes
+        ``wallet.id.getValue()``. A column converted to a typed id - a schemagen forced type, as a
+        jOOQ forced type changes Java's ``DB_ID`` - holds that typed id, and takes it. A key of
+        any other type is refused rather than converted, as Java's compiler refuses it, and the
+        message names the type the column holds. Where nothing says what the column holds, nothing
+        is refused. The key reaches the column as it is, so a converter converts it.
+        """
+        expected = self._key_type
+        if expected is None or isinstance(key, expected):
+            return key
+        if self._key_converted:
+            fix = f"pass the {expected.__name__} the column is converted to"
+        elif isinstance(key, TypedValue) and isinstance(key.value, expected):
+            fix = "pass its .value"
+        else:
+            fix = f"pass a {expected.__name__}"
+        raise TypeError(
+            f"{type(self).__name__}.{method}() takes the id column's own type - "
+            f"{self.table.name}.{self.id_column.name} holds {expected.__name__} - not a "
+            f"{type(key).__name__}; {fix}"
+        )
 
     def shard_of(self, model: M) -> ShardIdentifier:
         """The shard a row belongs on. A strategy may read any field, not only the id."""
@@ -413,12 +449,9 @@ class _RepositoryCore[M: Persistable[Any, Any], R: Mapping[str, Any], K](ABC):
         return dialect
 
     def id_matches(self, key: K) -> Any:
-        """``id = ?``, with a typed id unwrapped on the way to the column.
-
-        For a subclass writing its own statement. ``self.id_column == key`` would hand the
-        wrapper straight to the driver, which knows nothing about it.
-        """
-        return self.id_column == _to_column(key)
+        """``id = ?`` for a subclass writing its own statement. The key is the id column's own
+        type, as at every read by id; another is refused."""
+        return self.id_column == self._own_key(key, "id_matches")
 
     def column(self, name: str) -> Any:
         """One of this table's columns, by name - for building a predicate in a subclass
@@ -777,7 +810,7 @@ class _RepositoryCore[M: Persistable[Any, Any], R: Mapping[str, Any], K](ABC):
 
     def _by_id(self, key: K) -> Any:
         """``SELECT … WHERE id = ?`` on a live row."""
-        return select(self.table).where(*self._live(self.id_column == _to_column(key)))
+        return select(self.table).where(*self._live(self.id_column == key))
 
     def _where(self, *criteria: ColumnElement[bool]) -> Any:
         """``SELECT … WHERE …`` on live rows."""
@@ -798,10 +831,10 @@ class _RepositoryCore[M: Persistable[Any, Any], R: Mapping[str, Any], K](ABC):
         return self._read_back(rows[0]) if rows else None
 
     def _keys_by_shard(self, keys: Iterable[K]) -> dict[ShardIdentifier, list[Any]]:
-        """``find_all_by_ids``'s keys, duplicates dropped, grouped by the shard each lives on - in
-        the order each shard was first named."""
+        """``find_all_by_ids``'s keys, each the id column's own type, duplicates dropped, grouped
+        by the shard each lives on - in the order each shard was first named."""
         by_shard: dict[ShardIdentifier, list[Any]] = {}
-        for key in dict.fromkeys(_to_column(k) for k in keys):
+        for key in dict.fromkeys(self._own_key(k, "find_all_by_ids") for k in keys):
             by_shard.setdefault(self.shard_for(key), []).append(key)
         return by_shard
 
@@ -926,9 +959,11 @@ class AbstractRepository[M: Persistable[Any, Any], R: Mapping[str, Any], K](
 ):
     """Rows of one table, as models - Java's ``AbstractRepository``.
 
-    Generic in the model, the table's record and the id - ``ModelRepository[Wallet,
-    WalletsRecord, ShardedId[Wallet]]`` - as Java's is in the model, the record, the table and
-    the id; the table here is a value, not a type, so it is not a parameter.
+    Generic in the model, the table's record and the id column's type - ``ModelRepository[Wallet,
+    WalletsRecord, UUID]`` - as Java's is in the model, the record, the table and the ``DB_ID``;
+    the table here is a value, not a type, so it is not a parameter. The reads by id take what
+    the id column holds: ``get_by_id(wallet.id.value)`` for a plain uuid column, where Java writes
+    ``getById(wallet.id.getValue())``, and the typed id itself for a column a forced type converts.
 
     Abstract for Java's reason: ``to_record`` and ``from_record`` are the repository's to
     write, and a repository without them cannot be created at all - the nearest this language
@@ -1059,19 +1094,23 @@ class AbstractRepository[M: Persistable[Any, Any], R: Mapping[str, Any], K](
     # ------------------------------------------------------------------ reads
 
     def find_by_id(self, key: K) -> M | None:
-        """The row, or ``None``. The lookup that treats absence as ordinary - Java's ``findById``,
-        with ``None`` where Java has an empty ``Optional``."""
-        stmt = self._by_id(key)
+        """The row with this id, or ``None``. The lookup that treats absence as ordinary -
+        Java's ``findById``, with ``None`` where Java has an empty ``Optional``. The id is what
+        the id column holds: ``wallet.id.value`` for a plain uuid column, as Java passes
+        ``wallet.id.getValue()``; a key of another type is refused."""
+        stmt = self._by_id(self._own_key(key, "find_by_id"))
         with self._reader(key=key) as conn:
             row = conn.execute(stmt).first()
         return self._read_back(row) if row is not None else None
 
     def get_by_id(self, key: K) -> M:
-        """The row, or raise. The lookup for callers that cannot continue without it."""
-        return self._found(self.find_by_id(key), key)
+        """The row with this id, or raise. The lookup for callers that cannot continue without
+        it."""
+        return self._found(self.find_by_id(self._own_key(key, "get_by_id")), key)
 
     def find_all_by_ids(self, keys: Iterable[K]) -> list[M]:
-        """The rows that exist, in no promised order.
+        """The rows with these ids that exist, in no promised order. A key not of the id
+        column's own type is refused.
 
         Duplicates are collapsed before the query - asking twice for the same id is a caller's
         accident, not an instruction to fetch it twice. An empty input is an empty result:
@@ -1123,7 +1162,8 @@ class AbstractRepository[M: Persistable[Any, Any], R: Mapping[str, Any], K](
         return self._read_all(self._read(self._where(), shard))
 
     def exists_by_id(self, key: K) -> bool:
-        stmt = self._presence(self.id_column == _to_column(key))
+        """Whether a live row has this id."""
+        stmt = self._presence(self.id_column == self._own_key(key, "exists_by_id"))
         with self._reader(key=key) as conn:
             return conn.execute(stmt).first() is not None
 
@@ -1336,7 +1376,7 @@ def _must_hold(col: Any, wanted: type, described: str, why: str) -> None:
 
 def _record_type_of(cls: type) -> type[dict[str, Any]]:
     """The record class a repository class is generic in - ``WalletsRecord`` for
-    ``WalletRepository(ModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]])`` - read off
+    ``WalletRepository(ModelRepository[Wallet, WalletsRecord, UUID])`` - read off
     its bases, through any generic class of its own in between; ``dict`` where it names none."""
 
     def walk(klass: type, bound: dict[Any, Any]) -> object | None:
@@ -1468,6 +1508,54 @@ def _to_column(value: Any) -> Any:
     if isinstance(value, Enum):
         return value.name
     return value
+
+
+def _key_type(column: Any) -> tuple[type | None, bool]:
+    """The type an id column holds - what a read by id takes - and whether a converter makes it
+    so. ``None`` for the type where nothing says: a type SQLAlchemy cannot name, or a decorator
+    of the application's own, whose reads only it knows."""
+    from sqlalchemy.types import TypeDecorator
+
+    from .schema import Converted
+
+    found: object
+    converted = isinstance(column.type, Converted)
+    if converted:
+        found = _converter_user_type(column.type._converter)
+    elif isinstance(column.type, TypeDecorator):
+        return None, False
+    else:
+        try:
+            found = column.type.python_type
+        except NotImplementedError:
+            return None, False
+    # `ShardedId[Wallet]` is a generic alias; what a value is an instance of is its origin.
+    origin = typing.get_origin(found) or found
+    if isinstance(origin, type) and origin is not object:
+        return origin, converted
+    return None, converted
+
+
+def _converter_user_type(converter: object) -> object:
+    """What a converter's ``from_db`` gives: its return annotation, else the second argument of
+    its ``Converter[DbT, UserT]`` base - the rule schemagen types a converted column's record by.
+    ``None`` where neither says."""
+    from .schema import Converter
+
+    method = getattr(converter, "from_db", None)
+    try:
+        found = typing.get_type_hints(method).get("return") if method is not None else None
+    except Exception:  # an annotation naming something its module cannot see
+        found = None
+    if found is not None and found is not Any:
+        return found
+    for klass in type(converter).__mro__:
+        for base in getattr(klass, "__orig_bases__", ()):
+            if typing.get_origin(base) is Converter:
+                args = typing.get_args(base)
+                if len(args) == 2:
+                    return args[1]
+    return None
 
 
 def _from_column(value: Any, hint: Any) -> Any:

@@ -14,6 +14,8 @@ database because a JSON column takes it.
 
 from __future__ import annotations
 
+from uuid import UUID
+
 from ekbatan.aio import AbstractAsyncRepository, AsyncEntityRepository, AsyncModelRepository
 from ekbatan.domain import GenericState
 from ekbatan.ids import Id, ShardedId
@@ -90,34 +92,32 @@ class _NotificationRows:
         )
 
 
-class WalletRepository(_WalletRows, AbstractRepository[Wallet, WalletsRecord, ShardedId[Wallet]]):
+class WalletRepository(_WalletRows, AbstractRepository[Wallet, WalletsRecord, UUID]):
     """Java's `DummyRepository`: a repository that exists so the suite has one."""
 
 
 class NotificationRepository(
-    _NotificationRows, AbstractRepository[Notification, NotificationsRecord, Id[Notification]]
+    _NotificationRows, AbstractRepository[Notification, NotificationsRecord, UUID]
 ):
     pass
 
 
-class WalletModelRepository(_WalletRows, ModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]):
+class WalletModelRepository(_WalletRows, ModelRepository[Wallet, WalletsRecord, UUID]):
     """For the checks that a `ModelRepository` refuses a table with no timestamps."""
 
 
 class NotificationModelRepository(
-    _NotificationRows, ModelRepository[Notification, NotificationsRecord, Id[Notification]]
+    _NotificationRows, ModelRepository[Notification, NotificationsRecord, UUID]
 ):
     pass
 
 
-class WalletEntityRepository(
-    _WalletRows, EntityRepository[Wallet, WalletsRecord, ShardedId[Wallet]]
-):
+class WalletEntityRepository(_WalletRows, EntityRepository[Wallet, WalletsRecord, UUID]):
     pass
 
 
 class NotificationEntityRepository(
-    _NotificationRows, EntityRepository[Notification, NotificationsRecord, Id[Notification]]
+    _NotificationRows, EntityRepository[Notification, NotificationsRecord, UUID]
 ):
     pass
 
@@ -129,42 +129,36 @@ class NotificationEntityRepository(
 
 
 @twin(WalletRepository)
-class AsyncWalletRepository(
-    _WalletRows, AbstractAsyncRepository[Wallet, WalletsRecord, ShardedId[Wallet]]
-):
+class AsyncWalletRepository(_WalletRows, AbstractAsyncRepository[Wallet, WalletsRecord, UUID]):
     pass
 
 
 @twin(NotificationRepository)
 class AsyncNotificationRepository(
-    _NotificationRows, AbstractAsyncRepository[Notification, NotificationsRecord, Id[Notification]]
+    _NotificationRows, AbstractAsyncRepository[Notification, NotificationsRecord, UUID]
 ):
     pass
 
 
 @twin(WalletModelRepository)
-class AsyncWalletModelRepository(
-    _WalletRows, AsyncModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]
-):
+class AsyncWalletModelRepository(_WalletRows, AsyncModelRepository[Wallet, WalletsRecord, UUID]):
     pass
 
 
 @twin(NotificationModelRepository)
 class AsyncNotificationModelRepository(
-    _NotificationRows, AsyncModelRepository[Notification, NotificationsRecord, Id[Notification]]
+    _NotificationRows, AsyncModelRepository[Notification, NotificationsRecord, UUID]
 ):
     pass
 
 
 @twin(WalletEntityRepository)
-class AsyncWalletEntityRepository(
-    _WalletRows, AsyncEntityRepository[Wallet, WalletsRecord, ShardedId[Wallet]]
-):
+class AsyncWalletEntityRepository(_WalletRows, AsyncEntityRepository[Wallet, WalletsRecord, UUID]):
     pass
 
 
 @twin(NotificationEntityRepository)
 class AsyncNotificationEntityRepository(
-    _NotificationRows, AsyncEntityRepository[Notification, NotificationsRecord, Id[Notification]]
+    _NotificationRows, AsyncEntityRepository[Notification, NotificationsRecord, UUID]
 ):
     pass

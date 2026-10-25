@@ -53,7 +53,7 @@ def a_wallet_with(**fields: object) -> Wallet:
 
 def test_an_inserted_row_reads_back_exactly(wallet_repository, clock):
     stored = wallet_repository.add(a_wallet())
-    found = wallet_repository.get_by_id(stored.id)
+    found = wallet_repository.get_by_id(stored.id.value)
 
     assert found == stored.without_events()
     assert found.balance == Decimal("100.0000")
@@ -79,7 +79,7 @@ def test_a_row_read_back_carries_no_events(wallet_repository):
     assert stored.events == (), (
         "what comes back is the database's view of the row, and events are not a column"
     )
-    assert wallet_repository.get_by_id(written.id).events == (), "nor on a later read"
+    assert wallet_repository.get_by_id(written.id.value).events == (), "nor on a later read"
 
 
 def test_a_missing_row_is_absent_or_an_error(wallet_repository):
@@ -93,7 +93,7 @@ def test_an_update_moves_the_version_by_one(wallet_repository):
     w = wallet_repository.update(w.deposit(Decimal("1.00")))
     w = wallet_repository.update(w.deposit(Decimal("2.00")))
 
-    found = wallet_repository.get_by_id(w.id)
+    found = wallet_repository.get_by_id(w.id.value)
     assert found.balance == Decimal("3.0000")
     assert found.version == 3
 
@@ -108,8 +108,8 @@ def test_update_takes_the_row_as_it_was_read(wallet_repository):
     returned = wallet_repository.update(stored.deposit(Decimal("50.00")))
 
     assert returned.version == 2, "handed back one version on, like the row now in the table"
-    assert wallet_repository.get_by_id(stored.id).version == 2
-    assert wallet_repository.get_by_id(stored.id).balance == Decimal("150.0000")
+    assert wallet_repository.get_by_id(stored.id.value).version == 2
+    assert wallet_repository.get_by_id(stored.id.value).balance == Decimal("150.0000")
 
 
 def test_a_stale_update_is_refused(wallet_repository):
@@ -119,7 +119,7 @@ def test_a_stale_update_is_refused(wallet_repository):
     with pytest.raises(StaleRecordError, match="concurrently modified"):
         wallet_repository.update(w.deposit(Decimal("99.00")))
 
-    assert wallet_repository.get_by_id(w.id).balance == Decimal("110.0000"), (
+    assert wallet_repository.get_by_id(w.id.value).balance == Decimal("110.0000"), (
         "the first writer's value stands"
     )
 
@@ -138,7 +138,9 @@ def test_a_stale_batch_update_raises_and_keeps_what_it_matched(wallet_repository
     with pytest.raises(StaleRecordError, match="but matched 2"):
         wallet_repository.update_all([w.deposit(Decimal("1.00")) for w in stored])
 
-    balances = {w.id: w.balance for w in wallet_repository.find_all_by_ids([w.id for w in stored])}
+    balances = {
+        w.id: w.balance for w in wallet_repository.find_all_by_ids([w.id.value for w in stored])
+    }
     assert balances[stored[0].id] == Decimal("11.0000"), "matched, so written"
     assert balances[stored[2].id] == Decimal("11.0000"), "matched, so written"
     assert balances[stored[1].id] == Decimal("15.0000"), "the other writer's value stands"
@@ -178,12 +180,12 @@ def test_a_deleted_row_is_invisible_to_every_read(wallet_repository):
     kept, gone = wallet_repository.add_all([a_wallet(), a_wallet()])
     wallet_repository.update(gone.delete())
 
-    assert wallet_repository.find_by_id(gone.id) is None
-    assert wallet_repository.exists_by_id(gone.id) is False
+    assert wallet_repository.find_by_id(gone.id.value) is None
+    assert wallet_repository.exists_by_id(gone.id.value) is False
     assert wallet_repository.count() == 1
     assert [w.id for w in wallet_repository.find_all()] == [kept.id]
     with pytest.raises(EntityNotFoundError):
-        wallet_repository.get_by_id(gone.id)
+        wallet_repository.get_by_id(gone.id.value)
 
 
 def test_predicate_reads_apply_the_same_filter(wallet_repository):
@@ -219,7 +221,7 @@ def test_an_entity_round_trips_without_events(registry, clock):
             recipient="ada@x",
         )
     )
-    found = notification_repository.get_by_id(stored.id)
+    found = notification_repository.get_by_id(stored.id.value)
     assert found == stored
     assert found.message is None, "an unset nullable column comes back null, not empty"
     assert not found.is_model
@@ -251,10 +253,10 @@ def test_rows_route_to_the_shard_their_id_names(sharded_registry, clock):
 
     assert wallet_repository.count(shard=ShardIdentifier(0, 0)) == 1
     assert wallet_repository.count(shard=mexico) == 1
-    assert wallet_repository.find_by_id(there.id).currency == "MXN", (
+    assert wallet_repository.find_by_id(there.id.value).currency == "MXN", (
         "a lookup by id finds it wherever it lives"
     )
-    assert {w.id for w in wallet_repository.find_all_by_ids([here.id, there.id])} == {
+    assert {w.id for w in wallet_repository.find_all_by_ids([here.id.value, there.id.value])} == {
         here.id,
         there.id,
     }
@@ -298,7 +300,7 @@ def test_an_entity_needs_no_timestamps(registry, clock):
             id=Id[Notification].random(),
         )
     )
-    assert notification_repository.get_by_id(stored.id) == stored
+    assert notification_repository.get_by_id(stored.id.value) == stored
 
 
 def test_declaring_the_wrong_kind_is_refused(registry):
@@ -320,7 +322,7 @@ def test_the_declared_kinds_are_otherwise_the_same_repository(registry, clock):
     declared = WalletModelRepository(Wallet, WALLETS, registry, clock=clock)
 
     stored = declared.add(a_wallet())
-    assert plain.get_by_id(stored.id) == declared.get_by_id(stored.id)
+    assert plain.get_by_id(stored.id.value) == declared.get_by_id(stored.id.value)
     assert declared.count() == plain.count() == 1
 
 
@@ -375,11 +377,11 @@ def test_reads_are_served_by_the_primary_not_a_replica(backend, clock):
         wallet_repository = WalletRepository(Wallet, WALLETS, reg, clock=clock)
         stored = wallet_repository.add(a_wallet())
 
-        assert wallet_repository.find_by_id(stored.id) is not None
-        assert wallet_repository.get_by_id(stored.id).id == stored.id
+        assert wallet_repository.find_by_id(stored.id.value) is not None
+        assert wallet_repository.get_by_id(stored.id.value).id == stored.id
         assert wallet_repository.count() == 1
-        assert wallet_repository.exists_by_id(stored.id) is True
-        assert [w.id for w in wallet_repository.find_all_by_ids([stored.id])] == [stored.id]
+        assert wallet_repository.exists_by_id(stored.id.value) is True
+        assert [w.id for w in wallet_repository.find_all_by_ids([stored.id.value])] == [stored.id]
         assert wallet_repository.find_one_where(WALLETS.c.currency == "EUR") is not None
 
         with wallet_repository.readonly_db() as conn:
@@ -615,7 +617,7 @@ def test_converted_values_survive_a_batch(wallet_repository, clock):
     )
     wallet_repository.update_all([w.evolve(balance=w.balance * 2) for w in made])
 
-    back = wallet_repository.find_all_by_ids([w.id for w in made])
+    back = wallet_repository.find_all_by_ids([w.id.value for w in made])
 
     assert len(back) == 3
     assert sorted(str(w.balance) for w in back) == ["2.5000", "5.0000", "7.5000"]
@@ -653,9 +655,9 @@ def test_an_update_leaves_updated_date_alone(wallet_repository, clock):
     # Setting it is the caller's, and it survives the write untouched.
     at = clock.instant()
     marked = wallet_repository.update(
-        wallet_repository.get_by_id(a.id).copy().updated_date(at).build()
+        wallet_repository.get_by_id(a.id.value).copy().updated_date(at).build()
     )
-    assert wallet_repository.get_by_id(a.id).updated_date == at
+    assert wallet_repository.get_by_id(a.id.value).updated_date == at
     assert marked.updated_date == at
 
 
@@ -671,7 +673,7 @@ def test_a_json_list_column_round_trips(wallet_repository):
     """Java's `Dummy.aliases`, whole purpose."""
     stored = wallet_repository.add(a_wallet_with(aliases=["primary", "billing", "éè"]))
 
-    found = wallet_repository.get_by_id(stored.id)
+    found = wallet_repository.get_by_id(stored.id.value)
 
     assert found.aliases == ["primary", "billing", "éè"]
     assert isinstance(found.aliases, list)
@@ -681,8 +683,8 @@ def test_an_empty_json_list_is_not_confused_with_a_missing_one(wallet_repository
     """Java maps an empty list to a null column and back to an empty list, so the two are
     deliberately indistinguishable there. Here they are stored as they are given, which means
     the distinction survives - and a reader has to be able to tell them apart."""
-    empty = wallet_repository.get_by_id(wallet_repository.add(a_wallet_with(aliases=[])).id)
-    absent = wallet_repository.get_by_id(wallet_repository.add(a_wallet()).id)
+    empty = wallet_repository.get_by_id(wallet_repository.add(a_wallet_with(aliases=[])).id.value)
+    absent = wallet_repository.get_by_id(wallet_repository.add(a_wallet()).id.value)
 
     assert empty.aliases == []
     assert absent.aliases == [], "the field's own default, not a null read back as one"
@@ -698,7 +700,7 @@ def test_json_lists_survive_a_batch(wallet_repository):
 
     wallet_repository.update_all([w.evolve(aliases=[*w.aliases, "added"]) for w in made])
 
-    back = wallet_repository.find_all_by_ids([w.id for w in made])
+    back = wallet_repository.find_all_by_ids([w.id.value for w in made])
     assert all(w.aliases[-1] == "added" for w in back)
     assert sorted(len(w.aliases) for w in back) == [3, 3, 3]
 
@@ -713,7 +715,7 @@ def test_an_integer_column_null_in_every_row_of_a_batch(wallet_repository):
 
     wallet_repository.update_all([w.evolve(balance=Decimal("5")) for w in made])
 
-    back = wallet_repository.find_all_by_ids([w.id for w in made])
+    back = wallet_repository.find_all_by_ids([w.id.value for w in made])
     assert all(w.reward_points is None for w in back)
     assert all(w.balance == Decimal("5.0000") for w in back)
 
@@ -726,7 +728,7 @@ def test_an_integer_column_set_in_some_rows_and_null_in_others(wallet_repository
     )
 
     back = sorted(
-        wallet_repository.find_all_by_ids([w.id for w in made]),
+        wallet_repository.find_all_by_ids([w.id.value for w in made]),
         key=lambda w: (w.reward_points is None, w.reward_points or 0),
     )
     assert [w.reward_points for w in back] == [10, 30, None]
