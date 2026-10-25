@@ -121,6 +121,8 @@ no call site passes it, and `model_name` is not a constructor argument at all. I
 because events are declared before the model that emits them - the same reason `ShardedId["Wallet"]`
 is one. Both refusals are Java's: a missing or blank `model_id` (`Validate.notBlank`), and an
 event class that names no model (Java's `modelClass cannot be null`, which there cannot compile).
+Here the second is refused where the class is defined - at import - and strict mypy reports it
+before that, as a missing type argument: `ModelEvent`'s parameter has no default (`EKB-0553`).
 
 The persister writes `event.model_id` and `event.model_name` straight to their columns, as
 `SingleTableJsonEventPersister` writes `event.modelId` and `event.modelName`. It does not look at

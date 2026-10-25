@@ -269,7 +269,7 @@ class EventPersister(Protocol):
         started_date: Instant,
         completion_date: Instant,
         action_params: Any,
-        model_events: Sequence[ModelEvent],
+        model_events: Sequence[ModelEvent[Any]],
         shard: ShardIdentifier,
         action_event_id: uuid.UUID,
     ) -> None: ...
@@ -286,7 +286,9 @@ class _SingleTableJson:
         self._types_by_name: dict[str, type] = {}
 
     @staticmethod
-    def _span(action_name: str, model_events: Sequence[ModelEvent]) -> AbstractContextManager[Span]:
+    def _span(
+        action_name: str, model_events: Sequence[ModelEvent[Any]]
+    ) -> AbstractContextManager[Span]:
         return span(
             "ekbatan.event.persist",
             {"ekbatan.action.name": action_name, "ekbatan.event.count": len(model_events)},
@@ -299,7 +301,7 @@ class _SingleTableJson:
         started_date: Instant,
         completion_date: Instant,
         action_params: Any,
-        model_events: Sequence[ModelEvent],
+        model_events: Sequence[ModelEvent[Any]],
         action_event_id: uuid.UUID,
     ) -> list[EventEntity]:
         """One row per event.
@@ -362,7 +364,7 @@ class _SingleTableJson:
             ]
         return entities
 
-    def _event_type(self, event: ModelEvent) -> str:
+    def _event_type(self, event: ModelEvent[Any]) -> str:
         """The name a consumer routes and deserialises on - so two different events may not
         share one.
 
@@ -404,7 +406,7 @@ class SingleTableJsonEventPersister(_SingleTableJson):
         started_date: Instant,
         completion_date: Instant,
         action_params: Any,
-        model_events: Sequence[ModelEvent],
+        model_events: Sequence[ModelEvent[Any]],
         shard: ShardIdentifier,
         action_event_id: uuid.UUID,
     ) -> None:

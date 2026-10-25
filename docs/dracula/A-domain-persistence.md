@@ -250,7 +250,8 @@ counter shows one run with it). The text below is the finding as it was.
 - **Could match Java?** no - can only be documented (or checked by a test helper).
 - **Surprise:** medium
 
-### 15. An event names its model with a string, and forgetting it fails only when an event is created
+### 15. An event names its model with a string, and forgetting it fails only when an event is created - settled by the user (2026-10-25)
+- **Settled by the user (2026-10-25), with a fix (`EKB-0553`):** a missing `["Wallet"]` is now refused where the event class is defined - at import - with the same message, and strict mypy reports it first, as `Missing type arguments for generic type "ModelEvent"` (`[type-arg]`): the type parameter's default (`M = Any`) is gone, which is what kept mypy quiet. A generic base of the application's own (`class Audited[M](ModelEvent[M])`) is let through. The string stays: events are declared before the model class exists.
 - **What:** `class WalletMoneyDeposited(ModelEvent["Wallet"])` with `model_id=` passed as a
   keyword. Leave out the `["Wallet"]` and the class is still defined; the error comes when the
   first event is built. Java won't compile without `super(id, Wallet.class)`.

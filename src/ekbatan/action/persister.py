@@ -54,13 +54,13 @@ class _ChangePersisterCore:
 
     def _writes(
         self, changes: Mapping[type, PersistableChanges]
-    ) -> tuple[list[ModelEvent], list[tuple[Any, list[Any], list[Any]]]]:
+    ) -> tuple[list[ModelEvent[Any]], list[tuple[Any, list[Any], list[Any]]]]:
         """The events to record, and per model type its repository, additions and updates.
 
         In the plan's order, which is the order the rows are written in: models first, then
         the events they produced, all on one connection.
         """
-        events: list[ModelEvent] = []
+        events: list[ModelEvent[Any]] = []
         LOG.debug(
             "Persisting %d additions, %d updates",
             sum(len(c.additions) for c in changes.values()),
@@ -127,7 +127,7 @@ class ChangePersister(_ChangePersisterCore):
         LOG.debug("Persisted events for action %s [actionEventId=%s]", action_name, action_id)
 
 
-def _events_of(models: Iterable[Persistable[Any, Any]]) -> list[ModelEvent]:
+def _events_of(models: Iterable[Persistable[Any, Any]]) -> list[ModelEvent[Any]]:
     """Every attached event, as it was constructed.
 
     Each already carries its model's id and name - its constructor required them - so nothing

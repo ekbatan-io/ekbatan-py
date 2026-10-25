@@ -367,7 +367,7 @@ class EventDispatch:
 
     def _envelope(
         self, handler: AnyEventHandler, row: EventNotification, attempt: int
-    ) -> EventEnvelope[ModelEvent]:
+    ) -> EventEnvelope[ModelEvent[Any]]:
         event_type = handler.event_type()
         payload = row.payload or {}
         return EventEnvelope(

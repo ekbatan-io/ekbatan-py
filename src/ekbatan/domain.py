@@ -68,7 +68,7 @@ class GenericState(Enum):
 
 
 @dataclass(frozen=True, kw_only=True)
-class ModelEvent[M = Any]:
+class ModelEvent[M]:
     """Something that happened to a model, and which model it happened to.
 
     Declared the way Java declares one - the model it is about on the class line, its id in the
@@ -86,6 +86,10 @@ class ModelEvent[M = Any]:
     ``Wallet.class`` does there: it fixes :attr:`model_name` once per event class, so no call
     site passes it. A string, as ``ShardedId["Wallet"]`` is one, because events are declared
     before the model that emits them.
+
+    An event class that names no model is refused where it is defined - at import, before the
+    program has done anything - as Java refuses to compile one, and a type checker in strict mode
+    reports the missing type argument before that: the parameter has no default to fall back on.
 
     The persister writes both fields to their columns exactly as the event carries them, as
     Java's does - it does not look at the model the event was attached to.
@@ -116,18 +120,22 @@ class ModelEvent[M = Any]:
         named = _declared_model_name(cls)
         if named is not None:
             cls.__model_name__ = named
+        elif cls.__model_name__ is None and not (
+            getattr(cls, "__type_params__", ()) or getattr(cls, "__parameters__", ())
+        ):
+            # Refused here, where the class is defined - so at import - rather than at its first
+            # event, which may be in production. Java cannot compile an event that names no
+            # model; this is the nearest Python has. A subclass of an event that named one
+            # inherits it, and a generic base of the application's own (`class Audited[M](
+            # ModelEvent[M])`) is let through, to name its model in its subclasses.
+            raise TypeError(_names_no_model(cls.__name__))
 
     def __post_init__(self) -> None:
         name = type(self).__model_name__
         if not name:
             # Java cannot get here: `super(modelId, Wallet.class)` is the only constructor, so
             # an event that names no model does not compile.
-            raise ValidationError(
-                f"model class cannot be None: {type(self).__name__} does not say which model it "
-                f"is about; declare it as "
-                f'class {type(self).__name__}(ModelEvent["Wallet"]) - the name is what '
-                f"fills the model_type column"
-            )
+            raise ValidationError(_names_no_model(type(self).__name__))
         if not isinstance(self.model_id, str) or not self.model_id.strip():
             raise ValidationError(
                 f"model_id cannot be None or blank: {type(self).__name__} needs the id of the "
@@ -326,10 +334,10 @@ class ModelBuilder[T, ID = Any, S = Any](EntityBuilder[T, ID, S]):
     def updated_date(self, value: Instant | None) -> Self:
         return self.set(updated_date=value)
 
-    def events(self, value: Iterable[ModelEvent]) -> Self:
+    def events(self, value: Iterable[ModelEvent[Any]]) -> Self:
         return self.set(events=tuple(value))
 
-    def with_event(self, event: ModelEvent) -> Self:
+    def with_event(self, event: ModelEvent[Any]) -> Self:
         """Attach an event. The only way one enters the outbox."""
         return self.set(events=(*self._values.get("events", ()), event))
 
@@ -435,6 +443,13 @@ def _keep_row_equality(cls: type) -> None:
         if "__hash__" in vars(klass):
             cls.__hash__ = vars(klass)["__hash__"]  # type: ignore[method-assign]
             break
+
+
+def _names_no_model(name: str) -> str:
+    return (
+        f"model class cannot be None: {name} does not say which model it is about; declare it "
+        f'as class {name}(ModelEvent["Wallet"]) - the name is what fills the model_type column'
+    )
 
 
 def _declared_model_name(target: type) -> str | None:
@@ -796,7 +811,7 @@ class Model[
 
     created_date: Instant
     updated_date: Instant | None = None
-    events: tuple[ModelEvent, ...] = field(default=(), compare=False, repr=False)
+    events: tuple[ModelEvent[Any], ...] = field(default=(), compare=False, repr=False)
 
     def _check_built_ins(self) -> None:
         """Everything a row is checked for, and a copy of the events.
@@ -846,7 +861,9 @@ class Model[
             raise _no_typed_builder(type(self), "copy()")
         return typing.cast("B", declared().copy_base(self))
 
-    def evolve(self, *, emit: ModelEvent | Iterable[ModelEvent] = (), **changes: Any) -> Self:
+    def evolve(
+        self, *, emit: ModelEvent[Any] | Iterable[ModelEvent[Any]] = (), **changes: Any
+    ) -> Self:
         """This model with some fields changed, and whatever it emitted in changing.
 
         The shorthand, equivalent to ``copy().with_event(...).…​.build()``. Prefer the builder

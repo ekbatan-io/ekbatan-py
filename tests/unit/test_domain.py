@@ -249,14 +249,13 @@ def test_constructor_rejects_whitespace_model_id():
 
 def test_an_event_that_names_no_model_is_refused():
     """Java's ``new ModelEvent<Object>("id", null) {}``. There it is the only constructor, so an
-    event that names no model does not compile; here it is refused on construction."""
+    event that names no model does not compile; here it is refused where the class is defined -
+    at import - rather than at its first event (see test_model_event_names_its_model.py)."""
+    with pytest.raises(TypeError, match="model class cannot be None"):
 
-    @dataclass(frozen=True, kw_only=True)
-    class Unnamed(ModelEvent):  # type: ignore[type-arg]
-        pass
-
-    with pytest.raises(ValidationError, match="model class cannot be None"):
-        Unnamed(model_id="id")
+        @dataclass(frozen=True, kw_only=True)
+        class Unnamed(ModelEvent):  # type: ignore[type-arg]
+            pass
 
 
 def test_model_name_cannot_be_passed():

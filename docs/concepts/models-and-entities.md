@@ -152,7 +152,9 @@ class WalletMoneyDepositedEvent(ModelEvent["Wallet"]):
 The class line names the model the event is about, and the constructor takes that model's id -
 `WalletMoneyDepositedEvent(model_id=str(self.id), amount=..., new_balance=...)`. The type argument
 fixes `model_name` once per class, so no call site passes it. Those two fill the outbox's `model_id` and `model_type` columns. A missing or blank id
-is refused when the event is made.
+is refused when the event is made. An event class that names no model is refused earlier, where
+it is defined - at import, so the program does not start - and strict mypy reports it before that,
+as a missing type argument.
 
 **There is no deserialisation boilerplate.** The payload is rebuilt from the dataclass's own
 annotations - a `Decimal` from its number, an `Instant` from its ISO form, an enum from its name.

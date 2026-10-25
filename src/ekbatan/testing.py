@@ -87,7 +87,7 @@ class StagedWork[R]:
         return [row for changes in self.plan.changes().values() for row in changes.all]
 
     @property
-    def events(self) -> list[ModelEvent]:
+    def events(self) -> list[ModelEvent[Any]]:
         """Every event attached to a staged model, in the order the outbox would hold them.
 
         Only models: an entity's changes are not events, and a unit of work that stages one and
@@ -95,7 +95,7 @@ class StagedWork[R]:
         """
         return [event for row in self.staged if isinstance(row, Model) for event in row.events]
 
-    def emitted[E: ModelEvent](self, event_type: type[E]) -> list[E]:
+    def emitted[E: ModelEvent[Any]](self, event_type: type[E]) -> list[E]:
         """The events of one type, in order."""
         return [e for e in self.events if isinstance(e, event_type)]
 
@@ -242,13 +242,13 @@ class ActionAssert[R]:
     # -- events ---------------------------------------------------------------------------------
 
     @overload
-    def assert_emitted[E: ModelEvent](self, event_type: type[E], /) -> Self: ...
+    def assert_emitted[E: ModelEvent[Any]](self, event_type: type[E], /) -> Self: ...
     @overload
-    def assert_emitted[E: ModelEvent](
+    def assert_emitted[E: ModelEvent[Any]](
         self, event_type: type[E], verifier: Callable[[E], object], /
     ) -> Self: ...
     @overload
-    def assert_emitted[E: ModelEvent](
+    def assert_emitted[E: ModelEvent[Any]](
         self,
         event_type: type[E],
         count: int,
@@ -277,7 +277,7 @@ class ActionAssert[R]:
             _check(verifier, events, f"the {name} events emitted")
         return self
 
-    def assert_not_emitted(self, event_type: type[ModelEvent]) -> Self:
+    def assert_not_emitted(self, event_type: type[ModelEvent[Any]]) -> Self:
         events = self._staged.emitted(event_type)
         if events:
             raise AssertionError(

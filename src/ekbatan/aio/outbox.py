@@ -80,7 +80,7 @@ class AsyncEventPersister(Protocol):
         started_date: Instant,
         completion_date: Instant,
         action_params: Any,
-        model_events: Sequence[ModelEvent],
+        model_events: Sequence[ModelEvent[Any]],
         shard: ShardIdentifier,
         action_event_id: uuid.UUID,
     ) -> None: ...
@@ -103,7 +103,7 @@ class AsyncSingleTableJsonEventPersister(_SingleTableJson):
         started_date: Instant,
         completion_date: Instant,
         action_params: Any,
-        model_events: Sequence[ModelEvent],
+        model_events: Sequence[ModelEvent[Any]],
         shard: ShardIdentifier,
         action_event_id: uuid.UUID,
     ) -> None:

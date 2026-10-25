@@ -44,7 +44,7 @@ __all__ = [
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
-class EventEnvelope[E: ModelEvent]:
+class EventEnvelope[E: ModelEvent[Any]]:
     """One delivery: the typed event, and the context of the unit of work that produced it."""
 
     event: E
@@ -77,7 +77,7 @@ class EventEnvelope[E: ModelEvent]:
         return EventEnvelopeBuilder()
 
 
-class _HandlerCore[E: ModelEvent](ABC):
+class _HandlerCore[E: ModelEvent[Any]](ABC):
     """Both kinds of handler but for ``handle``: Java's ``EventHandler`` methods, in its order.
 
     Private - a handler extends :class:`EventHandler`, or :class:`AsyncEventHandler` for an
@@ -104,7 +104,7 @@ class _HandlerCore[E: ModelEvent](ABC):
         everything and filters in its own body is one that will eventually forget to."""
 
 
-class EventHandler[E: ModelEvent](_HandlerCore[E]):
+class EventHandler[E: ModelEvent[Any]](_HandlerCore[E]):
     """Reacts to one event type - Java's ``EventHandler``, extended rather than implemented:
     write ``name()``, ``event_type()`` and ``handle()``; ``aliases()`` is empty unless overridden.
 
@@ -116,7 +116,7 @@ class EventHandler[E: ModelEvent](_HandlerCore[E]):
         """Do the work. Raising records a failure and schedules a retry."""
 
 
-class AsyncEventHandler[E: ModelEvent](_HandlerCore[E]):
+class AsyncEventHandler[E: ModelEvent[Any]](_HandlerCore[E]):
     """An :class:`EventHandler` whose ``handle()`` is ``async def`` - for one that awaits an
     ``ekbatan.aio`` executor. The same ``name()``, ``aliases()`` and ``event_type()``.
 
@@ -235,7 +235,7 @@ class EventHandlerRegistry:
         return f"EventHandlerRegistry({len(self)} handler(s), {len(self._by_event)} event type(s))"
 
 
-class EventEnvelopeBuilder[E: ModelEvent](FieldBuilder[EventEnvelope[E]]):
+class EventEnvelopeBuilder[E: ModelEvent[Any]](FieldBuilder[EventEnvelope[E]]):
     """Fluent builder for :class:`EventEnvelope`. Obtain via :meth:`EventEnvelope.builder`.
 
     The framework builds envelopes itself; this is for a test that hands one to a handler. The

@@ -23,8 +23,9 @@ WalletMoneyDepositedEvent(model_id=str(self.id), amount=amount, new_balance=new_
 The type argument fixes `model_name` once per event class, so no call site passes it. It is a
 string because events are declared before the model that emits them, as in `ShardedId["Wallet"]`.
 
-A missing or blank `model_id` is refused when the event is made, and so is an event class that
-names no model.
+A missing or blank `model_id` is refused when the event is made. An event class that names no
+model is refused earlier, where it is defined - at import, so the program does not start - and
+strict mypy reports it before that, as a missing type argument.
 
 ## How events become outbox rows
 
