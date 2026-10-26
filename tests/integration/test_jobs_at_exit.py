@@ -83,7 +83,8 @@ if hook != "default":
     builder = builder.register_shutdown_hook(hook == "on")
 builder.build().start()
 
-while "started" not in log.read_text():
+# Whole lines: the registry's own log says "running jobs finish", which a bare `in` would match.
+while "started" not in log.read_text().splitlines():
     time.sleep(0.02)
 note("running")
 if end == "return":
@@ -134,8 +135,11 @@ def run(
 
 
 def wait_for(child: subprocess.Popen[bytes], log: Path, line: str) -> None:
+    """Until `line` is a whole line of the log. A word inside another line does not count: the
+    registry's own "on SIGTERM, running jobs finish" once passed for "running", so SIGTERM went in
+    before the job had started, and on a slow runner the test failed."""
     deadline = time.monotonic() + 30
-    while line not in log.read_text():
+    while line not in log.read_text().splitlines():
         assert child.poll() is None, (
             f"the child ended before logging {line!r}: {child.stderr.read().decode()}"  # type: ignore[union-attr]
         )

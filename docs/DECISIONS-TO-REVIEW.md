@@ -1548,7 +1548,7 @@ had CI, the website and the release from before it had a remote, never run.
 | **Time limits on every job** (30 minutes, 45 for the dialect and gevent runs) | Java's CI has one; without, a hung job runs for six hours | none |
 | **Actions stay at Java's versions** (`checkout@v4`, `setup-node@v4`, `setup-uv@v5`) despite GitHub's Node 20 notice | the same as the Java repository; the notice is a warning | move to the next majors |
 | **No test-report upload on failure** | Java uploads JUnit report files; pytest prints the failures in the job's log itself | write `--junitxml` and upload it |
-| **The SIGTERM test prints the child's whole log when it fails** | it failed once on a runner, with the log cut short by pytest, and passed in the other six jobs and 13 times locally | - |
+| **The SIGTERM test prints the child's whole log when it fails, and waits for whole lines** | it failed on runners now and then; the whole log then showed why - the test waited for the word `running`, which the registry's own line "on SIGTERM, running jobs finish" contains, so SIGTERM could go in before the job had started. It was the test, not the framework | - |
 | **The scheduler port's takeover test waits for every takeover, up to 20 seconds, instead of sleeping 3**; the dedicated-engine case still waits its whole 3 seconds | on GitHub's runner against MySQL 26.7 the third takeover came after the 3 seconds, twice in a row; locally MySQL 26.7 and 8.4, PostgreSQL and MariaDB pass either way | a longer fixed sleep |
 
 ## The first release, 0.1.0 (EKB-0569-)
