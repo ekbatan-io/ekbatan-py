@@ -1,8 +1,8 @@
 # The slow checks, nightly - Java's heavy-verification.yml, without the native images, which
 # Python does not have.
 #
-# Both jobs install ekbatan the way an application does, from this commit rather than from an
-# index: each example builds its wheel from this checkout and tests it installed, and the setup
+# Both kinds of job install ekbatan the way an application does, from this commit rather than from
+# an index: each example builds its wheel from this checkout and tests it installed, and the setup
 # guide is followed as written in an empty folder, with `ekbatan` installed from this checkout.
 
 name: Heavy Verification
@@ -80,14 +80,48 @@ jobs:
             echo "No commits on main between $since and $until. Skipping heavy verification." >> "$GITHUB_STEP_SUMMARY"
           fi
 
-  # Every example - fourteen, each built with uv, pip and Poetry - and the two SQLite ones run end
-  # to end. Each is a project of its own with its own environment, so nothing is synced here.
-  examples:
-    name: Examples
+  # Lists the example projects so the matrix below is read from the Makefile rather than written
+  # out here, as Java's reads its native modules from the build: a hand-kept list silently drops a
+  # new example - nothing goes red, it just stops being run.
+  example-list:
+    name: Enumerate The Examples
     needs: activity
     if: needs.activity.outputs.should_run == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 5
+    outputs:
+      examples: ${{ steps.list.outputs.examples }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: List The Examples
+        id: list
+        shell: bash
+        run: |
+          set -euo pipefail
+          make -s examples-list > examples.txt
+          # Fail loudly rather than emit an empty matrix, which GitHub would silently expand to
+          # zero jobs and report the whole workflow as green.
+          test -s examples.txt
+          EXAMPLES=$(jq -R -s -c 'split("\n") | map(select(length > 0))' < examples.txt)
+          echo "examples=$EXAMPLES" >> "$GITHUB_OUTPUT"
+          echo "Examples ($(wc -l < examples.txt)):" >> "$GITHUB_STEP_SUMMARY"
+          sed 's/^/  - /' examples.txt >> "$GITHUB_STEP_SUMMARY"
+
+  # One runner per example project - fourteen examples, each built with uv, pip and Poetry - as
+  # Java's examples have one each: they run side by side, and a failure names its example. Each
+  # is a project of its own with its own environment, so nothing is synced at the root.
+  examples:
+    name: Example / ${{ matrix.example }}
+    needs: [activity, example-list]
+    if: needs.activity.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        example: ${{ fromJSON(needs.example-list.outputs.examples) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -96,11 +130,12 @@ jobs:
       # The pip ones need a Python of 3.13 or later, which uv provides; the Poetry ones need
       # `poetry`.
       - run: uv python install 3.13
-      - run: uv tool install poetry
-      # `make` builds each one's generated schema first, tests each as its built wheel installed,
-      # and cannot drift from the Makefile.
-      - name: Run The Examples
-        run: make examples
+      - if: contains(matrix.example, '-poetry-')
+        run: uv tool install poetry
+      # `make` builds the example's generated schema first, tests it as its built wheel installed,
+      # runs the SQLite ones end to end, and cannot drift from the Makefile.
+      - name: Run The Example
+        run: make example-${{ matrix.example }}
 
   # The complete-project-setup page, followed as written in an empty folder: every installer and
   # both modes, one database per runner.

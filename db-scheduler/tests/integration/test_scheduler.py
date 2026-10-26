@@ -952,6 +952,9 @@ class TestGivingTheSchedulerItsOwnConnections:
     """
 
     WORKERS = 3
+    #: How long the shared case may take for the hunter to take every execution over. It is
+    #: waited for, not slept: on a slow runner the last one was taken after a fixed 3 seconds.
+    TAKEOVER_LIMIT = 20.0
 
     def _run(self, engine_url: str, *, share: bool) -> int:
         """Returns how many executions were run more than once."""
@@ -996,8 +999,16 @@ class TestGivingTheSchedulerItsOwnConnections:
             hunter.start()
             for _ in range(self.WORKERS):
                 assert started.acquire(timeout=PATIENCE), "the workers never all started"
-            # Far past the 800ms dead-threshold, with the hunter looking the whole time.
-            time.sleep(3.0)
+            # Far past the 800ms dead-threshold, with the hunter looking the whole time. Sharing,
+            # this ends as soon as every execution has been taken over; on its own engine nothing
+            # is taken over, so the whole 3 seconds is the proof.
+            deadline = time.monotonic() + (self.TAKEOVER_LIMIT if share else 3.0)
+            while time.monotonic() < deadline:
+                with lock:
+                    taken_over = sum(1 for count in runs.values() if count > 1)
+                if share and taken_over == self.WORKERS:
+                    break
+                time.sleep(0.05)
         finally:
             release.set()
             time.sleep(0.5)

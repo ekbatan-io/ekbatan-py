@@ -1525,3 +1525,28 @@ thread it cannot, and the warning stays. Ledger: `docs/SHUTDOWN-HOOK-LEDGER.md`.
 | **The REST and saga examples keep the default** | under uvicorn the server has SIGTERM and the lifespan stops the jobs; the hook only adds the `atexit` entry, which `stop()` takes off | turn it off, as Java's DI starters do |
 | **The parity probes use `register_shutdown_hook(False)` where they used `stop_on_exit(False)`**, and are not re-run | the same intent - nothing left on the exit list - and now nothing on SIGTERM either, as Java's tests pass `registerShutdownHook(false)` | re-record them |
 | **History keeps the old form**: the ledgers, this file's earlier sections, the Dracula "What" lines | they record what was | - |
+
+## GitHub Actions modelled on Java's (EKB-0566-)
+
+The brief (the user, 2026-10-26): look at the Java repository's workflows and add what ekbatan-py
+needs - CI, the website deploy and the heavy verification; the release later. ekbatan-py already
+had CI, the website and the release from before it had a remote, never run.
+
+| decision | why | the other way |
+| --- | --- | --- |
+| **Python pinned to 3.14 in every job** | as Java's CI pins JDK 25; left alone, uv took the runner's newest, 3.15, for which psycopg-binary has no build, and every job failed installing. 3.14 is what the suite runs on locally | 3.13, the lowest `requires-python` allows; or both, as a matrix |
+| **CI skips a push that only touches `website/**`**, as Java's does; the website workflow then runs the three Python checks that read the site (links, check-api, docs-website-sync) | a site-only change should not cost a full test run; those three are the only CI checks a site change can break | run CI on every push |
+| **The examples moved from CI to the nightly heavy verification**, as Java's are there | 25 minutes of every push, run where Java runs its own | keep them in CI |
+| **One runner per example project, as Java's examples have** (the user, 2026-10-26, once the repository was public and its minutes free), the matrix read from the Makefile's `EXAMPLES` through `make examples-list`, as Java's reads its native modules from the build; each runs `make example-<name>`, the same steps `make examples` takes | the 42 run side by side instead of 24 minutes in a row, and a failure names its example; a list written into the workflow would silently drop a new example | one job running `make examples`, as first written to save the private repository's minutes |
+| **The nightly also follows the setup guide, one database per runner** (`check-setup-guide.py --db ...`, every installer and mode) | it installs ekbatan as an application does, which is what Java's nightly examples prove; no one ran it automatically before | leave it manual |
+| **The nightly's day gate and `force` input are Java's, word for word** | the same rule: skip a night when main did not change the day before | run every night |
+| **The website workflow no longer runs `actions/configure-pages`**; its concurrency is Java's (`pages`, never cancelled) | Java's does without it; with it, the build and the site checks failed whenever Pages was off, hiding whether they passed | keep it |
+| **The site's link check takes `BASE` off each link, and reports a link without it** | the site is built for `/ekbatan-py/`, so every internal link starts with it while `dist/` does not; the old check called all 52 targets broken | check only the root build |
+| **The scheduler port's workflow got the same pin, time limits and Ryuk setting** | the same failure waited for it; its lint job then found 9 mypy errors nothing had run | leave it |
+| **croniter is told to mypy as untyped (`ignore_missing_imports`)**, and its two call sites type what they hand on, instead of adding `types-croniter` | croniter ships no `py.typed`; adding a dependency, even a stub one, is the user's call | add `types-croniter` to the port's dev group |
+| **The tests that drive FastAPI, Starlette, anyio or uvicorn skip without the `examples` group; the fast job installs it**, so they run there | the group stays out of the default install on purpose - it is what keeps `src/` free of web imports - and these tests had passed locally only because a local sync had left the group installed | install the group in every job |
+| **Time limits on every job** (30 minutes, 45 for the dialect and gevent runs) | Java's CI has one; without, a hung job runs for six hours | none |
+| **Actions stay at Java's versions** (`checkout@v4`, `setup-node@v4`, `setup-uv@v5`) despite GitHub's Node 20 notice | the same as the Java repository; the notice is a warning | move to the next majors |
+| **No test-report upload on failure** | Java uploads JUnit report files; pytest prints the failures in the job's log itself | write `--junitxml` and upload it |
+| **The SIGTERM test prints the child's whole log when it fails** | it failed once on a runner, with the log cut short by pytest, and passed in the other six jobs and 13 times locally | - |
+| **The scheduler port's takeover test waits for every takeover, up to 20 seconds, instead of sleeping 3**; the dedicated-engine case still waits its whole 3 seconds | on GitHub's runner against MySQL 26.7 the third takeover came after the 3 seconds, twice in a row; locally MySQL 26.7 and 8.4, PostgreSQL and MariaDB pass either way | a longer fixed sleep |

@@ -38,7 +38,7 @@ EXAMPLES := \
 	wallet-service-uv-sqlite wallet-service-pip-sqlite wallet-service-poetry-sqlite \
 	wallet-service-uv-async-sqlite wallet-service-pip-async-sqlite wallet-service-poetry-async-sqlite
 
-.PHONY: all lint format test test-all test-psycopg-async test-gevent examples schema build clean help website website-dev
+.PHONY: all lint format test test-all test-psycopg-async test-gevent examples examples-list schema build clean help website website-dev
 .DEFAULT_GOAL := all
 
 all: lint test
@@ -143,16 +143,31 @@ test-gevent:
 	$(UV) python -m gevent.monkey --module pytest
 
 # Every example, each in its own environment, each tested as its built wheel installed - and the
-# SQLite one run end to end. The pip projects make their venv with a Python found by uv, since
+# SQLite ones run end to end. The pip projects make their venv with a Python found by uv, since
 # the system `python3` may be older than 3.13; the Poetry ones need `poetry` on the path.
 EXAMPLE_PYTHON := $(shell uv python find '>=3.13' 2>/dev/null)
+
+# The examples that are also run end to end, as a reader would start them.
+RUNS := wallet-service-uv-sqlite wallet-service-uv-async-sqlite
 
 examples:
 	@set -e; for e in $(EXAMPLES); do \
 		echo "== $$e"; $(MAKE) --no-print-directory -C ekbatan-py-examples/$$e PYTHON=$(EXAMPLE_PYTHON); \
 	done
-	$(MAKE) --no-print-directory -C ekbatan-py-examples/wallet-service-uv-sqlite run
-	$(MAKE) --no-print-directory -C ekbatan-py-examples/wallet-service-uv-async-sqlite run
+	@set -e; for e in $(RUNS); do \
+		echo "== $$e run"; $(MAKE) --no-print-directory -C ekbatan-py-examples/$$e run; \
+	done
+
+# One example, as `examples` runs each, and its end-to-end run if it has one. The nightly
+# heavy-verification.yml runs every example this way, each on a runner of its own.
+example-%:
+	$(MAKE) --no-print-directory -C ekbatan-py-examples/$* PYTHON=$(EXAMPLE_PYTHON)
+	$(if $(filter $*,$(RUNS)),$(MAKE) --no-print-directory -C ekbatan-py-examples/$* run)
+
+# The examples, one per line. The nightly's matrix is read from this, so an example added to the
+# list above joins it, and one cannot be left out of it.
+examples-list:
+	@printf '%s\n' $(EXAMPLES)
 
 # -- the website -------------------------------------------------------------------------------
 #
