@@ -37,7 +37,9 @@ Neither name has been published yet, so there is no project to configure - which
 becomes an ordinary publisher on the first successful upload.
 
 Go to <https://pypi.org/manage/account/publishing/> and add **two**, identical except for the
-project name:
+project name and the environment. The environments differ because PyPI accepts only one pending
+publisher per repository, workflow and environment - two new projects cannot share one. Both are
+registered (2026-10-26):
 
 | field | `ekbatan` | `ekbatan-py-db-scheduler` |
 | --- | --- | --- |
@@ -45,20 +47,24 @@ project name:
 | Owner | `ekbatan-io` | `ekbatan-io` |
 | Repository name | `ekbatan-py` | `ekbatan-py` |
 | Workflow name | `release.yml` | `release.yml` |
-| Environment name | `pypi` | `pypi` |
+| Environment name | `pypi` | `pypi-db-scheduler` |
 
 All five must match exactly what the workflow presents or the upload is rejected. The workflow
 name is the **filename**, not the `name:` inside it.
 
-### 3. The GitHub environment
+### 3. The GitHub environments
 
-<https://github.com/ekbatan-io/ekbatan-py/settings/environments> - `pypi`. It exists (2026-10-26):
-the required reviewer is the maintainer, and only tags matching `v*` may deploy to it.
+<https://github.com/ekbatan-io/ekbatan-py/settings/environments> - both exist (2026-10-26), and only
+tags matching `v*` may deploy to either:
+
+- `pypi-db-scheduler`, for the first upload, with the maintainer as required reviewer;
+- `pypi`, for the second, with no reviewer: its job runs only after the first has been approved
+  and has succeeded. One approval per release.
 
 An environment is not decoration: it is the second half of the trust relationship. PyPI checks
 that the OIDC token names this environment, so a workflow that has not been through it cannot
-publish even if it runs in the right repository. Adding a required reviewer to `pypi` gives you
-Java's stage-and-confirm pause - a human clicks before anything leaves the runner. Recommended,
+publish even if it runs in the right repository. The required reviewer on `pypi-db-scheduler` gives
+you Java's stage-and-confirm pause - a human clicks before anything leaves the runner. Recommended,
 because the PyPI step is the one that cannot be undone.
 
 That is the whole of Phase 0. No keys, no tokens, no keyserver, no namespace verification.
@@ -101,8 +107,8 @@ git push origin main
 
 There is no TestPyPI step (the user's decision, 2026-10-26): most projects that release from CI
 publish straight from the tag. Before anything is uploaded, the workflow checks the versions,
-builds both distributions and installs the built wheel to import it; the required reviewer on
-`pypi` is the last stop. A run that fails part way is re-run from the Actions tab, and
+builds both distributions and installs the built wheel to import it; the required reviewer on the
+first upload is the last stop. A run that fails part way is re-run from the Actions tab, and
 `--check-url` skips a distribution that is already up.
 
 ### Tag and push
@@ -118,11 +124,12 @@ The tag push fires `.github/workflows/release.yml`, which:
 verify        the tag, both pyproject versions and the pin all say 0.X.Y
 build         uv build, at the root and in db-scheduler/
 smoke         install the built wheel into a clean venv and import it
-publish       uv publish, db-scheduler first, then ekbatan
+publish       uv publish: ekbatan-py-db-scheduler, in `pypi-db-scheduler`, then ekbatan, in `pypi`
 release       gh release create, with both sdists and wheels attached
 ```
 
-`publish` runs in the `pypi` environment, so a required reviewer stops it there.
+The first upload waits for the required reviewer: the run shows "Review deployments". The second
+follows once the first has succeeded.
 
 ### Verify
 
@@ -179,7 +186,7 @@ you delete at all, but at least a dropped *staging* deployment leaves the versio
 no staging.
 
 So: a mistake noticed after upload is fixed by shipping `0.3.1`, never by deleting and retrying.
-This is why the required reviewer on the `pypi` environment is worth the ceremony.
+This is why the required reviewer on the first upload is worth the ceremony.
 
 ---
 

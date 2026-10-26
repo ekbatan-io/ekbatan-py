@@ -3,15 +3,15 @@
 # Java's counterpart signs 16 jars with GPG and stages them on Sonatype for a human to confirm.
 # This has no keys and no secrets at all: PyPI's trusted publishing swaps this workflow's OIDC
 # token for a short-lived upload token, and only for a workflow file, repository and environment
-# it was told about in advance. The `pypi` environment is where a required reviewer goes, and is
-# this pipeline's stage-and-confirm.
+# it was told about in advance. The first upload's environment, `pypi-db-scheduler`, is where the
+# required reviewer goes, and is this pipeline's stage-and-confirm.
 #
 # Two distributions, published in dependency order. See RELEASE.md.
 
 name: Release
 
 # Only a tag. There is no TestPyPI rehearsal (the user's decision, 2026-10-26): every check below
-# runs before anything is uploaded, and the `pypi` environment's required reviewer is the last stop.
+# runs before anything is uploaded, and the required reviewer on the first upload is the last stop.
 # A run that fails part way is re-run from the Actions tab; `--check-url` skips what is already up.
 on:
   push:
@@ -81,11 +81,18 @@ jobs:
       - uses: actions/upload-artifact@v4
         with: { name: dist, path: dist/ }
 
-  publish:
-    name: publish to pypi
+  # Two jobs, in dependency order: ekbatan pins ekbatan-py-db-scheduler, so an installer that
+  # reaches the framework first finds a pin it cannot resolve. Each has an environment of its own
+  # because PyPI accepts only one pending publisher per repository, workflow and environment, so
+  # the two could not both be registered before either project existed. The first environment
+  # holds the required reviewer - one approval per release - and the second job runs only after
+  # the first has succeeded. `--check-url` makes a re-run skip what is already up rather than
+  # failing - which matters because a PyPI filename can be uploaded exactly once, ever.
+  publish_db_scheduler:
+    name: publish ekbatan-py-db-scheduler
     needs: [verify, build]
     runs-on: ubuntu-latest
-    environment: pypi
+    environment: pypi-db-scheduler
     permissions:
       # Per-job, and a job-level block replaces the workflow-level one rather than adding to
       # it - so `contents: read` is repeated here deliberately.
@@ -95,21 +102,26 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - uses: actions/download-artifact@v4
         with: { name: dist, path: dist }
+      - run: uv publish --trusted-publishing always --check-url https://pypi.org/simple/ekbatan-py-db-scheduler/ dist/ekbatan_py_db_scheduler-*
 
-      # In dependency order: ekbatan pins ekbatan-py-db-scheduler, so an installer that reaches
-      # the framework first finds a pin it cannot resolve. `--check-url` makes a re-run skip
-      # what is already up rather than failing - which matters because a PyPI filename can be
-      # uploaded exactly once, ever.
-      - name: db-scheduler
-        run: uv publish --trusted-publishing always --check-url https://pypi.org/simple/ekbatan-py-db-scheduler/ dist/ekbatan_py_db_scheduler-*
-
-      - name: ekbatan
-        run: uv publish --trusted-publishing always --check-url https://pypi.org/simple/ekbatan/ dist/ekbatan-*
+  publish_ekbatan:
+    name: publish ekbatan
+    needs: publish_db_scheduler
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/download-artifact@v4
+        with: { name: dist, path: dist }
+      - run: uv publish --trusted-publishing always --check-url https://pypi.org/simple/ekbatan/ dist/ekbatan-*
 
   github_release:
     # Editable and deletable, unlike the PyPI half.
     name: github release
-    needs: publish
+    needs: publish_ekbatan
     runs-on: ubuntu-latest
     permissions:
       contents: write
