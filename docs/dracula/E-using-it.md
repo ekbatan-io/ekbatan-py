@@ -10,7 +10,11 @@ follow the guide and run the project. Area F merges the two.
 
 ---
 
-### `ekbatan` is not on PyPI, so every install command in the docs fails - planned: published on PyPI later (the user, 2026-10-24)
+### ~~`ekbatan` is not on PyPI, so every install command in the docs fails~~ fixed: released 2026-10-26 (`EKB-0569`-`EKB-0572`)
+- **Fixed:** `ekbatan` 0.1.0 and `ekbatan-py-db-scheduler` 0.1.0 are on PyPI
+  (<https://pypi.org/project/ekbatan/>), with a GitHub release `v0.1.0`. The release workflow uploads
+  the scheduler first and ekbatan only after it, with trusted publishing and one approval. **(run)**
+  a clean `uv run --with ekbatan==0.1.0` installs both from PyPI and imports them.
 - **Planned (the user, 2026-10-24)**: ekbatan will be published on PyPI later.
 - **What:** The docs say `uv add ekbatan[postgres]`, but neither `ekbatan` nor
   `ekbatan-py-db-scheduler` has been published. A Java developer adds a Maven Central coordinate

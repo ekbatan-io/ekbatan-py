@@ -20,9 +20,9 @@ project lives in one and some build tools honour `.gitignore` only there.
 Needs Docker (not for SQLite), network, and Python 3.13+ found by `uv python find`. Not part of
 `make lint`.
 
-**One substitution**, and only one: `ekbatan` is not on PyPI yet, so wherever the page installs
-`ekbatan[...]` from the index, this installs it from this checkout instead (with its scheduler,
-which is not published either). Everything else runs as the page has it.
+**One substitution**, and only one: wherever the page installs `ekbatan[...]` from PyPI, this
+installs it from this checkout instead, with its scheduler - so the page is checked against this
+commit rather than against the last release. Everything else runs as the page has it.
 """
 
 from __future__ import annotations

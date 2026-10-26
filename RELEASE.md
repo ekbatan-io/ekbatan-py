@@ -32,9 +32,13 @@ since 2024; set it up now rather than discovering it at the release.
 
 ### 2. Register a pending publisher for each distribution
 
-Neither name has been published yet, so there is no project to configure - which is what a
-**pending publisher** is for: it claims the name and the trust relationship in one step, and
-becomes an ordinary publisher on the first successful upload.
+Done for both: they were registered as pending publishers on 2026-10-26 and became ordinary
+publishers with the first upload, `0.1.0`. What follows is how, for a distribution added later.
+
+A name that has never been published has no project to configure - which is what a **pending
+publisher** is for: it names the project and the trust relationship in one step, and becomes an
+ordinary publisher on the first successful upload. It does not reserve the name: until the first
+upload, anyone can still take it.
 
 Go to <https://pypi.org/manage/account/publishing/> and add **two**, identical except for the
 project name and the environment. The environments differ because PyPI accepts only one pending

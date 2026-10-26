@@ -69,8 +69,8 @@ jobs:
 
       # What a user gets, which is not what the test suite proves. `--no-project` ignores this
       # checkout entirely, so a module left out of the wheel fails here and nowhere else. The
-      # find-links is because ekbatan's pin resolves to a db-scheduler that is not on the index
-      # yet - on the first release it does not exist anywhere but this directory.
+      # find-links is because ekbatan's pin names the db-scheduler built here, which is not on
+      # the index until this release has uploaded it.
       - name: import from the wheel
         run: |
           set -euo pipefail
