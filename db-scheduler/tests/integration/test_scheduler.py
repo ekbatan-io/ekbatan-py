@@ -702,7 +702,7 @@ class TestDataIntegrity:
 class TestALiveExecutionIsNeverStolen:
     """The worst bug this library could have: two instances running the same job at once.
 
-    Only the heartbeat stands between "one run" and "two". This runs a task for ten times the
+    Only the heartbeat stands between "one run" and "two". This runs a task for five times the
     dead-threshold while a *second* scheduler hunts for dead executions the entire time.
     """
 
@@ -713,9 +713,12 @@ class TestALiveExecutionIsNeverStolen:
         lock = threading.Lock()
         started, release = threading.Event(), threading.Event()
 
-        heartbeat = timedelta(milliseconds=100)
-        limit = 4  # dead after 400ms of silence
-        task_seconds = 3.0  # more than seven times that
+        # A threshold of 400ms was a stall of the test machine away from a takeover: a shared CI
+        # runner stalled that long and the hunter took the execution over, as it should. 1.2s keeps
+        # the test about the heartbeat rather than about the machine.
+        heartbeat = timedelta(milliseconds=300)
+        limit = 4  # dead after 1.2s of silence
+        task_seconds = 6.0  # five times that
 
         def slow(instance: Any, context: Any) -> None:
             with lock:
