@@ -1550,3 +1550,16 @@ had CI, the website and the release from before it had a remote, never run.
 | **No test-report upload on failure** | Java uploads JUnit report files; pytest prints the failures in the job's log itself | write `--junitxml` and upload it |
 | **The SIGTERM test prints the child's whole log when it fails** | it failed once on a runner, with the log cut short by pytest, and passed in the other six jobs and 13 times locally | - |
 | **The scheduler port's takeover test waits for every takeover, up to 20 seconds, instead of sleeping 3**; the dedicated-engine case still waits its whole 3 seconds | on GitHub's runner against MySQL 26.7 the third takeover came after the 3 seconds, twice in a row; locally MySQL 26.7 and 8.4, PostgreSQL and MariaDB pass either way | a longer fixed sleep |
+
+## The first release, 0.1.0 (EKB-0569-)
+
+The brief (the user, 2026-10-26): release `0.1.0` on PyPI; no TestPyPI rehearsal; the framework's
+name stays `ekbatan`.
+
+| decision | why | the other way |
+| --- | --- | --- |
+| **The PyPI name is `ekbatan`** (the user's decision) | it matches `import ekbatan`, as `redis-py` and `elasticsearch-py` publish as `redis` and `elasticsearch`; the scheduler keeps `ekbatan-py-db-scheduler`, imported as `db_scheduler` | `ekbatan-py`, matching the repository and the scheduler's prefix |
+| **No TestPyPI** (the user's decision); the workflow loses its manual run and its `target` choice | most projects that release from CI publish straight from the tag; the checks before the upload and the required reviewer stand in for the rehearsal | keep the TestPyPI rehearsal, which needs a second account |
+| **Publishing only from a tag**: the `pypi` environment admits only refs matching `v*`, and the workflow has no manual trigger | a release is the tag; a failed run is re-run from the Actions tab, and `--check-url` skips what is already up | a manual run naming a tag, as Java's has |
+| **The `pypi` environment's required reviewer is the maintainer's account (`unikzforce`), self-review allowed** | the one human click before an upload that cannot be taken back; the maintainer is also the one who pushes the tag | no reviewer |
+| **`__version__` moves with the two pyproject versions** | it said `0.1.0.dev0` too; the release workflow checks only the three in the pyprojects | leave it to drift |

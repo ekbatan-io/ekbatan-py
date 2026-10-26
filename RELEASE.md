@@ -50,15 +50,10 @@ project name:
 All five must match exactly what the workflow presents or the upload is rejected. The workflow
 name is the **filename**, not the `name:` inside it.
 
-### 3. The same two on TestPyPI
+### 3. The GitHub environment
 
-<https://test.pypi.org/manage/account/publishing/>, same five fields but environment `testpypi`.
-TestPyPI is a separate service with separate accounts; registering there is what makes a real
-end-to-end rehearsal possible without burning a version number on the real index.
-
-### 4. Two GitHub environments
-
-<https://github.com/ekbatan-io/ekbatan-py/settings/environments> - create `pypi` and `testpypi`.
+<https://github.com/ekbatan-io/ekbatan-py/settings/environments> - `pypi`. It exists (2026-10-26):
+the required reviewer is the maintainer, and only tags matching `v*` may deploy to it.
 
 An environment is not decoration: it is the second half of the trust relationship. PyPI checks
 that the OIDC token names this environment, so a workflow that has not been through it cannot
@@ -102,15 +97,13 @@ git commit -m "EKB-XXXX release 0.X.Y"
 git push origin main
 ```
 
-### Rehearse on TestPyPI
+### No rehearsal
 
-```bash
-gh workflow run release.yml -f target=testpypi -f ref=main
-```
-
-This builds and uploads both distributions to TestPyPI, then installs `ekbatan` from it into a
-clean environment and imports it. It is the nearest thing to Java's stage-and-confirm, and it is
-worth doing: a version burned on TestPyPI costs nothing.
+There is no TestPyPI step (the user's decision, 2026-10-26): most projects that release from CI
+publish straight from the tag. Before anything is uploaded, the workflow checks the versions,
+builds both distributions and installs the built wheel to import it; the required reviewer on
+`pypi` is the last stop. A run that fails part way is re-run from the Actions tab, and
+`--check-url` skips a distribution that is already up.
 
 ### Tag and push
 
@@ -174,7 +167,6 @@ credentials to validate config it will not upload.
 | step | recoverable? |
 | --- | --- |
 | a `.devN` or `.rcN` release on PyPI | yes in practice - pre-releases are not installed by default, so a bad one is invisible to `pip install ekbatan` |
-| anything on TestPyPI | yes - it is periodically pruned and nobody depends on it |
 | a tag pushed to git | yes - `git push --delete origin v0.X.Y` |
 | a GitHub Release | yes - edit or delete in the UI |
 | **a file uploaded to PyPI** | **no. Read the next paragraph** |
@@ -187,8 +179,7 @@ you delete at all, but at least a dropped *staging* deployment leaves the versio
 no staging.
 
 So: a mistake noticed after upload is fixed by shipping `0.3.1`, never by deleting and retrying.
-This is why the TestPyPI rehearsal and the required reviewer on the `pypi` environment are worth
-the ceremony.
+This is why the required reviewer on the `pypi` environment is worth the ceremony.
 
 ---
 

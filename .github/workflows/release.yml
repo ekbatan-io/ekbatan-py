@@ -10,17 +10,12 @@
 
 name: Release
 
+# Only a tag. There is no TestPyPI rehearsal (the user's decision, 2026-10-26): every check below
+# runs before anything is uploaded, and the `pypi` environment's required reviewer is the last stop.
+# A run that fails part way is re-run from the Actions tab; `--check-url` skips what is already up.
 on:
   push:
     tags: ["v*"]
-  # The rehearsal. Same steps, TestPyPI, no tag burned.
-  workflow_dispatch:
-    inputs:
-      target:
-        description: where to publish
-        type: choice
-        options: [testpypi, pypi]
-        default: testpypi
 
 permissions:
   contents: read
@@ -87,10 +82,10 @@ jobs:
         with: { name: dist, path: dist/ }
 
   publish:
-    name: publish to ${{ inputs.target || 'pypi' }}
+    name: publish to pypi
     needs: [verify, build]
     runs-on: ubuntu-latest
-    environment: ${{ inputs.target || 'pypi' }}
+    environment: pypi
     permissions:
       # Per-job, and a job-level block replaces the workflow-level one rather than adding to
       # it - so `contents: read` is repeated here deliberately.
@@ -101,30 +96,19 @@ jobs:
       - uses: actions/download-artifact@v4
         with: { name: dist, path: dist }
 
-      - name: set the index
-        run: |
-          if [ "${{ inputs.target || 'pypi' }}" = testpypi ]; then
-            echo "UV_PUBLISH_URL=https://test.pypi.org/legacy/" >> "$GITHUB_ENV"
-            echo "CHECK_URL=https://test.pypi.org/simple/" >> "$GITHUB_ENV"
-          else
-            echo "UV_PUBLISH_URL=https://upload.pypi.org/legacy/" >> "$GITHUB_ENV"
-            echo "CHECK_URL=https://pypi.org/simple/" >> "$GITHUB_ENV"
-          fi
-
       # In dependency order: ekbatan pins ekbatan-py-db-scheduler, so an installer that reaches
       # the framework first finds a pin it cannot resolve. `--check-url` makes a re-run skip
       # what is already up rather than failing - which matters because a PyPI filename can be
       # uploaded exactly once, ever.
       - name: db-scheduler
-        run: uv publish --trusted-publishing always --check-url "$CHECK_URL/ekbatan-py-db-scheduler/" dist/ekbatan_py_db_scheduler-*
+        run: uv publish --trusted-publishing always --check-url https://pypi.org/simple/ekbatan-py-db-scheduler/ dist/ekbatan_py_db_scheduler-*
 
       - name: ekbatan
-        run: uv publish --trusted-publishing always --check-url "$CHECK_URL/ekbatan/" dist/ekbatan-*
+        run: uv publish --trusted-publishing always --check-url https://pypi.org/simple/ekbatan/ dist/ekbatan-*
 
   github_release:
-    # Only for a real tag. Editable and deletable, unlike the PyPI half.
+    # Editable and deletable, unlike the PyPI half.
     name: github release
-    if: github.ref_type == 'tag'
     needs: publish
     runs-on: ubuntu-latest
     permissions:
