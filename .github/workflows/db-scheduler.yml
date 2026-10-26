@@ -6,6 +6,8 @@ on:
     paths: ["db-scheduler/**", ".github/workflows/db-scheduler.yml"]
   pull_request:
     paths: ["db-scheduler/**", ".github/workflows/db-scheduler.yml"]
+  # The "Run workflow" button in the Actions tab (and `gh workflow run db-scheduler.yml`).
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

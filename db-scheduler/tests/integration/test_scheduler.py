@@ -19,7 +19,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 
 from db_scheduler.builder import SchedulerBuilder, create
 from db_scheduler.clock import Clock, SettableClock, SystemClock
@@ -959,8 +959,9 @@ class TestGivingTheSchedulerItsOwnConnections:
     #: waited for, not slept: on a slow runner the last one was taken after a fixed 3 seconds.
     TAKEOVER_LIMIT = 20.0
 
-    def _run(self, engine_url: str, *, share: bool) -> int:
-        """Returns how many executions were run more than once."""
+    def _run(self, engine_url: str, *, share: bool) -> tuple[int, str]:
+        """How many executions were run more than once - and, for a failure's message, the runs
+        and every row as the wait ended."""
         runs: dict[str, int] = {}
         lock = threading.Lock()
         started, release = threading.Semaphore(0), threading.Event()
@@ -1012,6 +1013,17 @@ class TestGivingTheSchedulerItsOwnConnections:
                 if share and taken_over == self.WORKERS:
                     break
                 time.sleep(0.05)
+            with hunter_engine.connect() as conn:
+                rows = conn.execute(
+                    text(
+                        "SELECT task_instance, picked, picked_by, last_heartbeat, version, "
+                        "execution_time, consecutive_failures FROM scheduled_tasks "
+                        "ORDER BY task_instance"
+                    )
+                ).all()
+            with lock:
+                state = f"runs: {dict(sorted(runs.items()))}\nrows as the wait ended:\n"
+                state += "\n".join(f"  {tuple(row)}" for row in rows)
         finally:
             release.set()
             time.sleep(0.5)
@@ -1022,19 +1034,25 @@ class TestGivingTheSchedulerItsOwnConnections:
             if not share:
                 scheduler_engine.dispose()
 
-        return sum(1 for count in runs.values() if count > 1)
+        return sum(1 for count in runs.values() if count > 1), state
 
     def test_sharing_an_exhausted_pool_loses_the_heartbeat(
-        self, engine_url: str, table: Any
+        self, engine_url: str, table: Any, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Stated as a test so the hazard cannot quietly stop being true. The heartbeat needs a
-        connection to say an execution is alive; without one, another instance takes it over."""
-        assert self._run(engine_url, share=True) == self.WORKERS
+        connection to say an execution is alive; without one, another instance takes it over.
+
+        INFO is captured so that a failure shows what the hunter found and did: on MySQL 26.7 on
+        GitHub's runners one of the three was not taken over, and nothing else said why."""
+        caplog.set_level(logging.INFO, logger="db_scheduler")
+        taken_over, state = self._run(engine_url, share=True)
+        assert taken_over == self.WORKERS, state
 
     def test_a_dedicated_engine_prevents_it_entirely(
         self, engine_url: str, table: Any
     ) -> None:
-        assert self._run(engine_url, share=False) == 0
+        taken_over, state = self._run(engine_url, share=False)
+        assert taken_over == 0, state
 
 
 @pytest.mark.skipif_sqlite
