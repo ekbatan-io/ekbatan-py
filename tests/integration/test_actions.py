@@ -171,8 +171,8 @@ def test_each_kind_of_failure_gets_its_own_policy(executor):
     slower ones. One policy for everything has to pick the wrong number for something."""
     config = ExecutionConfiguration(
         retry_configs=(
-            RetryConfig(on=StaleRecordError, max_retries=1, delay=0),
-            RetryConfig(on=LockAcquisitionError, max_retries=3, delay=0),
+            RetryConfig(on=StaleRecordError, max_retries=1, delay=timedelta(0)),
+            RetryConfig(on=LockAcquisitionError, max_retries=3, delay=timedelta(0)),
         )
     )
 
@@ -195,8 +195,8 @@ def test_each_kind_of_failure_gets_its_own_policy(executor):
 def test_the_first_matching_policy_wins(executor):
     config = ExecutionConfiguration(
         retry_configs=(
-            RetryConfig(on=StaleRecordError, max_retries=0, delay=0),
-            RetryConfig(on=EkbatanError, max_retries=5, delay=0),
+            RetryConfig(on=StaleRecordError, max_retries=0, delay=timedelta(0)),
+            RetryConfig(on=EkbatanError, max_retries=5, delay=timedelta(0)),
         )
     )
     action = FailsWithAction(StaleRecordError("moved"), clock=executor.clock)
@@ -236,7 +236,9 @@ def test_max_retries_counts_retries_and_not_attempts(executor):
     """
     for allowed in range(4):
         config = ExecutionConfiguration(
-            retry_configs=(RetryConfig(on=StaleRecordError, max_retries=allowed, delay=0),)
+            retry_configs=(
+                RetryConfig(on=StaleRecordError, max_retries=allowed, delay=timedelta(0)),
+            )
         )
         action = FailsWithAction(
             *[StaleRecordError("moved") for _ in range(allowed)], clock=executor.clock
@@ -250,7 +252,7 @@ def test_when_the_retries_run_out_the_original_failure_is_what_escapes(executor)
     """Java's `execute_throws_after_max_attempts_exhausted`. The caller sees what went wrong,
     not a wrapper saying that retrying did not help."""
     config = ExecutionConfiguration(
-        retry_configs=(RetryConfig(on=StaleRecordError, max_retries=2, delay=0),)
+        retry_configs=(RetryConfig(on=StaleRecordError, max_retries=2, delay=timedelta(0)),)
     )
     action = FailsWithAction(
         *[StaleRecordError(f"attempt {n}") for n in range(5)], clock=executor.clock
@@ -273,7 +275,7 @@ def test_a_policy_on_a_superclass_does_not_catch_a_subclass_as_javas_does_not(ex
     its subclasses and the policy is silently dead. That is Java's cost too.
     """
     config = ExecutionConfiguration(
-        retry_configs=(RetryConfig(on=EkbatanError, max_retries=1, delay=0),)
+        retry_configs=(RetryConfig(on=EkbatanError, max_retries=1, delay=timedelta(0)),)
     )
     action = FailsWithAction(StaleRecordError("a subclass of EkbatanError"), clock=executor.clock)
 
@@ -285,7 +287,7 @@ def test_a_policy_on_a_superclass_does_not_catch_a_subclass_as_javas_does_not(ex
 def test_a_policy_on_the_exact_class_catches_it(executor):
     """The other side of the same rule: name the class that is thrown and it matches."""
     config = ExecutionConfiguration(
-        retry_configs=(RetryConfig(on=StaleRecordError, max_retries=1, delay=0),)
+        retry_configs=(RetryConfig(on=StaleRecordError, max_retries=1, delay=timedelta(0)),)
     )
     action = FailsWithAction(StaleRecordError("moved"), clock=executor.clock)
 
@@ -418,7 +420,7 @@ def test_such_a_failure_is_never_retried(executor, mode):
             action,
             None,
             config=ExecutionConfiguration(
-                retry_configs=(RetryConfig(on=BaseException, max_retries=3, delay=0),)
+                retry_configs=(RetryConfig(on=BaseException, max_retries=3, delay=timedelta(0)),)
             ),
         )
     assert action.attempts == 1, "a cancellation is not a transient fault to sit through"
@@ -653,7 +655,7 @@ def test_the_retry_count_is_on_the_action_span_whether_or_not_it_retried(executo
     its absence as a zero it cannot distinguish from a missing span.
     """
     config = ExecutionConfiguration(
-        retry_configs=(RetryConfig(on=StaleRecordError, max_retries=2, delay=0),)
+        retry_configs=(RetryConfig(on=StaleRecordError, max_retries=2, delay=timedelta(0)),)
     )
 
     with collecting_spans() as collected:

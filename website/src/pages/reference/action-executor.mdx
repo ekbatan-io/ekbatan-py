@@ -145,9 +145,11 @@ for the consistency model and the saga mitigation.
 
 ## Retries
 
-`ExecutionConfiguration.retry_configs` is an ordered tuple of `RetryConfig(on=..., max_retries=..., delay=...)`.
-The first whose `on` matches wins, so order is the precedence rule. The default is one retry on
-`StaleRecordError` after 100 ms. `ExecutionConfiguration.no_retry()` turns it off.
+`ExecutionConfiguration.retry_configs` is an ordered tuple of `RetryConfig(on=..., max_retries=..., delay=...)`,
+where `max_retries` and `delay` are required and `delay` is a `timedelta`, as Java's
+`new RetryConfig(maxRetries, Duration)`. The first whose `on` matches wins, so order is the
+precedence rule. The default is one retry on `StaleRecordError` after 100 ms.
+`ExecutionConfiguration.no_retry()` turns it off.
 
 ## Tracing
 

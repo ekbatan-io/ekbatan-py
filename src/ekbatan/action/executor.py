@@ -15,6 +15,7 @@ import uuid
 from collections.abc import Iterable, Mapping
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Any, Self
 
 from .._guards import refuse_on_an_event_loop
@@ -55,19 +56,30 @@ class RetryConfig:
     version race deserves one quick retry, an unreachable lock service deserves a few slower
     ones, and a validation error deserves none at all. One policy for everything has to pick
     the wrong number for something.
+
+    Java's `new RetryConfig(maxRetries, delay)`: both required, the delay a duration. The class
+    it answers for is `on` here, where Java gives it to `withRetry(Class, RetryConfig)`.
     """
 
     on: type[BaseException] | tuple[type[BaseException], ...] = StaleRecordError
     #: How many times to try *again*, so one run plus this many - Java's `maxRetries`. Named
     #: for what it counts: `attempts=1` reading as one attempt and running twice is the sort of
     #: thing nobody catches in review and everybody hits in production.
-    max_retries: int = 1
-    delay: float = 0.1
+    max_retries: int
+    #: How long to wait before each retry - Java's `Duration`. A `timedelta`, not a number: a
+    #: bare number was seconds here, where a hand used to `Duration.ofMillis(100)` writes 100.
+    delay: timedelta
 
     def __post_init__(self) -> None:
         if self.max_retries < 0:
             raise ValidationError(f"max_retries cannot be negative, got {self.max_retries}")
-        if self.delay < 0:
+        if not isinstance(self.delay, timedelta):
+            raise TypeError(
+                f"delay must be a timedelta, as Java's Duration: got "
+                f"{type(self.delay).__name__} {self.delay!r} - write "
+                f"timedelta(milliseconds=100), not 0.1 or 100"
+            )
+        if self.delay < timedelta(0):
             # Caught here rather than at the first retry, which is a different request, on a
             # different day, inside a sleep with nothing pointing back at this line.
             raise ValidationError(f"delay cannot be negative, got {self.delay}")
@@ -86,9 +98,12 @@ class RetryConfig:
         return type(error) in exact
 
 
-#: One quick retry on a lost version race, and nothing else. Enough to absorb ordinary
-#: contention; not enough to hide a real problem.
-DEFAULT_RETRIES: tuple[RetryConfig, ...] = (RetryConfig(),)
+#: One quick retry on a lost version race, and nothing else - Java's default,
+#: `new RetryConfig(1, Duration.ofMillis(100))` for `StaleRecordException`. Enough to absorb
+#: ordinary contention; not enough to hide a real problem.
+DEFAULT_RETRIES: tuple[RetryConfig, ...] = (
+    RetryConfig(on=StaleRecordError, max_retries=1, delay=timedelta(milliseconds=100)),
+)
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
@@ -335,7 +350,7 @@ class _ExecutorCore:
                 "retry",
                 {"retry.count": retried + 1, "retry.exception": type(cause).__name__},
             )
-            return chosen.delay
+            return chosen.delay.total_seconds()
         execution.failed(error, outcome="ekbatan.action.outcome")
         LOG.error("%s failed: %s: %s", name, type(error).__name__, error)
         return None

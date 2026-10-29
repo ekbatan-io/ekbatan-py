@@ -193,7 +193,7 @@ a real problem. Tune it per call:
 
 ```python
 config = ExecutionConfiguration(
-    retry_configs=(RetryConfig(on=StaleRecordError, max_retries=3, delay=0.05),)
+    retry_configs=(RetryConfig(on=StaleRecordError, max_retries=3, delay=timedelta(milliseconds=50)),)
 )
 executor.execute(None, WalletDepositMoneyAction, params, config=config)
 ```
@@ -202,7 +202,7 @@ executor.execute(None, WalletDepositMoneyAction, params, config=config)
 
 ```python
 config = ExecutionConfiguration(
-    retry_configs=(RetryConfig(on=StaleRecordError, max_retries=3, delay=0.05),)
+    retry_configs=(RetryConfig(on=StaleRecordError, max_retries=3, delay=timedelta(milliseconds=50)),)
 )
 await executor.execute(None, WalletDepositMoneyAction, params, config=config)
 ```

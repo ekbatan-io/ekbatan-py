@@ -17,7 +17,7 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -624,7 +624,7 @@ def probe() -> None:
     # S10 with_retry replaces the default for the same class
     ATTEMPTS[0] = 0
     three = (ExecutionConfiguration.builder()
-             .with_retry(RetryConfig(on=StaleRecordError, max_retries=3, delay=0)).build())
+             .with_retry(RetryConfig(on=StaleRecordError, max_retries=3, delay=timedelta(0))).build())
     catching(lambda: executor.execute(
         alice,
         StaleUpdateAction,
@@ -635,7 +635,7 @@ def probe() -> None:
 
     # S11 exact class match
     probe_cfg = (ExecutionConfiguration.builder()
-                 .with_retry(RetryConfig(on=ProbeEx, max_retries=2, delay=0)).build())
+                 .with_retry(RetryConfig(on=ProbeEx, max_retries=2, delay=timedelta(0))).build())
     ATTEMPTS[0] = 0
     catching(lambda: executor.execute(alice, ThrowAction, "probe", config=probe_cfg))
     p("s11.exact_attempts", ATTEMPTS[0])
@@ -860,9 +860,9 @@ def probe() -> None:
         p(f"s34.ns{i}", "accepted" if e is None else "refused")
 
     # S35 RetryConfig validation
-    p("s35.negative_max_retries", err(catching(lambda: RetryConfig(max_retries=-1, delay=0))))
-    p("s35.negative_delay", err(catching(lambda: RetryConfig(max_retries=1, delay=-0.001))))
-    p("s35.zero_retries", err(catching(lambda: RetryConfig(max_retries=0, delay=0))))
+    p("s35.negative_max_retries", err(catching(lambda: RetryConfig(max_retries=-1, delay=timedelta(0)))))
+    p("s35.negative_delay", err(catching(lambda: RetryConfig(max_retries=1, delay=timedelta(milliseconds=-1)))))
+    p("s35.zero_retries", err(catching(lambda: RetryConfig(max_retries=0, delay=timedelta(0)))))
 
     # S36 two instances of one action type
     e36 = catching(lambda: ActionRegistry.builder()

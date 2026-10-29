@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from ekbatan.action import ActionExecutor, ExecutionConfiguration, RetryConfig
+from ekbatan.action.executor import DEFAULT_RETRIES
 from ekbatan.config import DataSourceConfig, ShardGroupConfig, ShardingConfig, ShardMemberConfig
 from ekbatan.errors import StaleRecordError, ValidationError
 from ekbatan.events import (
@@ -202,7 +203,7 @@ def test_the_builder_starts_from_one_retry_on_a_lost_version_race():
 def test_with_retry_for_a_class_already_held_replaces_it():
     """Java's map is keyed by the class, so a second policy for it replaces the first. Appended
     instead, it would never be reached - the first match wins."""
-    three = RetryConfig(on=StaleRecordError, max_retries=3)
+    three = RetryConfig(on=StaleRecordError, max_retries=3, delay=timedelta(milliseconds=100))
 
     built = ExecutionConfiguration.builder().with_retry(three).build()
 
@@ -210,11 +211,11 @@ def test_with_retry_for_a_class_already_held_replaces_it():
 
 
 def test_with_retry_for_a_new_class_adds_it_after_the_ones_held():
-    timeouts = RetryConfig(on=TimeoutError, max_retries=2)
+    timeouts = RetryConfig(on=TimeoutError, max_retries=2, delay=timedelta(seconds=1))
 
     built = ExecutionConfiguration.builder().with_retry(timeouts).build()
 
-    assert built.retry_configs == (RetryConfig(), timeouts)
+    assert built.retry_configs == (*DEFAULT_RETRIES, timeouts)
 
 
 def test_no_retry_drops_the_default_too():
@@ -222,7 +223,7 @@ def test_no_retry_drops_the_default_too():
 
 
 def test_retry_configs_replaces_every_policy():
-    timeouts = RetryConfig(on=TimeoutError)
+    timeouts = RetryConfig(on=TimeoutError, max_retries=1, delay=timedelta(seconds=1))
     built = ExecutionConfiguration.builder().retry_configs([timeouts]).build()
     assert built.retry_configs == (timeouts,)
 

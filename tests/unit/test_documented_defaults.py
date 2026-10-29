@@ -58,4 +58,4 @@ def test_the_execution_defaults_the_action_pages_state() -> None:
     (retry,) = config.retry_configs
     assert retry.on is StaleRecordError
     assert retry.max_retries == 1
-    assert retry.delay == 0.1
+    assert retry.delay == timedelta(milliseconds=100)

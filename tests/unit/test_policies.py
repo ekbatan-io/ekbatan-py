@@ -15,17 +15,37 @@ import pytest
 
 from ekbatan import RetryConfig, current_plan
 from ekbatan.action import ActionPlan
-from ekbatan.errors import EkbatanError, ValidationError
+from ekbatan.errors import EkbatanError, StaleRecordError, ValidationError
 from ekbatan.events import backoff
 from ekbatan.ids import ShardedId
 from fixtures.domain import Wallet
 
 
-def test_a_policy_cannot_ask_for_negative_time():
-    with pytest.raises(ValidationError, match="delay"):
-        RetryConfig(delay=-1.0)
-    with pytest.raises(ValidationError, match="retries"):
-        RetryConfig(max_retries=-1)
+def test_a_retry_policy_is_java_s_two_values_a_count_and_a_duration():
+    """Java's `new RetryConfig(1, Duration.ofMillis(100))`: both values required, the delay a
+    duration - as the event settings beside it take a `timedelta`. A bare number was seconds
+    here, where a hand used to `Duration.ofMillis` writes 100 and gets a hundred seconds."""
+    policy = RetryConfig(max_retries=1, delay=timedelta(milliseconds=100))
+    assert (policy.on, policy.max_retries, policy.delay) == (
+        StaleRecordError,
+        1,
+        timedelta(milliseconds=100),
+    )
+    with pytest.raises(TypeError, match="max_retries"):
+        RetryConfig(delay=timedelta(milliseconds=100))  # type: ignore[call-arg]
+    with pytest.raises(TypeError, match="delay"):
+        RetryConfig(max_retries=1)  # type: ignore[call-arg]
+    with pytest.raises(
+        TypeError, match=r"delay must be a timedelta, as Java's Duration: got float 0\.1"
+    ):
+        RetryConfig(max_retries=1, delay=0.1)  # type: ignore[arg-type]
+
+
+def test_the_default_policy_is_java_s_one_retry_after_100_ms_on_a_lost_race():
+    from ekbatan.action.executor import DEFAULT_RETRIES
+
+    java_s = RetryConfig(on=StaleRecordError, max_retries=1, delay=timedelta(milliseconds=100))
+    assert (java_s,) == DEFAULT_RETRIES
 
 
 def test_staging_the_same_row_twice_in_one_batch_is_refused(clock):
@@ -73,10 +93,10 @@ def test_the_retry_curve_doubles_and_then_flattens():
 
 
 def test_a_retry_policy_cannot_ask_for_negative_time():
-    with pytest.raises(ValidationError, match="delay"):
-        RetryConfig(delay=-1.0)
+    with pytest.raises(ValidationError, match="delay cannot be negative"):
+        RetryConfig(max_retries=1, delay=timedelta(seconds=-1))
     with pytest.raises(ValidationError, match="retries"):
-        RetryConfig(max_retries=-1)
+        RetryConfig(max_retries=-1, delay=timedelta(0))
 
 
 def test_a_plan_outside_a_unit_of_work_says_so():
