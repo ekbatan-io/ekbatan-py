@@ -1,6 +1,6 @@
 [project]
 name = "ekbatan"
-version = "0.1.0"
+version = "0.1.1"
 description = "A persistence framework for event-driven systems, with an ergonomic built-in outbox pattern."
 readme = "README.md"
 requires-python = ">=3.13"
@@ -28,7 +28,7 @@ classifiers = [
 # application that wants spans and metrics installs an SDK.
 dependencies = [
     "SQLAlchemy>=2.0.30",
-    "ekbatan-py-db-scheduler~=0.1.0",
+    "ekbatan-py-db-scheduler~=0.1.1",
     "PyYAML>=6.0",
     "opentelemetry-api>=1.27",
 ]
