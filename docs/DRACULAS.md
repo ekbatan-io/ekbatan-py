@@ -146,7 +146,7 @@ whatever is decided about the rest.
 | 75 | Parameterless actions take `None`, stored as `{}` | choice | yes | L | B |
 | 76 | `EventEnvelope` has an `attempt` field | choice | yes | L | B |
 | 77 | Event jobs take the config object; `EventFanout` / `EventDispatch` are public | choice | partly | L | B |
-| 78 | Streaming: one plain `ActionEvent`, no Avro / Protobuf | choice | partly | L | B |
+| 78 | ~~Streaming: one plain `ActionEvent`, no Avro / Protobuf~~ **matched** (`EKB-0578`, the user's decision 2026-10-29, "do it now"): `ActionEvent.from_avro` and `ActionEvent.from_protobuf` read the transforms' messages with Java's own envelope schemas, shipped in the package, behind the extras `ekbatan[avro]` and `ekbatan[protobuf]`. Java's two steps: `payload` stays bytes, read with `read_avro_payload` or the event's own message class, as Java's `fromByteBuffer` and `parseFrom`. Proven on messages Java's transforms wrote | choice | yes | L | B |
 | 79 | Python-only test and plan helpers (`run_action`, `current_plan`, `bool(plan)`) | choice | yes | L | B |
 
 ### Migrations and generators

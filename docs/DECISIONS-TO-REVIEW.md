@@ -1579,3 +1579,21 @@ duration, as Java's, and a missing handler that is a failed attempt, as Java's.
 | **A row whose handler is gone raises Java's `No handler registered with name: X (event Y)` inside the delivery**, as an `EkbatanError`, the port's stand-in for Java's `IllegalStateException` | the ordinary failure path then does what Java's does: the attempt counts, the wait doubles from 30 s, the row expires after the retention window, and logs and metrics say "failed" | the deferral it replaces: pending, uncounted, retried every 30 s |
 | **The deferred outcome and `defer_pending_bucket` are removed**, with the repository test for them | nothing else used them | keep them unused |
 | **The events guide, both copies, says what happens without an alias**: every attempt fails until the window passes | it said the rows "sit in PENDING" and that nothing logs, which was not true before either - the port logged a warning every 30 s | - |
+
+## Reading the Avro and Protobuf streams (EKB-0578-)
+
+The brief (the user, 2026-10-29, "do it now"): Dracula 78 - read the Avro and Protobuf messages
+Java's Kafka Connect transforms write, with the same schemas, one `ActionEvent` with a way in per
+format, behind optional extras. Ledger: [STREAMING-FORMATS-LEDGER.md](STREAMING-FORMATS-LEDGER.md).
+
+| decision | why | the other way |
+| --- | --- | --- |
+| **Java's two steps: `from_avro(data)` and `from_protobuf(data)` read the envelope, and `payload` stays bytes** | Java's flow - `ActionEvent.fromByteBuffer`, then `MyEvent.fromByteBuffer(event.getPayload())` - and the rule the consuming-events page already states: a consumer routes on `event_type` without a schema for every body. My first version decoded the payload in the same call and refused a type it had no schema for, which broke that rule | one call that decodes both, given every payload schema |
+| **`read_avro_payload(data, schema)` reads an Avro payload**, a function in `ekbatan.streaming`; the name is mine | Python has no generated Avro classes to carry Java's `fromByteBuffer`, and fastavro does not read single-object encoding: the marker and the fingerprint need checking first | a class built once per schema, or leave it to the consumer |
+| **No helper for a Protobuf payload: the event's own message class's `FromString`** | protobuf's own call, Java's `parseFrom`; the message keeps protobuf's types | a dict - measured: protobuf's JSON form turns an `int64` into a string (`'9007199254740993'`), bytes into base64 and a `Timestamp` into text |
+| **The Protobuf envelope class is built at run time from Java's compiled `ActionEvent.desc`**, not shipped as protoc-generated code as the plan said | the schema is Java's build output byte for byte, and a test pins it; generated code must match the installed protobuf runtime's version, a descriptor set need not | ship protoc's `ActionEvent_pb2.py` |
+| **A payload schema is the JSON of its `.avsc`, as a dict** | what `json.loads` of the file gives, and the file the transform is configured with | a path, or a schema fastavro has parsed |
+| **The envelope's times are read as the epoch-microsecond counts they are on the wire**, and become naive UTC through `from_message`'s own path | the library converts no time: `test_no_code_in_the_library_converts_a_time` caught my first version's `astimezone(UTC)` | fastavro's zoned datetimes, with the zone taken off |
+| **A payload's times are fastavro's**: a `timestamp-millis` comes back as a `datetime` with UTC attached, where the envelope's have none | the payload is the consumer's own schema, read as fastavro reads it; changing its values would be a conversion of ours | take the zone off, as the envelope's |
+| **`ActionEvent.payload` is `Mapping[str, Any] \| bytes \| None`** | bytes from the two binary formats, as Java's `getPayload()` | - |
+| **Extras `avro = ["fastavro>=1.9"]` and `protobuf = ["protobuf>=5.26"]`; the floors are not tested** | the suite runs on the locked versions, fastavro 1.13.1 and protobuf 7.36.2 | test the floors in CI |

@@ -1,6 +1,6 @@
 # Dracula sweep - area B: actions, events, streaming, test helpers
 
-Files: `src/ekbatan/action/`, `src/ekbatan/events/`, `src/ekbatan/streaming.py`,
+Files: `src/ekbatan/action/`, `src/ekbatan/events/`, `src/ekbatan/streaming/`,
 `src/ekbatan/testing.py`, and what `src/ekbatan/__init__.py` exports from them. Java side:
 `ekbatan-core/.../core/action/`, `ekbatan-events/local-event-handler/`,
 `ekbatan-events/streaming/`, `ekbatan-test-support/`, `ekbatan-di/`.
@@ -285,12 +285,13 @@ sides. Ordered by surprise, highest first.
 - **Could match Java?** partly. gevent gives the same effect.
 - **Surprise:** low
 
-### Streaming: one plain `ActionEvent`, not exported at top level, with extra helpers
+### Streaming: one plain `ActionEvent`, not exported at top level, with extra helpers - Avro and Protobuf matched (2026-10-29)
+- **Matched (`EKB-0578`, the user's decision 2026-10-29, "do it now"):** `ActionEvent.from_avro(data)` and `ActionEvent.from_protobuf(data)` read the messages Java's transforms write, with Java's own `ActionEvent.avsc` and compiled `ActionEvent.desc` shipped in the package (`ActionEvent.proto` beside them), behind the extras `ekbatan[avro]` (fastavro) and `ekbatan[protobuf]` (protobuf). As in Java, `payload` stays the event's own encoded message until read with its type's schema: `read_avro_payload(event.payload, schema)` for Java's `MyEvent.fromByteBuffer`, the message class's `FromString` for Java's `MyEvent.parseFrom`. Avro's schema fingerprints are checked as Java's reader checks them. Proven by `tests/unit/test_streaming_formats.py` on bytes Java's transforms wrote (`parity-probes/streaming/`). What stays: one class with a way in per format where Java has one per format, `from_row` / `from_message`, and the import from `ekbatan.streaming`.
 - **What:** Java ships consumer-side `ActionEvent` classes in JSON, Avro and Protobuf flavours,
   plus Debezium transforms. Python has one dataclass in `ekbatan.streaming` (not exported from
   `ekbatan`), with Python-only `from_row`, `from_message(json_columns_are_strings=...,
   timestamps_are_epoch_micros=...)` and `is_sentinel`. There are no Avro/Protobuf classes.
-- **Python:** `src/ekbatan/streaming.py:38-136`
+- **Python:** `src/ekbatan/streaming/__init__.py` (`ActionEvent`, `read_avro_payload`), `_avro.py`, `_protobuf.py`
 - **Java:** `ekbatan-events/streaming/action-event/{json,avro,protobuf}`, `ekbatan-events/streaming/debezium-smt/`
 - **Why:** a choice. The transforms run in Kafka Connect (a JVM) whatever wrote the row.
 - **Could match Java?** partly. Avro/Protobuf consumer types could be generated for Python.
