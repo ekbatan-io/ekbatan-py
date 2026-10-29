@@ -548,6 +548,17 @@ for message in consumer:
   its writer's schema fingerprint; `from_avro` and `read_avro_payload` check it before reading a
   byte, and raise `ValueError` when it is not the schema in hand - another event type's, or
   another version of this one.
+- **Other versions of a schema are read once you give them.** Pass the versions payloads may
+  still be written with - older ones, or a newer one deployed before your consumer - as
+  `writer_schemas`: `read_avro_payload(event.payload, schema, writer_schemas=[older, newer])`.
+  Avro's resolution takes each to your schema: a field yours lacks is dropped, and one the writer
+  lacks takes your default. `ActionEvent.from_avro(value, writer_schemas=[...])` does the same
+  for an envelope written by a newer ekbatan. Protobuf needs nothing of the kind: a field the
+  reader does not know is skipped, and one the writer did not set reads as its zero value.
+- **Anything that cannot be read is a `ValueError`**: bytes in another format, a message cut
+  short or corrupt, an unknown schema, and a value the dataclass cannot hold - an id that is not
+  a UUID, `action_params` that is not a JSON object, a time outside years 1 to 9999 or finer than
+  a microsecond. The error names the field, and never repeats what `action_params` holds.
 - **The payload keeps its format's own types.** Avro gives a dict, as fastavro reads it: a
   `decimal` is a `Decimal`, a `timestamp-millis` a `datetime` in UTC. Protobuf gives your
   message, where an `int64` is an `int` and a `Timestamp` a `Timestamp`.

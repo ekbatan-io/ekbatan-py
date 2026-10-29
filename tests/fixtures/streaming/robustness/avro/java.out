@@ -1,0 +1,41 @@
+AE01	OK	{"id":"0198f4a2-1c3d-7e4f-8a9b-0c1d2e3f4a5b","namespace":"com.example.finance","action_id":"0198f4a2-1c3d-7e4f-8a9b-0c1d2e3f4a5c","action_name":"WalletDepositMoneyAction","action_params":"{\"amount\":\"77.10\",\"note\":\"first\"}","started_date":"1785492930123456","completion_date":"1785492931654321","model_id":"wallet-1","model_type":"Wallet","event_type":"WalletMoneyDepositedEvent","payload":"c3014900a3edfb4200281077616c6c65742d310c57616c6c6574041e1e","event_date":"1785492931500000","delivered":false}
+AE02	OK	{"id":"0198f4a2-1c3d-7e4f-8a9b-0c1d2e3f4a5b","namespace":"com.example.finance","action_id":"0198f4a2-1c3d-7e4f-8a9b-0c1d2e3f4a5c","action_name":"WalletDepositMoneyAction","action_params":"{\"amount\":\"77.10\",\"note\":\"first\"}","started_date":"1785492930123456","completion_date":"1785492931654321","model_id":null,"model_type":null,"event_type":"WalletMoneyDepositedEvent","payload":"c3014900a3edfb4200281077616c6c65742d310c57616c6c6574041e1e","event_date":"1785492931500000","delivered":false}
+AE03	ERR	BadHeaderException: Not enough header bytes
+AE04	ERR	BadHeaderException: Not enough header bytes
+AE05	ERR	BadHeaderException: Not enough header bytes
+AE06	ERR	AvroRuntimeException: Decoding datum failed
+AE07	ERR	AvroRuntimeException: Decoding datum failed
+AE08	ERR	AvroRuntimeException: Decoding datum failed
+AE09	OK	{"id":"0198f4a2-1c3d-7e4f-8a9b-0c1d2e3f4a5b","namespace":"com.example.finance","action_id":"0198f4a2-1c3d-7e4f-8a9b-0c1d2e3f4a5c","action_name":"WalletDepositMoneyAction","action_params":"{\"amount\":\"77.10\",\"note\":\"first\"}","started_date":"1785492930123456","completion_date":"1785492931654321","model_id":"wallet-1","model_type":"Wallet","event_type":"WalletMoneyDepositedEvent","payload":"c3014900a3edfb4200281077616c6c65742d310c57616c6c6574041e1e","event_date":"1785492931500000","delivered":false}
+AE10	ERR	BadHeaderException: Unrecognized header bytes: 0xC3 0x02
+AE11	ERR	MissingSchemaException: Cannot resolve schema for fingerprint: 1367077760564417932
+AE12	ERR	BadHeaderException: Unrecognized header bytes: 0x48 0x30
+AE13	ERR	BadHeaderException: Unrecognized header bytes: 0x7B 0x22
+AE14	ERR	BadHeaderException: Unrecognized header bytes: 0x0A 0x24
+AE15	ERR	ArrayIndexOutOfBoundsException: Index 5 out of bounds for length 2
+AE16	ERR	AvroRuntimeException: Malformed data. Length is negative: -1
+AE17	ERR	AvroRuntimeException: Decoding datum failed
+AE18	OK	{"id":"not-a-uuid","namespace":"com.example.finance","action_id":"0198f4a2-1c3d-7e4f-8a9b-0c1d2e3f4a5c","action_name":"WalletDepositMoneyAction","action_params":"{\"amount\":\"77.10\",\"note\":\"first\"}","started_date":"1785492930123456","completion_date":"1785492931654321","model_id":"wallet-1","model_type":"Wallet","event_type":"WalletMoneyDepositedEvent","payload":"c3014900a3edfb4200281077616c6c65742d310c57616c6c6574041e1e","event_date":"1785492931500000","delivered":false}
+AE19	OK	{"id":"0198f4a2-1c3d-7e4f-8a9b-0c1d2e3f4a5b","namespace":"com.example.finance","action_id":"0198f4a2-1c3d-7e4f-8a9b-0c1d2e3f4a5c","action_name":"WalletDepositMoneyAction","action_params":"not json","started_date":"1785492930123456","completion_date":"1785492931654321","model_id":"wallet-1","model_type":"Wallet","event_type":"WalletMoneyDepositedEvent","payload":"c3014900a3edfb4200281077616c6c65742d310c57616c6c6574041e1e","event_date":"1785492931500000","delivered":false}
+AE20	OK	{"id":"0198f4a2-1c3d-7e4f-8a9b-0c1d2e3f4a5b","namespace":"com.example.finance","action_id":"0198f4a2-1c3d-7e4f-8a9b-0c1d2e3f4a5c","action_name":"WalletDepositMoneyAction","action_params":"[1,2]","started_date":"1785492930123456","completion_date":"1785492931654321","model_id":"wallet-1","model_type":"Wallet","event_type":"WalletMoneyDepositedEvent","payload":"c3014900a3edfb4200281077616c6c65742d310c57616c6c6574041e1e","event_date":"1785492931500000","delivered":false}
+AE21	OK	{"id":"0198f4a2-1c3d-7e4f-8a9b-0c1d2e3f4a5b","namespace":"com.example.finance","action_id":"0198f4a2-1c3d-7e4f-8a9b-0c1d2e3f4a5c","action_name":"WalletDepositMoneyAction","action_params":"{\"amount\":\"77.10\",\"note\":\"first\"}","started_date":"253402300800000000","completion_date":"1785492931654321","model_id":"wallet-1","model_type":"Wallet","event_type":"WalletMoneyDepositedEvent","payload":"c3014900a3edfb4200281077616c6c65742d310c57616c6c6574041e1e","event_date":"1785492931500000","delivered":false}
+AE22	OK	{"id":"0198f4a2-1c3d-7e4f-8a9b-0c1d2e3f4a5b","namespace":"com.example.finance","action_id":"0198f4a2-1c3d-7e4f-8a9b-0c1d2e3f4a5c","action_name":"WalletDepositMoneyAction","action_params":"{\"amount\":\"77.10\",\"note\":\"first\"}","started_date":"-1","completion_date":"1785492931654321","model_id":"wallet-1","model_type":"Wallet","event_type":"WalletMoneyDepositedEvent","payload":"c3014900a3edfb4200281077616c6c65742d310c57616c6c6574041e1e","event_date":"1785492931500000","delivered":false}
+AE23	OK	{"id":"0198f4a2-1c3d-7e4f-8a9b-0c1d2e3f4a5b","namespace":"com.example.finance","action_id":"0198f4a2-1c3d-7e4f-8a9b-0c1d2e3f4a5c","action_name":"WalletDepositMoneyAction","action_params":"{\"amount\":\"77.10\",\"note\":\"first\"}","started_date":"1785492930123456","completion_date":"1785492931654321","model_id":"wallet-1","model_type":"Wallet","event_type":"WalletMoneyDepositedEvent","payload":null,"event_date":"1785492931500000","delivered":false}
+AE24	OK	{"id":"0198f4a2-1c3d-7e4f-8a9b-0c1d2e3f4a5b","namespace":"com.example.finance","action_id":"0198f4a2-1c3d-7e4f-8a9b-0c1d2e3f4a5c","action_name":"WalletDepositMoneyAction","action_params":"{\"amount\":\"77.10\",\"note\":\"first\"}","started_date":"1785492930123456","completion_date":"1785492931654321","model_id":"wallet-1","model_type":"Wallet","event_type":null,"payload":null,"event_date":"1785492931500000","delivered":false}
+AE25	ERR	MissingSchemaException: Cannot resolve schema for fingerprint: -4298806857186998769
+AE26	ERR	MissingSchemaException: Cannot resolve schema for fingerprint: -4063445211447735190
+AE27	OK	{"id":"0198f4a2-1c3d-7e4f-8a9b-0c1d2e3f4a5b","namespace":"com.example.finance","action_id":"0198f4a2-1c3d-7e4f-8a9b-0c1d2e3f4a5c","action_name":"WalletDepositMoneyAction","action_params":"{\"amount\":\"77.10\",\"note\":\"first\"}","started_date":"1785492930123456","completion_date":"1785492931654321","model_id":"wallet-1","model_type":"Wallet","event_type":"WalletMoneyDepositedEvent","payload":"c3014900a3edfb4200281077616c6c65742d310c57616c6c6574041e1e","event_date":"1785492931500000","delivered":false}
+AP01	OK	{"modelId":"wallet-1","modelName":"Wallet","amount":"77.10"}
+AP02	OK	{"modelId":"wallet-1","modelName":"Wallet","amount":"9999999999.99"}
+AP13	OK	{"modelId":"wallet-1","modelName":"Wallet","amount":"-0.01"}
+AP03	ERR	BadHeaderException: Not enough header bytes
+AP04	ERR	AvroRuntimeException: Decoding datum failed
+AP05	ERR	AvroRuntimeException: Decoding datum failed
+AP06	OK	{"modelId":"wallet-1","modelName":"Wallet","amount":"77.10"}
+AP07	ERR	MissingSchemaException: Cannot resolve schema for fingerprint: -1218657601197404296
+AP08	ERR	MissingSchemaException: Cannot resolve schema for fingerprint: 4762951918758621728
+AP09	OK	{"modelId":"wallet-1","modelName":"Wallet","amount":"77.10"}
+AP10	OK	{"modelId":"wallet-1","modelName":"Wallet","amount":"77.10"}
+AP14	ERR	AvroTypeException: Found com.example.finance.avro.WalletMoneyDepositedEvent, expecting com.example.finance.avro.WalletMoneyDepositedEvent, missing required field modelName
+AP11	ERR	NumberFormatException: Zero length BigInteger
+AP12	ERR	MissingSchemaException: Cannot resolve schema for fingerprint: 1367077760564417907

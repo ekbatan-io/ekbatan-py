@@ -45,6 +45,23 @@ def _envelope() -> Any:
     return message_factory.GetMessageClass(pool.FindMessageTypeByName(_ENVELOPE))
 
 
+def _micros(field: str, stamp: Any) -> int:
+    """A Timestamp as a count of microseconds since the epoch, as Avro's are.
+
+    The transform writes whole microseconds - a timestamp column holds no finer - so nanoseconds
+    below one are not this writer's; a `datetime` cannot hold them, and dropping them would hand
+    back another time. Read as the fields they are, not through `ToMicroseconds`, which refuses
+    a time outside years 1 to 9999 without saying which field held it.
+    """
+    if stamp.nanos % 1000:
+        raise ValueError(
+            f"{field} has {stamp.nanos % 1000} nanoseconds below a microsecond, which a datetime "
+            f"cannot hold"
+        )
+    micros: int = stamp.seconds * 1_000_000 + stamp.nanos // 1000
+    return micros
+
+
 def read(data: bytes) -> dict[str, Any]:
     """The envelope, as the wire has it: ids and `action_params` as strings, times as epoch
     microseconds. Its payload stays the bytes it is: the event's own protobuf message."""
@@ -62,10 +79,9 @@ def read(data: bytes) -> dict[str, Any]:
         "action_id": message.action_id,
         "action_name": message.action_name,
         "action_params": message.action_params,
-        # A count, as Avro's are: the nanoseconds a Timestamp has room for are always zero here.
-        "started_date": message.started_date.ToMicroseconds(),
-        "completion_date": message.completion_date.ToMicroseconds(),
-        "event_date": message.event_date.ToMicroseconds(),
+        "started_date": _micros("started_date", message.started_date),
+        "completion_date": _micros("completion_date", message.completion_date),
+        "event_date": _micros("event_date", message.event_date),
         "delivered": message.delivered,
     }
     for name in _OPTIONAL:

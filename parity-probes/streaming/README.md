@@ -37,6 +37,35 @@ git status --short   # nothing: the repository is as it was
 Then copy `/tmp/ekbatan-streaming-probe/avro` and `.../protobuf` over
 `tests/fixtures/streaming/avro` and `tests/fixtures/streaming/protobuf` here.
 
+## The robustness comparison
+
+`ParityRobustnessAvroProbeTest.java` and `ParityRobustnessProtobufProbeTest.java` run Java's
+generated readers - `ActionEvent.fromByteBuffer`, `ActionEvent.parseFrom`, and the payload classes'
+own - on 62 inputs: messages as the transforms write them, and every way one can be cut short,
+corrupt, foreign or from another schema version. Each input is kept as a file, with `java.out`,
+one line per input. They live in the pipeline test modules, which have the generated classes:
+
+```bash
+PIPE=ekbatan-integration-tests/event-pipeline
+cp $PROBES/ParityRobustnessAvroProbeTest.java \
+   $PIPE/debezium-kafka-avro-smt/src/test/java/io/ekbatan/test/event_pipeline/avro_smt/
+cp $PROBES/ParityRobustnessProtobufProbeTest.java \
+   $PIPE/debezium-kafka-protobuf-smt/src/test/java/io/ekbatan/test/event_pipeline/protobuf_smt/
+
+EKBATAN_STREAMING_PROBE_OUT=/tmp/ekbatan-streaming-probe ./gradlew \
+  :ekbatan-integration-tests-event-pipeline-debezium-kafka-avro-smt:test --tests '*ParityRobustnessAvroProbeTest' \
+  :ekbatan-integration-tests-event-pipeline-debezium-kafka-protobuf-smt:test --tests '*ParityRobustnessProtobufProbeTest'
+
+rm $PIPE/debezium-kafka-avro-smt/src/test/java/io/ekbatan/test/event_pipeline/avro_smt/ParityRobustnessAvroProbeTest.java \
+   $PIPE/debezium-kafka-protobuf-smt/src/test/java/io/ekbatan/test/event_pipeline/protobuf_smt/ParityRobustnessProtobufProbeTest.java
+git status --short   # nothing
+```
+
+Then, here, `uv run python parity-probes/streaming/probe_robustness.py /tmp/ekbatan-streaming-probe`
+reads the same files with Python's readers and prints the comparison, one table row per input.
+Copied into `tests/fixtures/streaming/robustness/`, the inputs and `java.out` are what
+`tests/unit/test_streaming_robustness.py` holds Python to on every run.
+
 ## When Java's envelope schemas change
 
 The package ships Java's envelope files unchanged, in `src/ekbatan/streaming/`:

@@ -31,7 +31,7 @@ transform, so a helper here would be right for one pipeline and wrong for the ne
 from __future__ import annotations
 
 import uuid as _uuid
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, fields
 from datetime import datetime, timedelta
 from typing import Any, Self
@@ -42,6 +42,9 @@ from ..time import Instant
 
 #: The epoch, no zone attached.
 _EPOCH = datetime(1970, 1, 1)
+
+#: How a refusal names what a JSON column held instead of an object, without repeating it.
+_JSON_KINDS = {list: "an array", str: "a string", bool: "true or false", type(None): "null"}
 
 __all__ = ["ActionEvent", "ActionEventBuilder", "read_avro_payload"]
 
@@ -129,27 +132,31 @@ class ActionEvent:
         than of the row: a JSON column arrives as a string under some converters and as a nested
         object under others, and a timestamp as epoch microseconds under Debezium's default and
         as an ISO string under others. Passing the wrong one is louder than guessing.
+
+        A value that does not convert is refused with a `ValueError` naming its column: an id that
+        is not a UUID, a JSON column that does not hold an object - Java's `ObjectNode` - and a
+        time outside the years a `datetime` holds, 1 to 9999. What a JSON column holds is never
+        repeated in the error: `action_params` is whatever an action was given.
         """
         adjusted = dict(row)
+        for column in ("id", "action_id"):
+            value = adjusted.get(column)
+            if isinstance(value, str):
+                adjusted[column] = _uuid_in(column, value)
         if json_columns_are_strings:
             for column in ("action_params", "payload"):
                 value = adjusted.get(column)
                 if isinstance(value, str):
-                    adjusted[column] = loads(value)
+                    adjusted[column] = _object_in(column, value)
         if timestamps_are_epoch_micros:
             for column in ("started_date", "completion_date", "event_date"):
                 value = adjusted.get(column)
                 if isinstance(value, int):
-                    # The column's own value, no zone attached: what the zone-less column holds.
-                    adjusted[column] = _EPOCH + timedelta(microseconds=value)
-        for column in ("id", "action_id"):
-            value = adjusted.get(column)
-            if isinstance(value, str):
-                adjusted[column] = _uuid.UUID(value)
+                    adjusted[column] = _time_in(column, value)
         return cls.from_row(adjusted)
 
     @classmethod
-    def from_avro(cls, data: bytes) -> Self:
+    def from_avro(cls, data: bytes, *, writer_schemas: Iterable[Mapping[str, Any]] = ()) -> Self:
         """Read a message Java's `OutboxToAvroTransform` wrote - Java's
         `ActionEvent.fromByteBuffer`.
 
@@ -159,13 +166,24 @@ class ActionEvent:
         event's own Avro message - so a consumer routes on `event_type` without a schema for
         every event, and reads the bodies it wants with :func:`read_avro_payload`.
 
+        ``writer_schemas`` are other versions of the envelope's schema - a newer ekbatan's, say -
+        each as the JSON of its `.avsc`. A message written with one of them is read, and Avro's
+        resolution takes it to this reader's fields, as Java's
+        ``ActionEvent.getDecoder().addSchema`` allows.
+
+        Anything that cannot be read is refused with a `ValueError`: bytes that are not this
+        encoding, a message cut short or corrupt, an unknown schema, and the values
+        :meth:`from_message` refuses.
+
         Needs the ``avro`` extra: ``pip install 'ekbatan[avro]'``.
         """
         from ._avro import read
 
         # What the wire carries is what a CDC message carries: strings, and epoch microseconds.
         return cls.from_message(
-            read(data), json_columns_are_strings=True, timestamps_are_epoch_micros=True
+            read(data, writer_schemas),
+            json_columns_are_strings=True,
+            timestamps_are_epoch_micros=True,
         )
 
     @classmethod
@@ -179,6 +197,11 @@ class ActionEvent:
         with the event's own message class - ``MyEvent.FromString(event.payload)``, as Java's
         ``MyEvent.parseFrom``.
 
+        Anything that cannot be read is refused with a `ValueError`: bytes that are not a
+        protobuf `ActionEvent`, a message cut short, a time with nanoseconds below a microsecond,
+        which a `datetime` cannot hold, and the values :meth:`from_message` refuses. A field the
+        reader does not know is skipped, as protobuf skips one.
+
         Needs the ``protobuf`` extra: ``pip install 'ekbatan[protobuf]'``.
         """
         from ._protobuf import read
@@ -188,7 +211,9 @@ class ActionEvent:
         )
 
 
-def read_avro_payload(data: bytes, schema: Mapping[str, Any]) -> dict[str, Any]:
+def read_avro_payload(
+    data: bytes, schema: Mapping[str, Any], *, writer_schemas: Iterable[Mapping[str, Any]] = ()
+) -> dict[str, Any]:
     """Read the payload of an event :meth:`ActionEvent.from_avro` read - what Java's generated
     ``MyEvent.fromByteBuffer(event.getPayload())`` does.
 
@@ -198,11 +223,50 @@ def read_avro_payload(data: bytes, schema: Mapping[str, Any]) -> dict[str, Any]:
     refused rather than misread. The record comes back as fastavro reads it: a mapping, with
     Avro's own types - a `decimal` as a `Decimal`, a timestamp as a `datetime` in UTC.
 
+    ``writer_schemas`` are the event type's other versions, older or newer, that payloads may
+    still be written with. One the payload's fingerprint names is read, and Avro's resolution
+    takes it to ``schema`` - a field the reader lacks is dropped, and one the writer lacks takes
+    the reader's default - as Java's ``MyEvent.getDecoder().addSchema`` allows. A version that
+    cannot be resolved, lacking a field the reader has no default for, is refused.
+
+    Anything that cannot be read is refused with a `ValueError`: bytes that are not this
+    encoding, a payload cut short or corrupt, an unknown schema.
+
     Needs the ``avro`` extra: ``pip install 'ekbatan[avro]'``.
     """
     from ._avro import read_payload
 
-    return read_payload(data, schema)
+    return read_payload(data, schema, writer_schemas)
+
+
+def _uuid_in(column: str, value: str) -> _uuid.UUID:
+    try:
+        return _uuid.UUID(value)
+    except ValueError:
+        raise ValueError(f"{column} is not a UUID: {value[:64]!r}") from None
+
+
+def _object_in(column: str, text: str) -> Mapping[str, Any]:
+    """A JSON column's text, parsed - refused unless it holds an object, and never repeated."""
+    try:
+        value = loads(text)
+    except (ValueError, RecursionError) as error:  # RecursionError: nested past the parser's depth
+        raise ValueError(f"{column} is not JSON: {error}") from None
+    if not isinstance(value, Mapping):
+        kind = _JSON_KINDS.get(type(value), "a number")
+        raise ValueError(f"{column} is JSON but not an object: it holds {kind}")
+    return value
+
+
+def _time_in(column: str, micros: int) -> datetime:
+    """The column's own value, no zone attached: what the zone-less column holds."""
+    try:
+        return _EPOCH + timedelta(microseconds=micros)
+    except OverflowError:
+        raise ValueError(
+            f"{column} is {micros} microseconds from the epoch, outside the years a datetime "
+            f"holds, 1 to 9999"
+        ) from None
 
 
 class ActionEventBuilder(FieldBuilder[ActionEvent]):

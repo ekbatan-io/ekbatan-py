@@ -1,0 +1,9 @@
+{
+  "type" : "record",
+  "name" : "WalletMoneyDepositedEvent",
+  "namespace" : "com.example.finance.avro",
+  "fields" : [ {
+    "name" : "modelId",
+    "type" : "string"
+  } ]
+}

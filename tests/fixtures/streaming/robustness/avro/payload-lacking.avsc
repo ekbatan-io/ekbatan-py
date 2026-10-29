@@ -1,0 +1,17 @@
+{
+  "type" : "record",
+  "name" : "WalletMoneyDepositedEvent",
+  "namespace" : "com.example.finance.avro",
+  "fields" : [ {
+    "name" : "modelId",
+    "type" : "string"
+  }, {
+    "name" : "amount",
+    "type" : {
+      "type" : "bytes",
+      "logicalType" : "decimal",
+      "precision" : 12,
+      "scale" : 2
+    }
+  } ]
+}
