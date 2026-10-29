@@ -1,0 +1,12 @@
+{
+  "type": "record",
+  "name": "TestEvent",
+  "namespace": "wallet.avro",
+  "fields": [
+    {"name": "name", "type": "string"},
+    {"name": "amount", "type":
+      {"type": "bytes", "logicalType": "decimal", "precision": 10, "scale": 2}},
+    {"name": "at", "type": {"type": "long", "logicalType": "timestamp-millis"}},
+    {"name": "ref", "type": ["null", "long", "string"], "default": null}
+  ]
+}

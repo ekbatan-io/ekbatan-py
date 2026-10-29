@@ -327,10 +327,12 @@ for message in consumer:
     handle(row["event_type"], row["payload"])
 ```
 
-With Variant B the value is `bytes` and the deserialiser is `ActionEvent` in whichever binary
-format you configured — decode the envelope first, then decode `payload` with the schema that
-matches its `event_type`. The two-step is the point: a consumer routes on `event_type` without
-parsing a body it may not have a schema for.
+With Variant B the value is `bytes`. `ActionEvent.from_avro` or `ActionEvent.from_protobuf`
+decodes the envelope first, then `payload` is decoded with the schema that matches its
+`event_type` - `read_avro_payload(event.payload, schema)`, or your message class's
+`FromString`. The two-step is the point: a consumer routes on `event_type` without parsing a body
+it may not have a schema for. Each format needs its extra, `ekbatan[avro]` or
+`ekbatan[protobuf]`; see [Reading Avro and Protobuf](/reference/events/streaming/#reading-avro-and-protobuf).
 
 **A Variant A consumer needs the sentinel check**, as above. An action that decided there was
 nothing to do still writes a row with `event_type` null, and raw CDC publishes it like any other.

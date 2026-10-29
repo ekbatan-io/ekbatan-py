@@ -82,7 +82,8 @@ src/ekbatan/
   schemagen/         table definitions generated from a migrated database: config, type table,
                      and the typed record beside each table
   codegen.py         typed builders, generated per model
-  streaming.py       ActionEvent - the consumer-side view of an outbox row
+  streaming/         ActionEvent - the consumer-side view of an outbox row; _avro and _protobuf
+                     read the transforms' messages (extras), with Java's envelope schemas
   accounting.py      statement counting, so the performance claims are checkable
   action/            action.py, plan.py, executor.py, registry.py, persister.py, outbox.py
   aio/               native asyncio: persistence, repository, action, executor, persister,

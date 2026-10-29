@@ -30,7 +30,8 @@ src/ekbatan/
                      unknown type is sql_type("...")), _reflect, _render, _records (the
                      typed `<Table>Record` beside each table)
   codegen.py         typed builders, generated per model
-  streaming.py       ActionEvent - the consumer-side view of an outbox row
+  streaming/         ActionEvent - the consumer-side view of an outbox row; _avro, _protobuf
+                     (the avro and protobuf extras) and Java's envelope schemas
   accounting.py      statement counting, so cost claims are checkable
   action/            action, plan, executor, registry, persister, outbox
   events/            handler, fanout, dispatch, jobs, notification, config

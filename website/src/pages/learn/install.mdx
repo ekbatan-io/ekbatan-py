@@ -48,6 +48,8 @@ extra per database; see [Sync or async?](/learn/sync-or-async/) for choosing:
 | `sqlite-async` | aiosqlite | `ekbatan.aio` on SQLite |
 | `migrations` | yoyo | you want SQL migrations run across every shard |
 | `redis` | redis-py | the Redis keyed lock rather than the SQL one |
+| `avro` | fastavro | reading the [event stream](/reference/events/streaming/#reading-avro-and-protobuf) in Avro |
+| `protobuf` | protobuf | reading the [event stream](/reference/events/streaming/#reading-avro-and-protobuf) in Protobuf |
 | `codegen` | testcontainers | **development only** — see below |
 
 `SQLAlchemy` and `ekbatan-py-db-scheduler` come unconditionally.

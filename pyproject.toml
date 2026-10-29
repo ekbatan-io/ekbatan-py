@@ -55,6 +55,11 @@ postgres-async = ["asyncpg>=0.30", "SQLAlchemy[asyncio]>=2.0.30"]
 mysql-async = ["aiomysql>=0.2", "SQLAlchemy[asyncio]>=2.0.30"]
 mariadb-async = ["aiomysql>=0.2", "SQLAlchemy[asyncio]>=2.0.30"]
 sqlite-async = ["aiosqlite>=0.20", "SQLAlchemy[asyncio]>=2.0.30"]
+# Reading the event stream Java's Kafka Connect transforms write, as Java's own
+# `ekbatan-action-event-avro` and `ekbatan-action-event-protobuf` modules do: only for a consumer
+# that reads that format, so neither library comes with the framework.
+avro = ["fastavro>=1.9"]
+protobuf = ["protobuf>=5.26"]
 
 [tool.uv.sources]
 # The db-scheduler port lives in this repository, as `ekbatan-distributed-jobs` depends on the
@@ -164,6 +169,12 @@ ignore_missing_imports = true
 # migrates, since the extra may legitimately be absent.
 [[tool.mypy.overrides]]
 module = "yoyo.*"
+ignore_missing_imports = true
+
+# protobuf ships no type information. Only ekbatan.streaming._protobuf imports it, and only once a
+# Protobuf message is read, since the extra may legitimately be absent.
+[[tool.mypy.overrides]]
+module = "google.protobuf.*"
 ignore_missing_imports = true
 
 # Strictness in the library is a promise to its users; strictness in a test file is a tax on

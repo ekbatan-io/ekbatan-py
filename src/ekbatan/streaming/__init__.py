@@ -13,6 +13,13 @@ Nothing here is validated. Four fields are legitimately absent on the sentinel r
 with no events writes - `model_id`, `model_type`, `event_type` and `payload` are all null there -
 so a type that rejected them would reject valid traffic.
 
+**The Avro and Protobuf messages** Java's Kafka Connect transforms write are read by
+:meth:`from_avro` and :meth:`from_protobuf`, with the schemas Java ships - `ActionEvent.avsc`,
+`ActionEvent.proto` and the compiled `ActionEvent.desc`, copied here unchanged. Each needs its
+extra: ``ekbatan[avro]`` or ``ekbatan[protobuf]``. As in Java, the payload stays encoded until
+the consumer reads it with its event type's own schema - :func:`read_avro_payload`, or the message
+class's ``FromString`` - so routing on `event_type` needs no schema at all.
+
 **Mapping a raw CDC message is still the consumer's job**, in both ports. A Debezium topic carries
 snake_case column names, JSON columns as strings rather than nested objects, and timestamps as
 bare epoch microseconds; which of those you get depends on the connector, the converter and the
@@ -29,14 +36,14 @@ from dataclasses import dataclass, fields
 from datetime import datetime, timedelta
 from typing import Any, Self
 
-from ._builder import FieldBuilder
-from ._json import loads
-from .time import Instant
+from .._builder import FieldBuilder
+from .._json import loads
+from ..time import Instant
 
 #: The epoch, no zone attached.
 _EPOCH = datetime(1970, 1, 1)
 
-__all__ = ["ActionEvent", "ActionEventBuilder"]
+__all__ = ["ActionEvent", "ActionEventBuilder", "read_avro_payload"]
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
@@ -68,8 +75,9 @@ class ActionEvent:
     model_type: str | None = None
     #: The event subtype's bare class name - what a consumer routes on. ``None`` on a sentinel.
     event_type: str | None = None
-    #: The event body. ``None`` on a sentinel row.
-    payload: Mapping[str, Any] | None = None
+    #: The event body: a mapping, or - read by :meth:`from_avro` or :meth:`from_protobuf` - the
+    #: body's own message, still encoded, as Java's ``getPayload()``. ``None`` on a sentinel row.
+    payload: Mapping[str, Any] | bytes | None = None
     #: When the event was produced. Equal to `completion_date` for rows this framework writes.
     event_date: Instant
     #: Whether the in-process fan-out has already turned this row into notifications. A CDC
@@ -140,6 +148,62 @@ class ActionEvent:
                 adjusted[column] = _uuid.UUID(value)
         return cls.from_row(adjusted)
 
+    @classmethod
+    def from_avro(cls, data: bytes) -> Self:
+        """Read a message Java's `OutboxToAvroTransform` wrote - Java's
+        `ActionEvent.fromByteBuffer`.
+
+        ``data`` is the Kafka record's value. Its schema fingerprint is checked before anything is
+        read, as Java's reader checks it, so a message written with another schema is refused
+        rather than misread. ``payload`` stays the bytes Java's ``getPayload()`` gives - the
+        event's own Avro message - so a consumer routes on `event_type` without a schema for
+        every event, and reads the bodies it wants with :func:`read_avro_payload`.
+
+        Needs the ``avro`` extra: ``pip install 'ekbatan[avro]'``.
+        """
+        from ._avro import read
+
+        # What the wire carries is what a CDC message carries: strings, and epoch microseconds.
+        return cls.from_message(
+            read(data), json_columns_are_strings=True, timestamps_are_epoch_micros=True
+        )
+
+    @classmethod
+    def from_protobuf(cls, data: bytes) -> Self:
+        """Read a message Java's `OutboxToProtobufTransform` wrote - Java's
+        `ActionEvent.parseFrom`.
+
+        ``data`` is the Kafka record's value, read with Java's own compiled `ActionEvent`
+        descriptor. ``payload`` stays the bytes Java's ``getPayload()`` gives, so a consumer
+        routes on `event_type` without a class for every event, and reads the bodies it wants
+        with the event's own message class - ``MyEvent.FromString(event.payload)``, as Java's
+        ``MyEvent.parseFrom``.
+
+        Needs the ``protobuf`` extra: ``pip install 'ekbatan[protobuf]'``.
+        """
+        from ._protobuf import read
+
+        return cls.from_message(
+            read(data), json_columns_are_strings=True, timestamps_are_epoch_micros=True
+        )
+
+
+def read_avro_payload(data: bytes, schema: Mapping[str, Any]) -> dict[str, Any]:
+    """Read the payload of an event :meth:`ActionEvent.from_avro` read - what Java's generated
+    ``MyEvent.fromByteBuffer(event.getPayload())`` does.
+
+    ``schema`` is the JSON of the event type's `.avsc`, the one the transform's mapping names for
+    it. The payload's schema fingerprint is checked against it before a byte is read, so a body
+    written with another schema - another event type's, or another version of this one - is
+    refused rather than misread. The record comes back as fastavro reads it: a mapping, with
+    Avro's own types - a `decimal` as a `Decimal`, a timestamp as a `datetime` in UTC.
+
+    Needs the ``avro`` extra: ``pip install 'ekbatan[avro]'``.
+    """
+    from ._avro import read_payload
+
+    return read_payload(data, schema)
+
 
 class ActionEventBuilder(FieldBuilder[ActionEvent]):
     """Fluent builder for :class:`ActionEvent`. Obtain via :meth:`ActionEvent.builder`.
@@ -191,7 +255,7 @@ class ActionEventBuilder(FieldBuilder[ActionEvent]):
     def event_type(self, event_type: str | None) -> Self:
         return self._set("event_type", event_type)
 
-    def payload(self, payload: Mapping[str, Any] | None) -> Self:
+    def payload(self, payload: Mapping[str, Any] | bytes | None) -> Self:
         return self._set("payload", payload)
 
     def event_date(self, event_date: Instant) -> Self:

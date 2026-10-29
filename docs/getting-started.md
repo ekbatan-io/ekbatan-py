@@ -35,6 +35,8 @@ Everything optional is an extra, and nothing you do not name is installed:
 | `sqlite-async` | aiosqlite | `ekbatan.aio` on SQLite |
 | `migrations` | yoyo | you want `ekbatan.migrations.migrate` to run your SQL migrations across every shard |
 | `redis` | redis-py | you want the Redis-backed keyed lock rather than the SQL one |
+| `avro` | fastavro | you read the [event stream](events/event-streaming.md#reading-avro-and-protobuf) in Avro |
+| `protobuf` | protobuf | you read the [event stream](events/event-streaming.md#reading-avro-and-protobuf) in Protobuf |
 | `codegen` | testcontainers, psycopg | **development only** - see below |
 
 `SQLAlchemy` and `ekbatan-py-db-scheduler` come unconditionally. The second is this repository's
