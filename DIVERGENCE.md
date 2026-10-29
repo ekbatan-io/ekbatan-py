@@ -1774,15 +1774,40 @@ rather than the name.
 | `schema.py` | the framework's tables as SQLAlchemy metadata | Java's DDL lives in the Flyway migration SQL; there is no programmatic table definition to port. This is the definition `emit_ddl` generates migrations from, and the one the cross-compatibility scenarios check |
 | `codegen.py` | generates typed builders | Java's annotation processor does this at compile time; the processor itself is `n/a` in the ledger |
 
+## Reading the Avro and Protobuf streams (`EKB-0579`, `EKB-0581`)
+
+> **chosen** - the user's "do it now" for Dracula 78, then "as robust as that"; the judgement calls are in [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md).
+
+Java's consumers read the transforms' messages with classes generated from `ActionEvent.avsc` and
+`ActionEvent.proto`, one class per format. Here there is one `ActionEvent` with a way in per
+format - `from_row`, `from_message`, `from_avro`, `from_protobuf` - and Java's two schema files
+ship inside the package unchanged, the protobuf one also compiled, as Java's build compiles it.
+The reading is Java's two steps: the envelope, whose `payload` stays bytes, then the payload with
+its event type's own schema.
+
+Where the two differ, measured on 62 inputs read by both (part 2 of
+`docs/STREAMING-FORMATS-LEDGER.md`, kept as `tests/unit/test_streaming_robustness.py`):
+
+- **An Avro payload is read by a function**, `read_avro_payload(data, schema)`, where Java calls
+  the payload class's generated `fromByteBuffer`: Python does not generate Avro classes.
+- **Other schema versions are a list**, `writer_schemas=[...]`, where Java adds each to the
+  generated class's decoder, `getDecoder().addSchema(...)`, or gives it a `SchemaStore`.
+- **Python refuses what its typed fields cannot hold**, where Java's generated classes hand it
+  over: an id that is not a UUID, `action_params` that is not a JSON object, a time outside years
+  1 to 9999 or finer than a microsecond. Each is a `ValueError` naming the field.
+- **A decimal with no bytes is read as zero**, as fastavro reads it, where Java's `BigInteger`
+  refuses it. The transform cannot write one.
+
 ## Not ported
 
-> **parity** - `event-streaming` runs in a JVM whichever language wrote the row, so there is nothing to port.
+> **parity** - the publishing half of `event-streaming` runs in a JVM whichever language wrote the row, so there is nothing to port.
 
-`event-streaming`, and not planned. Publishing the outbox to Kafka is a Debezium connector plus
-a routing transform, running inside Kafka Connect, in a JVM, regardless of which language wrote
-the row. A Python service does not need a Python connector; it needs the same connector pointed
-at its database. What it does owe is the schema that connector reads, which is
-`ekbatan.schema` and is checked by the conformance suite's cross-compatibility scenarios.
+The publishing half of `event-streaming`, and not planned. Publishing the outbox to Kafka is a
+Debezium connector plus a routing transform, running inside Kafka Connect, in a JVM, regardless of
+which language wrote the row. A Python service does not need a Python connector; it needs the
+same connector pointed at its database. What it does owe is the schema that connector reads,
+which is `ekbatan.schema` and is checked by the conformance suite's cross-compatibility
+scenarios. The reading half is ported: see "Reading the Avro and Protobuf streams" above.
 
 ## Driver settings: `data_source_properties` (`EKB-0239`)
 

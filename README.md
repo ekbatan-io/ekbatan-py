@@ -128,9 +128,10 @@ shard - safely, from any number of processes at once.
 | **statement accounting** | so the cost claims are checkable rather than asserted |
 | **test support** | `ActionSpec` / `ActionAssert` run a unit of work against a bare plan, with no database - Java's, method for method |
 | **typed builders** | `python -m ekbatan.codegen` - the one thing Python cannot infer |
+| **reading the stream** | `ActionEvent` from an outbox row, a Debezium message, or the transforms' Avro and Protobuf messages, with Java's own schemas |
 
-Only `event-streaming` is missing, and it is not planned: publishing runs inside Kafka Connect,
-in a JVM, whichever language wrote the row.
+Only the publishing half of `event-streaming` is not here, and it is not planned: Debezium and
+the transforms run inside Kafka Connect, in a JVM, whichever language wrote the row.
 
 [DIVERGENCE.md](DIVERGENCE.md) records where this port deliberately differs from the Java one,
 and [docs/SHORTCOMINGS.md](docs/SHORTCOMINGS.md) records where it is simply behind - what is

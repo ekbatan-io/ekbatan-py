@@ -812,5 +812,5 @@ proves the three real servers.
 | --- | --- | --- | --- |
 | core/resources/META-INF/native-image/.../reachability-metadata.json | 0 | - | n/a - GraalVM reachability metadata |
 | annotation-processor/resources/META-INF/services/javax.annotation.processing.Processor | 1 | - | n/a - Java service registration |
-| events/streaming/action-event/avro/ActionEvent.avsc | 0 | - | n/a - Avro schema for the Kafka streaming path |
-| events/streaming/action-event/protobuf/ActionEvent.proto | 0 | - | n/a - Protobuf schema, as above |
+| events/streaming/action-event/avro/ActionEvent.avsc | 0 | `src/ekbatan/streaming/ActionEvent.avsc` | done - shipped unchanged, the envelope `ActionEvent.from_avro` reads (`EKB-0579`); a test pins it to Java's |
+| events/streaming/action-event/protobuf/ActionEvent.proto | 0 | `src/ekbatan/streaming/ActionEvent.proto` | done - shipped unchanged, beside the compiled `ActionEvent.desc` from Java's build, which `ActionEvent.from_protobuf` loads (`EKB-0579`) |

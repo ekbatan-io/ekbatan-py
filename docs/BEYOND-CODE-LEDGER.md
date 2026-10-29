@@ -115,7 +115,7 @@ port's MySQL and MariaDB behaviour is not identical to Java's.
 | --- | --- | --- | --- |
 | events/README.md | 19 | `docs/events/README.md` | done - the four topologies, and that every one of them is at-least-once |
 | events/local-event-handler.md | 364 | `docs/events/local-event-handler.md` | done - and it says so, with the consequence spelled out: **handlers on one event do not run concurrently here and do in Java**, so a handler written against this port's ordering will not survive the other one. Every tuning default matches Java's; the ISO-8601 duration trap does not exist here |
-| events/event-streaming.md | 365 | `docs/events/event-streaming.md` | done - and that is exactly what it says. What this port owes the pipeline is the row format, and `ActionEvent` is the consumer-side name for it |
+| events/event-streaming.md | 365 | `docs/events/event-streaming.md` | done - and that is exactly what it says. What this port owes the pipeline is the row format, and `ActionEvent` is the consumer-side name for it; since `EKB-0579` the page also says how to read the transforms' Avro and Protobuf messages in Python |
 | jobs/README.md | 7 | `docs/jobs/README.md` | done |
 | jobs/distributed-jobs.md | 237 | `docs/jobs/distributed-jobs.md` | done - both carried. Also records one thing Java must do that this port does not: Java pins the SQL dialect by hand because db-scheduler detects it by opening a connection and can lose that race; SQLAlchemy resolves it from the url with no I/O |
 

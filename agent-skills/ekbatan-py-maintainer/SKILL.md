@@ -54,6 +54,11 @@ the Java while porting go in an openspec change, not a code change.
   Say so wherever timestamps come up. Guide: `docs/database/multi-database.md#always-utc`.
 - Params and payload JSON is the text Java's default Jackson 3 mapper writes, byte for byte
   (camelCase keys, decimals as numbers); `ekbatan._json` and `parity-probes/G-domain-model/` hold it.
+- The streaming envelope schemas, `src/ekbatan/streaming/ActionEvent.{avsc,proto,desc}`, are
+  Java's byte for byte, and a test pins them. `tests/unit/test_streaming_robustness.py` holds the
+  Avro and Protobuf readers to Java's generated ones on 62 inputs Java ran; when Java's schemas
+  or transforms change, rerun `parity-probes/streaming/` (its README says how) and copy the new
+  fixtures.
 - **Time kinds** (`ekbatan.time`, AGENTS.md "Time kinds"): `Instant`, `LocalDateTime`,
   `OffsetDateTime` are `NewType` labels over `datetime`. `clock.instant()` is the one clock
   reading (no `now()`); models' dates and framework-written times are `Instant`; event and params
