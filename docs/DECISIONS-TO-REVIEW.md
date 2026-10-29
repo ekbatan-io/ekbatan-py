@@ -1597,3 +1597,21 @@ format, behind optional extras. Ledger: [STREAMING-FORMATS-LEDGER.md](STREAMING-
 | **A payload's times are fastavro's**: a `timestamp-millis` comes back as a `datetime` with UTC attached, where the envelope's have none | the payload is the consumer's own schema, read as fastavro reads it; changing its values would be a conversion of ours | take the zone off, as the envelope's |
 | **`ActionEvent.payload` is `Mapping[str, Any] \| bytes \| None`** | bytes from the two binary formats, as Java's `getPayload()` | - |
 | **Extras `avro = ["fastavro>=1.9"]` and `protobuf = ["protobuf>=5.26"]`; the floors are not tested** | the suite runs on the locked versions, fastavro 1.13.1 and protobuf 7.36.2 | test the floors in CI |
+
+## As robust as Java's readers (EKB-0581-)
+
+The brief (the user, 2026-10-29): "compare it with the java equivalent, i want it to be as robust
+as that". 62 inputs run through Java's generated classes and Python's readers, the same bytes on
+both sides; the comparison and its rules are part 2 of
+[STREAMING-FORMATS-LEDGER.md](STREAMING-FORMATS-LEDGER.md), and kept as tests.
+
+| decision | why | the other way |
+| --- | --- | --- |
+| **Everything that cannot be read is a `ValueError`**: fastavro's `EOFError`, `IndexError` and resolution errors are wrapped, with the original chained | a consumer catches one error for one bad message, as Java's readers throw within one family; eight inputs Java refuses raised other types | let each library's own errors through |
+| **`writer_schemas=` on `read_avro_payload` and `ActionEvent.from_avro`**: the other versions a consumer holds, as a list of `.avsc` JSON; the name is mine | Java's `getDecoder().addSchema` reads a message written with an older or newer schema, and `ActionEvent.avsc`'s own rules expect old consumers to keep reading new messages; a list is the whole of what `addSchema` does | a resolver function, as Java's `createDecoder(SchemaStore)` - nothing needs one yet |
+| **A refused value names its field**: `id is not a UUID: '...'`, `action_params is not JSON: ...`, `started_date is ... microseconds from the epoch, outside the years a datetime holds` | Java's generated classes pass the id, `action_params` and the times through untyped, so Python's typed fields are where these show; the bare `uuid` and `json` errors did not say which field | - |
+| **A JSON column that is not an object is refused** - in `from_message` too, so the JSON path changes with it | Java's JSON `ActionEvent` types both columns `ObjectNode`; Python's field is a `Mapping`, and a list in it was a wrong type passed on | read any JSON value, as before |
+| **What a JSON column holds is never repeated in an error**, only what kind of value it is | `action_params` is whatever an action was given, a password included | quote the start of it |
+| **The ids are converted first**, ahead of the JSON columns and the times | an empty or foreign message then fails on its first field, `id`, the clearest thing to report | the order before |
+| **A Protobuf time with nanoseconds below a microsecond is refused**, not cut to the microsecond | a `datetime` cannot hold it, and cutting hands back another time; the transform writes whole microseconds, so it is not this writer's | cut it, as `ToMicroseconds` did |
+| **A decimal with no bytes is read as fastavro reads it, zero** (AP11), where Java refuses | the Avro specification does not say; the transform cannot write one; refusing would mean changing fastavro's decimal reading for the whole process | wrap fastavro's logical-type registry |
