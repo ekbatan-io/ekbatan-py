@@ -17,6 +17,8 @@ env:
   # Pinned as in ci.yml: left to the runner, uv takes the newest Python it has, for which
   # psycopg-binary may have no build yet.
   UV_PYTHON: "3.14"
+  # uv's own build of it, never the runner's system Python, as in ci.yml.
+  UV_PYTHON_PREFERENCE: only-managed
   # Runners are disposable VMs; don't fail before tests start if Docker Hub cannot serve the
   # optional Testcontainers Ryuk reaper image.
   TESTCONTAINERS_RYUK_DISABLED: "true"

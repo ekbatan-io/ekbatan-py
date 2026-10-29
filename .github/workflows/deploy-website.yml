@@ -42,6 +42,7 @@ jobs:
       BASE: /ekbatan-py/
       # Pinned as in ci.yml: the runner's newest Python has no psycopg-binary build yet.
       UV_PYTHON: "3.14"
+      UV_PYTHON_PREFERENCE: only-managed
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

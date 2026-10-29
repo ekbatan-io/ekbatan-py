@@ -25,6 +25,11 @@ env:
   # newest one it had - 3.15, for which psycopg-binary has no build yet - and every job failed
   # installing.
   UV_PYTHON: "3.14"
+  # uv's own build of it, never the runner's. When ubuntu-latest became 26.04, uv took that
+  # image's system Python 3.14.4, on which the gevent job hung at exit after every test passed:
+  # multiprocessing's resource tracker, started by the migration tests, waits in a waitpid that
+  # gevent has patched. 3.14.7 and later exit.
+  UV_PYTHON_PREFERENCE: only-managed
   # GitHub-hosted runners are disposable VMs, so runner teardown cleans up test containers. Avoid
   # failing CI before tests start if Docker Hub cannot serve the optional Ryuk reaper image.
   TESTCONTAINERS_RYUK_DISABLED: "true"
