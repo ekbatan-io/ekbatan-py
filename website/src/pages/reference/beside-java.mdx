@@ -127,12 +127,23 @@ one, so to hold a lock across them, use Redis.
 
 Debezium and Kafka Connect are Java programs, whatever language wrote the rows. The two
 transforms, `OutboxToAvroTransform` and `OutboxToProtobufTransform`, are JARs from the Java
-project's `ekbatan-debezium-smt` artifact. A Python service uses the same JARs, pointed at its own
-`events` table, and gets the same messages as a Java service gets from its own. Nothing in your own service runs
-Java.
+project. A Python service uses the same JARs, pointed at its own `events` table, and gets the same
+messages as a Java service gets from its own. Nothing in your own service runs Java.
 
-The JARs are not on a package index. Take them from the Java project's build and put each in its
-own directory under the Connect worker's `plugin.path`. Their full settings are documented on
+The JARs are not on a package index. Every release of the Java project attaches both, each with a
+signature and SHA-256 checksums, on its
+[releases page](https://github.com/ekbatan-io/ekbatan/releases):
+
+| transform | JAR |
+| --- | --- |
+| `OutboxToAvroTransform` | `ekbatan-debezium-smt-avro-<version>.jar` |
+| `OutboxToProtobufTransform` | `ekbatan-debezium-smt-protobuf-<version>.jar` |
+
+Put each in its own directory under the Connect worker's `plugin.path`. The transform's envelope
+schema goes on the worker as a file too: `ActionEvent.avsc` sits at the root of the Java project's
+`ekbatan-action-event-avro` jar on Maven Central, and the compiled `ActionEvent.desc` at the root
+of `ekbatan-action-event-protobuf`, both in the group `io.github.ekbatan-io`. Their full settings
+are documented on
 [the Java project's streaming page](https://ekbatan-io.github.io/ekbatan/reference/events/streaming/).
 
 Because the payload JSON is the same text, an Avro or Protobuf schema written for one producer

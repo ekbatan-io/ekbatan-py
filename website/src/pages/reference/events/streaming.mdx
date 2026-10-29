@@ -74,9 +74,8 @@ Two Kafka Connect transforms — `OutboxToAvroTransform` and `OutboxToProtobufTr
 encode the row before it reaches the broker.
 
 They run inside Kafka Connect, not in your service: your service only writes the rows. Kafka
-Connect plugins are JARs, so these two come from Ekbatan's Java project, as the
-`ekbatan-debezium-smt` artifact - see
-[Running beside a Java service](/reference/beside-java/#streaming-the-events) for where to get them.
+Connect plugins are JARs, so these two come from Ekbatan's Java project, attached to every one
+of its releases - see [Running beside a Java service](/reference/beside-java/#streaming-the-events) for where to download them.
 
 Their configuration, payload encoding, envelope timestamps, the `ExtractNewRecordState`
 interaction and the error-handling options are under [SMTs](#smts-variant-b-only) below.
@@ -316,7 +315,7 @@ The namespace must be [dot-separated identifiers](#topic-naming) — no hyphens,
 framework refuses at construction for exactly this reason.
 
 The SMT JARs are **not published to a package index** — Connect loads plugins from the
-filesystem. Take them from the Java project's build - see
+filesystem. Download them from the Java project's releases - see
 [Running beside a Java service](/reference/beside-java/#streaming-the-events) - and install each in **its own
 directory** under the worker's `plugin.path`. The separate directory matters: Connect gives each plugin directory its
 own classloader, which is what stops a plugin's bundled dependencies colliding with anything
