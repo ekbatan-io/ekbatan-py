@@ -292,6 +292,11 @@ the Connect container. No Schema Registry is required. For Protobuf, swap in
 `OutboxToProtobufTransform` and give it descriptor sets. See
 [Streaming with Debezium](/reference/events/streaming/).
 
+The transform runs inside the Connect worker, not in your service. It is a JAR from Ekbatan's
+Java project, attached to every one of its [releases](https://github.com/ekbatan-io/ekbatan/releases);
+[Streaming the events](/reference/beside-java/#streaming-the-events) names the two JARs and says
+how to install them.
+
 ### B.2 Consume from Kafka
 
 Any consumer in any language. The topics come in three levels, all prefixed

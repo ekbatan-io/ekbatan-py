@@ -315,9 +315,10 @@ The namespace must be [dot-separated identifiers](#topic-naming) — no hyphens,
 framework refuses at construction for exactly this reason.
 
 The SMT JARs are **not published to a package index** — Connect loads plugins from the
-filesystem. Download them from the Java project's releases - see
-[Running beside a Java service](/reference/beside-java/#streaming-the-events) - and install each in **its own
-directory** under the worker's `plugin.path`. The separate directory matters: Connect gives each plugin directory its
+filesystem. Download them from the Java project's
+[releases page](https://github.com/ekbatan-io/ekbatan/releases) -
+[Running beside a Java service](/reference/beside-java/#streaming-the-events) names the two - and install each in
+**its own directory** under the worker's `plugin.path`. The separate directory matters: Connect gives each plugin directory its
 own classloader, which is what stops a plugin's bundled dependencies colliding with anything
 else's.
 
