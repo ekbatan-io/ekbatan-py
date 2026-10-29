@@ -1564,3 +1564,18 @@ name stays `ekbatan`.
 | **Two environments, one per distribution: `pypi-db-scheduler` for the first upload, holding the required reviewer (the maintainer's account, `unikzforce`, self-review allowed), and `pypi` for the second, with none** (the user chose this over a second workflow file) | PyPI accepts one pending publisher per repository, workflow and environment, so two new projects could not share `pypi` - it refused the second; two jobs in one file keep the order and one approval per release | one environment and a two-step first release; or two workflow files, with no order between them and two approvals |
 | **`__version__` moves with the two pyproject versions** | it said `0.1.0.dev0` too; the release workflow checks only the three in the pyprojects | leave it to drift |
 | **The scheduler port's live-execution test gets a 1.2s dead-threshold (300ms heartbeat x 4) instead of 400ms, and a 6s task** | on GitHub's runner against MySQL 8.4 the machine stalled past 400ms and the hunter took the execution over, as it should; the test is about the heartbeat, not the machine. Locally every database passes either way | keep 400ms and accept the odd red run |
+
+## Draculas 72 and 73 matched to Java (EKB-0575-)
+
+The brief (the user, 2026-10-29): of the 33 low Draculas, do #72 and #73 - a retry delay that is a
+duration, as Java's, and a missing handler that is a failed attempt, as Java's.
+
+| decision | why | the other way |
+| --- | --- | --- |
+| **`RetryConfig.delay` is a `timedelta`, and `max_retries` and `delay` are required**, as Java's `new RetryConfig(maxRetries, Duration)` | a bare number was seconds here, while the event settings beside it take a `timedelta`; a hand used to `Duration.ofMillis(100)` would write 100 and wait a hundred seconds | keep a float, or accept both |
+| **A number for `delay` is refused with a `TypeError`** naming `timedelta(milliseconds=100)`, not converted | the unit a number meant is exactly what is unknown; refusing says so where the mistake is | read a number as seconds, as before |
+| **`on` keeps its default, `StaleRecordError`** | it is the recorded divergence - Java gives the class to `withRetry(Class, RetryConfig)` - and the user's brief named the two values | make `on` required too |
+| **Breaking for 0.1.0 callers** | the package is 0.x and two days old; later only costs more | wait for 1.0 |
+| **A row whose handler is gone raises Java's `No handler registered with name: X (event Y)` inside the delivery**, as an `EkbatanError`, the port's stand-in for Java's `IllegalStateException` | the ordinary failure path then does what Java's does: the attempt counts, the wait doubles from 30 s, the row expires after the retention window, and logs and metrics say "failed" | the deferral it replaces: pending, uncounted, retried every 30 s |
+| **The deferred outcome and `defer_pending_bucket` are removed**, with the repository test for them | nothing else used them | keep them unused |
+| **The events guide, both copies, says what happens without an alias**: every attempt fails until the window passes | it said the rows "sit in PENDING" and that nothing logs, which was not true before either - the port logged a warning every 30 s | - |

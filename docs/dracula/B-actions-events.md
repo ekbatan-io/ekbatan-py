@@ -161,7 +161,8 @@ sides. Ordered by surprise, highest first.
 - **Could match Java?** partly. An abstract base class would give a clearer error, but class attributes are still how it reads in Python.
 - **Surprise:** low
 
-### Retry delays are float seconds, and `RetryConfig()` with no arguments means something
+### Retry delays are float seconds, and `RetryConfig()` with no arguments means something - matched (2026-10-29)
+- **Matched (`EKB-0575`, the user's decision 2026-10-29):** `max_retries` and `delay` are required and `delay` is a `timedelta`, as Java's `new RetryConfig(maxRetries, Duration)`; the default is Java's, one retry on `StaleRecordError` after `timedelta(milliseconds=100)`. A number for `delay` is refused with a `TypeError` rather than read as seconds. `on` on the config stays, the recorded divergence.
 - **What:** `RetryConfig(on=StaleRecordError, max_retries=1, delay=0.1)`. The delay is a float
   number of seconds, while the event config next to it uses `timedelta`. Every argument has a
   default, so `RetryConfig()` is "one retry on a stale record after 100 ms". The exception class
@@ -173,7 +174,8 @@ sides. Ordered by surprise, highest first.
 - **Could match Java?** yes. `delay: timedelta` and no defaults would match. `on` on the config is the recorded divergence.
 - **Surprise:** low
 
-### A missing handler is not counted as a failed attempt
+### A missing handler is not counted as a failed attempt - matched (2026-10-29)
+- **Matched (`EKB-0576`, the user's decision 2026-10-29):** the delivery raises Java's `No handler registered with name: X (event Y)`, so the row takes the ordinary failure path - attempt counted, the wait doubling from 30 s, expiry after the retention window - and the logs and metrics say "failed". The deferred outcome and `defer_pending_bucket` are gone. Proven red then green by `test_a_row_whose_handler_is_gone_is_a_failed_attempt_as_in_java`, sync and async handlers. A renamed handler with its old name in `aliases()` is not affected.
 - **What:** when a queued row names a handler that is no longer registered, Python leaves it
   pending, does not count an attempt, and looks again after a backoff. Java treats it as a
   delivery failure (attempts go up, it retries, then it expires). Both expire after the retention
