@@ -137,7 +137,7 @@ first runs and closed with the dispatch.
 ### Renaming a handler safely
 
 It is the durable subscription id written on every notification row. Rename the class freely;
-rename `name()` and the queued rows under the old one become invisible to the handler and sit until
+rename `name()` and the queued rows under the old one match no handler: every attempt fails, until
 they expire.
 
 The way through is `aliases()`:
@@ -179,11 +179,11 @@ Two rules make the rename safe, and they are not symmetrical:
 That asymmetry is what makes the rename a one-way door you can walk through slowly. New work
 uses the new identity immediately; old work finishes under the old one.
 
-**What breaks without an alias** is worth stating plainly, because it fails quietly: rows under
-the old name match no handler at all. They are not errors and they are not retried — they simply
-sit in `PENDING` until the expiry sweep marks them `EXPIRED`, and the side effects they were
-going to cause never happen. Nothing logs an exception, because from the dispatcher's point of
-view there is no handler that wants them.
+**What breaks without an alias** is worth stating plainly: rows under the old name match no
+handler at all. Each attempt fails with `No handler registered with name: <old name>` - logged as
+a warning, the attempt counted, the wait before the next one doubling, as any failure's - until
+the retention window passes and they are marked `EXPIRED`. The side effects they were going to
+cause never happen.
 
 Drop the alias once no non-terminal rows remain under the old name:
 

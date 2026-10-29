@@ -29,7 +29,7 @@ and `python.out` (sorted `PROBE` lines). The Probe column below gives the `PROBE
 | 11 | Backoff after each failure; nothing runs one second early | 30, 60, 120, 240, 300, 300 s (cap 5 min) | same | same | `b.step*` |
 | 12 | Handler throws an ordinary exception | `FAILED`, attempts 1, +30 s | same | same | `e.round1.fail` |
 | 13 | Handler throws an `Error` (Java) / a `BaseException` (Python); a sibling's success is still recorded | `FAILED`, sibling `SUCCEEDED` | same | same | `e.round1.error`, `e.round1.ok` |
-| 14 | Row whose handler is no longer registered | `FAILED`, attempts 1, 2, 3; backoff grows | `PENDING`, attempts 0; retry every 30 s | differs | `e.round*.ghost` |
+| 14 | Row whose handler is no longer registered | `FAILED`, attempts 1, 2, 3; backoff grows | `FAILED`, attempts 1, 2, 3; backoff grows (before `EKB-0576`: `PENDING`, attempts 0, retried every 30 s) | matched (`EKB-0576`) | `e.round*.ghost` |
 | 15 | Rows queued under an old name are drained by the handler that lists it as an alias; new rows use the new name | yes | yes | same | `e.alias.*` |
 | 16 | Row exactly at `event_date + retention` when claimed | handler called, `SUCCEEDED` | `EXPIRED`, handler not called | differs | `x.boundary.exact` |
 | 17 | Row past the retention window when claimed | `EXPIRED`, attempts unchanged, handler not called | same | same | `x.boundary.one_second_older` |
@@ -128,7 +128,8 @@ Most surprising first.
 - **Match Java?** yes, one character.
 - **Surprise:** low
 
-### 14. A missing handler is not a failed attempt (known: Dracula 73)
+### 14. A missing handler is not a failed attempt (known: Dracula 73) - matched (`EKB-0576`)
+- **Matched:** Python now raises Java's message inside the delivery, so it is FAILED with attempts 1, 2, 3 and a growing backoff, as Java's twin run showed.
 - **What:** Java counts it as a failure (attempts go up, backoff grows, it expires the usual way).
   Python leaves it `PENDING` with attempts 0, so the backoff stays at 30 s for good.
 - **Java:** `job/EventHandlingJob.java:441`

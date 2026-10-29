@@ -28,6 +28,7 @@ from .._logtext import java_duration
 from .._metrics import counter, histogram
 from ..clock import Clock, SystemClock
 from ..domain import ModelEvent
+from ..errors import EkbatanError
 from ..persistence import DatabaseRegistry
 from ..sharding import ShardIdentifier
 from ..time import Instant
@@ -77,16 +78,12 @@ _DISCARD_REASONS = {
     EXPIRED_PREFLIGHT: "was already past the retention window when it was claimed",
     EXPIRED_POST_FAILURE: "exhausted the retention window after repeated handler failures",
 }
-#: No handler is registered under the row's name any more.
-DEFERRED = "deferred"
-
-#: The order the outcome buckets are written in - Java's, with this port's own `DEFERRED` last.
+#: The order the outcome buckets are written in - Java's.
 _WRITE_ORDER = {
     EXPIRED_PREFLIGHT: 0,
     SUCCEEDED: 1,
     EXPIRED_POST_FAILURE: 2,
     FAILED: 3,
-    DEFERRED: 4,
 }
 
 
@@ -233,8 +230,6 @@ class EventDispatch:
                 repository.mark_expired_all_post_failure(ids, now, shard)
             elif kind == FAILED:
                 repository.mark_failed_bucket(ids, now + delay, now, shard)  # type: ignore[operator]
-            else:
-                repository.defer_pending_bucket(ids, now + delay, now, shard)  # type: ignore[operator]
         return len(outcomes)
 
     def _deliver(self, row: EventNotification) -> _Outcome:
@@ -249,18 +244,17 @@ class EventDispatch:
             HANDLED.add(1, {"outcome": "expired_preflight", "handler": row.handler_name})
             return _Outcome(row.id, EXPIRED_PREFLIGHT, None, row)
 
-        handler = self._handlers.by_name(row.handler_name)
-        if handler is None:
-            # Nobody is listening under that name any more. Left pending rather than expired:
-            # a handler removed by a bad deploy comes back, and its queue should still be there.
-            LOG.warning(
-                "no handler named %r is registered; leaving its notifications alone",
-                row.handler_name,
-            )
-            return _Outcome(row.id, DEFERRED, backoff(attempts, self._max_backoff))
-
         started = time.monotonic()
         try:
+            handler = self._handlers.by_name(row.handler_name)
+            if handler is None:
+                # Nothing answers to the row's name any more - the handler was deleted, or
+                # renamed without its old name in `aliases()`. Java throws this inside the
+                # delivery, so it is an ordinary failure: the attempt counts, the wait doubles,
+                # and the row expires the usual way. Its queue is still there until then.
+                raise EkbatanError(
+                    f"No handler registered with name: {row.handler_name} (event {row.event_id})"
+                )
             envelope = self._envelope(handler, row, attempts)
             if isinstance(handler, AsyncEventHandler):
                 # Run on the handler loop while this thread waits, so the outcome below is

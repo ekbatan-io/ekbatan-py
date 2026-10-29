@@ -182,27 +182,6 @@ class EventNotificationRepository(_ShardRepository):
         """Expired after a failed call, which counts as an attempt."""
         self._mark(ids, shard, state=EventNotificationState.EXPIRED, attempt=True, now=now)
 
-    def defer_pending_bucket(
-        self,
-        ids: Collection[uuid.UUID],
-        next_retry_at: Instant,
-        now: Instant,
-        shard: ShardIdentifier,
-    ) -> None:
-        """Leave pending, not attempted, until ``next_retry_at``.
-
-        Not Java's: this is how this port treats a notification whose handler is no longer
-        registered, where Java counts the missing handler as a failed attempt.
-        """
-        self._mark(
-            ids,
-            shard,
-            state=EventNotificationState.PENDING,
-            attempt=False,
-            now=now,
-            next_retry_at=next_retry_at,
-        )
-
     def _mark(
         self,
         ids: Collection[uuid.UUID],

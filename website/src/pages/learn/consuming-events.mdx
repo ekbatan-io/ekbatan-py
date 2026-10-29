@@ -197,8 +197,8 @@ and writes three methods. No decorator and no annotation.
 
 #### `name()` is schema
 
-Rename the class freely. Rename `name()` and the queued rows under the old one become invisible to
-the handler and sit there until they expire. The way through is `aliases()`:
+Rename the class freely. Rename `name()` and the queued rows under the old one match no handler:
+every attempt fails, until they expire. The way through is `aliases()`:
 
 ```python
 class MoneyDepositedWelcomeHandler(EventHandler[WalletMoneyDepositedEvent]):

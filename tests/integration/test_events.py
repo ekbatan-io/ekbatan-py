@@ -768,3 +768,59 @@ def test_a_failed_outcome_write_keeps_the_outcomes_already_written(
 
     dispatch.drain_once()
     assert ok.calls == 1, "a handler that had already succeeded was called again"
+
+
+def test_a_row_whose_handler_is_gone_is_a_failed_attempt_as_in_java(
+    executor, wallet_repository, pipeline, registry, clock, caplog
+):
+    """A queued row names a handler nothing answers to any more - deleted, or renamed without
+    its old name in `aliases()`. Java throws "No handler registered with name" inside the
+    delivery, so it is an ordinary failure: the attempt counts, the wait doubles, and the row
+    expires the usual way. Measured on Java (behaviour parity D, row 14): FAILED, attempts 1, 2,
+    3, and the backoff grows."""
+    import logging
+
+    from sqlalchemy import select
+
+    from fixtures.schema import EVENT_NOTIFICATIONS
+
+    fanout, _ = pipeline(succeeding("ghost"))
+    wallet = a_wallet(executor)
+    deposit(executor, wallet_repository, wallet)
+    fanout.drain_once()
+
+    # The next deploy has no handler by that name; another one still handles the event type,
+    # so the row is claimed.
+    _, dispatch = pipeline(succeeding("survivor"))
+    caplog.set_level(logging.WARNING, logger="io.ekbatan.events.localeventhandler.job")
+
+    def the_ghost_row() -> tuple[str, int, timedelta]:
+        for shard in registry.shards:
+            with registry.manager(shard).connection(readonly=True) as conn:
+                row = conn.execute(
+                    select(
+                        EVENT_NOTIFICATIONS.c.state,
+                        EVENT_NOTIFICATIONS.c.attempts,
+                        EVENT_NOTIFICATIONS.c.next_retry_at,
+                    ).where(EVENT_NOTIFICATIONS.c.handler_name == "ghost")
+                ).one_or_none()
+            if row is not None:
+                return row.state, row.attempts, row.next_retry_at - clock.instant()
+        raise AssertionError("no row for the ghost handler")
+
+    seen = []
+    dispatch.drain_once()
+    seen.append(the_ghost_row())
+    clock.advance(timedelta(seconds=31))
+    dispatch.drain_once()
+    seen.append(the_ghost_row())
+    clock.advance(timedelta(seconds=61))
+    dispatch.drain_once()
+    seen.append(the_ghost_row())
+
+    assert seen == [
+        ("FAILED", 1, timedelta(seconds=30)),
+        ("FAILED", 2, timedelta(seconds=60)),
+        ("FAILED", 3, timedelta(seconds=120)),
+    ], "counted as a failed attempt, with the wait doubling, as Java's"
+    assert "No handler registered with name: ghost (event " in caplog.text, caplog.text

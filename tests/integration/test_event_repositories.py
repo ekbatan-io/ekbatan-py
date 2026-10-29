@@ -210,21 +210,6 @@ def test_expiry_before_the_call_is_not_an_attempt_and_after_a_failure_is(
     assert stored(registry, post_failure).state is EventNotificationState.EXPIRED
 
 
-def test_deferring_leaves_it_pending_and_unattempted(registry, event_notification_repository):
-    notification = a_notification(attempts=1)
-    event_notification_repository.add_all_no_result([notification], DEFAULT_SHARD)
-    retry = NOW + timedelta(minutes=1)
-
-    event_notification_repository.defer_pending_bucket([notification.id], retry, NOW, DEFAULT_SHARD)
-
-    after = stored(registry, notification)
-    assert (after.state, after.attempts, after.next_retry_at) == (
-        EventNotificationState.PENDING,
-        1,
-        retry,
-    )
-
-
 def test_marking_nothing_touches_nothing(event_notification_repository):
     event_notification_repository.mark_succeeded_all([], NOW, DEFAULT_SHARD)
     event_notification_repository.mark_failed_bucket([], NOW, NOW, DEFAULT_SHARD)
