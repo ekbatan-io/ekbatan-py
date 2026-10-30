@@ -95,6 +95,10 @@ class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
     ...
 ```
 
+The three names in the brackets are the wallet's id type, the enum of states a wallet can be in,
+and the builder that `copy()` hands back. [Models and entities](/learn/models-and-entities/)
+covers each one.
+
 The event is not a Kafka message. It is a domain fact: "money was deposited into this wallet."
 
 The event is created next to the state change, inside the domain model, before any code
@@ -131,6 +135,9 @@ class WalletDepositMoneyAction(AsyncAction["WalletDepositMoneyAction.Params", Wa
 </div>
 </ModeTabs>
 
+`principal` is whoever is acting - a user id, say, or `None` - and `params` is what the caller
+passed in. `wallet_id` is a typed id; its `.value` is the plain UUID inside it.
+
 Each sample comes in two modes: the sync API, and `ekbatan.aio`, where database calls are
 awaited. [Sync or async?](/learn/sync-or-async/) helps you choose.
 
@@ -141,10 +148,8 @@ The important part is what does **not** happen here:
 - no broker publish
 - no second write to remember
 
-`perform()` declares intent. It builds the next state and stages it.
-
-`perform()` describes the state change. The executor persists the staged objects and events
-atomically.
+`perform()` only declares what should change: it builds the next state and stages it. The
+executor then saves the staged objects and their events together, in one transaction.
 
 For the full lifecycle, read [Actions](/learn/actions/).
 

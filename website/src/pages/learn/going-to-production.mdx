@@ -13,9 +13,8 @@ CPython has no lightweight threads: every thread is an operating-system thread, 
 Python code at a time. So how the framework uses threads, and how your server calls it, are worth
 a few minutes. If you read one thing on this page, read this.
 
-**The sync API blocks.** Under a threaded server that is exactly right — a blocking
-call holds one worker thread and the GIL is released for the duration of the I/O, so other
-threads keep running while it waits.
+**The sync API blocks.** Under a threaded server that is exactly right: a blocking call holds one
+worker thread, and Python lets the other threads run while it waits on the database.
 
 Under **asyncio** it is not, because a blocking call there stops the entire event loop rather
 than one thread.
@@ -25,7 +24,7 @@ than one thread.
 wallet = wallet_repository.get_by_id(wallet_id)
 
 # right, with the sync API
-wallet = await run_in_threadpool(wallet_repository.get, wallet_id)
+wallet = await run_in_threadpool(wallet_repository.get_by_id, wallet_id)
 
 # right, with ekbatan.aio: an async repository, awaited
 wallet = await wallet_repository.get_by_id(wallet_id)
@@ -41,20 +40,16 @@ open requests at the server too (`uvicorn --limit-concurrency`).
 
 Three parts of the framework use threads of their own:
 
-- **fan-out across shards** — a round drains every shard at once, one thread each. Eight
-  shards: 354 ms to 48 ms;
-- **dispatch** — a batch's handlers run at once, one thread each, per shard. A hundred
-  notifications at 20 ms apiece: 2376 ms to 28 ms. **Your handlers therefore run concurrently**,
-  so write them to be safe alongside each other. Outcomes are written one `UPDATE` per bucket, so
-  a batch of 100 is 1 statement when they all succeed and 4 on a realistic mix;
-- **the keyed-lock watchdog** — one thread holding a heap of deadlines, in place of a thread per
-  hold. A thousand held locks: 1 thread rather than 1000, and 6 ms late rather than 48.
+- **fan-out across shards** — each round reads every shard at once, one thread per shard;
+- **dispatch** — the handlers of a batch run at once, one thread each. **So your handlers run at
+  the same time as each other**: write them to be safe alongside each other;
+- **the keyed-lock watchdog** — a single thread watches every held lock, however many there are.
 
-**And one place the gap closes entirely.** Under `gevent.monkey.patch_all()` a blocking call
-costs nothing — every one of them yields to other work, which the `asyncio` answer cannot
-manage. The framework needs no code for it: the suite passes patched,
-631 against 631, and a CI job keeps that true. The catch is that gevent serves **WSGI**, so
-Flask and Django can have it and FastAPI cannot — and every example here is FastAPI. See
+**And one place the gap closes entirely.** Under `gevent.monkey.patch_all()` a blocking call costs
+nothing: every one of them lets other work run while it waits. The framework needs no code for
+it, and CI runs the whole test suite under gevent to keep it that way. The catch is that gevent
+serves **WSGI** apps, so Flask and Django can use it and FastAPI cannot - and every example here
+is FastAPI. See
 [Concurrency](/reference/runtime/concurrency/).
 
 ## Pools live in processes
@@ -90,8 +85,8 @@ It also records a checksum of every applied migration in `ekbatan_schema_history
 run when an applied file has been edited, renamed or deleted, so the files and the database never
 disagree with nothing to say so. Each database is locked while it is migrated - a lock the database
 drops if the migrating process dies - so replicas starting together cannot run a migration twice,
-and a replica or read-only server is refused rather than migrated. Migrate over a direct
-connection to each primary: session locks do not survive PgBouncer in transaction mode.
+and a replica or read-only server is refused rather than migrated. Migrate over a direct connection to each primary: PgBouncer, a connection pooler, drops the
+session lock a migration relies on when it runs in transaction mode.
 
 ## What to alert on
 
@@ -112,7 +107,7 @@ once the events are gone.
 ## Two things to know before you deploy
 
 **Running jobs finish on SIGTERM - by default.** A started `JobRegistry` lets its running jobs
-finish on any normal exit, on Ctrl-C, and on SIGTERM - a container stop - as Java's does. Under
+finish on any normal exit, on Ctrl-C, and on SIGTERM - what a container stop sends. Under
 uvicorn or gunicorn the server has SIGTERM: it turns it into a lifespan shutdown, and the
 lifespan calls `jobs.stop()`, as the examples do. A **standalone worker** has no server, so the
 registry catches SIGTERM itself. Where it cannot - the hook turned off, or the registry started
@@ -120,9 +115,9 @@ off the main thread - it logs one warning when it starts: its running jobs would
 their rows would wait out the dead-execution window, 60 seconds on framework defaults, before
 another instance picks them up. [Details](/reference/jobs/distributed-jobs/).
 
-**No connection-pool leak detection.** Nothing warns you about a connection that is checked
-out and never returned. A simple detector would be worse than nothing — a handler raising on
-check-in *strands* the connection, so the detector would cause the leak it looks for.
+**No connection-pool leak detection.** Nothing warns you about a connection that is taken from a
+pool and never given back. A detector that raised when the connection came back would lose the
+connection itself, so there is none.
 
 **And one thing that is not a gap in the code:** this framework has never run in production.
 The suite passes on four dialects — but a passing suite is not *proven under load*.

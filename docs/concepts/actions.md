@@ -42,8 +42,8 @@ and refusing costs nothing because nothing has been written.
 **A retry is cheap and correct.** When a version check fails, phase 2 rolls back and the executor
 re-runs phase 1 from the top with a **fresh plan** — re-reading the row it lost the race on, so
 the second attempt is computed from the winner's state rather than patched onto the loser's.
-An action that only reads, computes and stages is safe to re-run by construction; one that
-posted to an external API in `perform()` is not, which is the real reason for the rule.
+An action that only reads, computes and stages is safe to re-run. One that called an external
+API inside `perform()` is not - which is the real reason to keep `perform()` free of side effects.
 
 **Sharding stays out of the action.** The grouping step is in phase 2, so `perform()` stages
 objects without knowing which database each one lands on. The same action body works on one
@@ -163,10 +163,9 @@ happen on the thread that entered it. If the action fans work out to a pool to g
 **join the children first and only then stage from the thread that invoked `perform()`.** In
 async mode the same rule holds for tasks: gather the reads, then stage from `perform()` itself.
 
-The GIL is not the reprieve it looks like. A single dict assignment is atomic; the staging path
-is not — it checks whether the id is already staged, stamps the row, and then assigns, and two
-threads can both pass the check. The failure is a lost write with a correct-looking traceback,
-which is exactly the kind you find in production rather than in a test.
+Python's GIL does not make this safe. Staging checks whether the id is already staged, stamps the
+row, and then stores it, and two threads can both pass the check. The result is a lost write,
+with no error when it happens - the kind of bug you find in production rather than in a test.
 
 ## No nested actions inside `perform()`
 
@@ -212,11 +211,10 @@ work whose side effects are not safe to repeat.
 
 Three details worth knowing:
 
-**`max_retries` counts retries, not attempts.** `max_retries=1` runs the action twice. It is
-named for what it counts because `attempts=1` running twice is the sort of thing nobody catches
-in review and everybody hits in production.
+**`max_retries` counts retries, not attempts.** `max_retries=1` runs the action twice.
 
-**Matching looks through the cause chain,** so a driver wrapping a conflict is still recognised.
+**A wrapped error still matches.** If a driver wraps the conflict in an error of its own, the
+retry still recognises it.
 It follows `__cause__` - what `raise ... from err` sets - and nothing else. An error raised
 inside an `except` block *without* `from` is not followed: Python records that link as
 `__context__` on its own, whether or not anyone meant the two errors to be related.
@@ -262,7 +260,7 @@ the full context.
 
 Treat it as an escape hatch. The default refusal is the point: once two databases are involved,
 all-or-nothing is not available, and a partial commit is the [dual-write
-trap](the-dual-write-trap.md) wearing a different hat. If a partial commit would need
+trap](the-dual-write-trap.md) again, in another form. If a partial commit would need
 compensating, model the work as a [saga](sagas.md) instead.
 
 ## See also

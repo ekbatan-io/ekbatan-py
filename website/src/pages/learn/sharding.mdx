@@ -26,8 +26,8 @@ class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
     balance: Decimal
 ```
 
-`ShardedId` rather than `Id`. The `(group, member)` pair is packed into 14 bits of the UUID
-itself, inside the `rand_b` field of a UUIDv7:
+`ShardedId` rather than `Id`. The shard - a `(group, member)` pair - is packed into 14 bits of the
+id itself, a version 7 UUID:
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
@@ -67,11 +67,11 @@ class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, UUID]):
 </div>
 </ModeTabs>
 
-One argument. That is step four of four.
+One argument.
 
 ## 2. Pick the shard at creation
 
-The shard is bonded to the row for its lifetime, so it is chosen once, at creation. The model's
+A row keeps its shard for its whole life, so the shard is chosen once, when the row is created. The model's
 factory takes a `ShardIdentifier` and hands it to `generate`:
 
 ```python
@@ -148,8 +148,8 @@ GLOBAL_SHARD = ShardIdentifier(0, 0)      # prints as "0:0"
 MEXICO_SHARD = ShardIdentifier(1, 0)
 ```
 
-A `(group, member)` pair. Group is the **policy** axis - where data is *allowed* to live. Member
-is the **capacity** axis - how many writes one database can take. See
+A `(group, member)` pair. The group says *where data is allowed to live* - a country, say. The
+member says *which of the databases sharing that group's load* holds it. See
 [sharding strategies](/learn/sharding-strategies/) for why those are separate.
 
 ```python
@@ -173,18 +173,18 @@ configuration order, stopping at the first failure and naming what had already s
 
 ## 4. Spin up the second database
 
-Two databases, not two schemas in one — the point is separate capacity, and a second schema
-shares the first one's connections, WAL and CPU.
+Two databases, not two schemas in one — the point is separate capacity, and a second schema shares
+the first one's connections, disk and CPU. The example's `compose.yaml`:
 
 ```yaml
 services:
-  wallets-global:
-    image: postgres:17
-    environment: { POSTGRES_DB: wallet_repository, POSTGRES_PASSWORD: dev }
+  postgres-global:
+    image: postgres:17-alpine
+    environment: { POSTGRES_USER: ekbatan, POSTGRES_PASSWORD: ekbatan, POSTGRES_DB: wallet_global, TZ: UTC }
     ports: ["5432:5432"]
-  wallets-mexico:
-    image: postgres:17
-    environment: { POSTGRES_DB: wallet_repository, POSTGRES_PASSWORD: dev }
+  postgres-mexico:
+    image: postgres:17-alpine
+    environment: { POSTGRES_USER: ekbatan, POSTGRES_PASSWORD: ekbatan, POSTGRES_DB: wallet_mexico, TZ: UTC }
     ports: ["5433:5432"]
 ```
 
@@ -224,9 +224,9 @@ print(mx.id.shard)          # 1:0 - the bits are in the id
 The row is only on that database, and so is its event:
 
 ```bash
-psql -p 5433 wallets -c "SELECT count(*) FROM wallets"   # 1
-psql -p 5432 wallets -c "SELECT count(*) FROM wallets"   # 0
-psql -p 5433 wallets -c "SELECT count(*) FROM eventlog.events"    # 1
+psql -h localhost -p 5433 -U ekbatan wallet_mexico -c "SELECT count(*) FROM wallets"          # 1
+psql -h localhost -p 5432 -U ekbatan wallet_global -c "SELECT count(*) FROM wallets"          # 0
+psql -h localhost -p 5433 -U ekbatan wallet_mexico -c "SELECT count(*) FROM eventlog.events"  # 1
 ```
 
 `wallet_repository.get_by_id(mx.id.value)` finds it with no lookup table and no extra query: the shard was read out of
@@ -299,13 +299,14 @@ taken.
 
 ## What just happened
 
-- `wallet_repository.get_by_id(wallet_id)` — routes by the id's bits.
-- `wallet_repository.find_all_where(...)` — has no id to route by, so it **scatters** across every shard.
-- Every action body. Every endpoint. Every test that does not assert on placement.
+- `wallet_repository.get_by_id(wallet_id)` finds the database from the id's bits.
+- `wallet_repository.find_all_where(...)` has no id to read, so it **asks every shard**.
+- Nothing else changed: not an action, not an endpoint, not a test that does not check where a
+  row was placed.
 
-**A predicate read hits every shard.** In sync mode the shards are visited one at a time, so
-latency is the sum - invisible on two shards, the first thing you would feel on eight. In async
-mode they are asked at the same time, so it is the slowest shard.
+**A search by anything but the id asks every shard.** In sync mode the shards are asked one at a
+time, so the wait is the sum of them - unnoticeable on two shards, the first thing you would feel
+on eight. In async mode they are asked at the same time, so the wait is the slowest shard.
 
 **A cross-shard action is refused** unless you pass `allow_cross_shard=True`, and then each shard
 commits independently. If a partial commit would need compensating, you want a
@@ -323,8 +324,7 @@ and what sharding does not solve.
 - [Sharding strategies](/learn/sharding-strategies/) — policy and capacity, and which strategy
   answers which
 - [Sagas](/learn/sagas/) — the workflow that survives a partial commit
-- Reference: [Sharding concepts](/reference/sharding/),
-  [Sharding configuration](/reference/sharding/),
+- Reference: [Sharding](/reference/sharding/),
   [Migrations](/reference/migrations/) — one call migrates every shard
 - [`ekbatan-py-examples/fastapi-wallet-rest-uv-sharded-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-sharded-pg) (sync) and [`ekbatan-py-examples/fastapi-wallet-rest-uv-async-sharded-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-async-sharded-pg) (async)
   — two databases, running, with tests that assert placement

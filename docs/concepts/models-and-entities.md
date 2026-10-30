@@ -247,7 +247,7 @@ clock and equals the value read back from any database.
 write. Move it on the changes where it means something:
 
 ```python
-def deposit(self, amount: Decimal, at: datetime) -> Wallet:
+def deposit(self, amount: Decimal, at: Instant) -> Wallet:
     return (
         self.copy()
         .with_event(WalletMoneyDepositedEvent(model_id=str(self.id), amount=amount, new_balance=self.balance + amount))
@@ -462,10 +462,10 @@ caught by a type checker — the base resolves setters through `__getattr__`, wh
 name — and `build()` fails at runtime only if the new field is *required*, taking the default
 silently if it is not.
 
-So check it rather than remember it. This repository's `scripts/check-builders.py` does — it
-regenerates into memory, compares, and fails `make lint` on a builder that is missing or behind
-its model; a project of your own can run the generator the same way in CI. A builder without the generator's header is taken as hand-written, and only its
-existence is checked.
+So check it rather than remember it: run the generator in CI, compare its output with the
+committed file, and fail on a difference - a builder that is missing or behind its model. A
+builder without the generator's header line counts as hand-written, and only its existence is
+checked.
 
 **A model must name a typed builder**, on its class line:
 

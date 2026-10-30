@@ -1,5 +1,21 @@
 # Startup and shutdown
 
+## The short version
+
+- Three objects hold database connections or background threads: the **database registry**, the
+  **job registry** (if you have event handlers or scheduled jobs), and the **lock provider** (if
+  you use keyed locks).
+- Create them when your app **starts** - in the FastAPI lifespan, or at the top of your own
+  `main()` - never at import time.
+- Close them when it **stops**: the job registry first, then the lock provider, then the database
+  registry.
+- Set the job registry's `shutdown-max-wait` below the time your platform gives a stopping
+  program - Kubernetes gives 30 seconds - and write jobs that are safe to run twice.
+- With several workers or replicas, each has its own connection pools: count the connections
+  before the database does.
+
+The rest of this page explains each point, and gives the code for each kind of program.
+
 ## Why read this page
 
 Your app works on your laptop. Then it meets the real world, and one of these happens:
@@ -1120,8 +1136,7 @@ if __name__ == "__main__":
 [`job-worker-uv-async-pg`](../ekbatan-py-examples/job-worker-uv-async-pg) the async one - again
 with everything gathered into the example's own `Worker` class and `build()` function.
 
-The examples leave the `signal.signal(...)` line out, as Java's worker has no signal code: the
-job registry then catches SIGTERM itself - `register_shutdown_hook` is on by default - and lets
+The examples leave the `signal.signal(...)` line out. The job registry then catches SIGTERM itself - `register_shutdown_hook` is on by default - and lets
 its running jobs finish. After a SIGTERM the process ends as it would have, without the rest of
 the shutdown code - the connections are simply dropped. With the line in, as above, the registry
 leaves SIGTERM to it, and the `finally` runs. If nothing catches SIGTERM - the hook turned off, or
@@ -1173,7 +1188,7 @@ def read_wallet(wallet_id: str, request: Request):
 # 3. Keep async def, and send the sync call to a thread yourself.
 async def read_wallet(wallet_id: str, request: Request):
     wallet_repository = WalletRepository(request.app.state.registry)
-    return await asyncio.to_thread(wallet_repository.get, ...)
+    return await asyncio.to_thread(wallet_repository.get_by_id, ...)
 ```
 
 ### Using an object in a process it was copied into: `ForkedProcessError`

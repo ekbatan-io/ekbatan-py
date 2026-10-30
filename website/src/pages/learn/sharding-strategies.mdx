@@ -12,21 +12,21 @@ import ModeTabs from "../../components/ModeTabs.astro";
 
 ## Two reasons to shard, two axes
 
-Most sharding designs use one number for "which database does this row live on" and let it
-conflate everything. A `ShardIdentifier` is a `(group, member)` pair, and the two answer
+Most sharding designs use one number for "which database does this row live on", and make it
+answer two different questions at once. A `ShardIdentifier` is a `(group, member)` pair, and the two answer
 different questions:
 
-| axis | the question | cardinality driven by | range |
+| axis | the question | what decides how many | range |
 | --- | --- | --- | --- |
 | **group** (policy) | where is this data *allowed* to live? | data residency law, tenant isolation, business-domain separation. **You do not pick how many you have; the world picks** | 8 bits → 256 |
 | **member** (capacity) | how many writes per second can one database take? | capacity planning. You add members when one starts to fall over | 6 bits → 64 per group |
 
-The split matters because the two have completely different operational profiles. A new
-**group** — "we signed a bank that requires onshore data" — is a major event: new
-infrastructure, new region, new compliance posture, a separate failure domain. A new **member**
-is routine: same region, same VPC, same playbook, more compute.
+The split matters because the two have completely different operational profiles. A new **group** — "we signed a bank that requires its data to stay in the country" — is a major
+event: new infrastructure, a new region, new compliance rules, something that can fail on its
+own. A new **member** is routine: the same region, the same network, the same procedures, more
+machines.
 
-Conflating them into "shard #47" forces every routing decision through one lens. Routing for
+Folding both into one "shard #47" forces every routing decision through one lens. Routing for
 compliance is deterministic from the customer's properties; routing for capacity is whatever
 distributes load, usually a hash.
 
@@ -55,8 +55,8 @@ registry = AsyncDatabaseRegistry.from_config(ShardingConfig.single(url))
 </ModeTabs>
 
 Nothing opts in, and nothing costs anything: a repository with no strategy uses
-`NoShardingStrategy`, which resolves every key to the default shard. Its scatter accessors visit
-only that shard too, so a repository that opted out cannot wander onto a sibling's databases.
+`NoShardingStrategy`, which resolves every key to the default shard. Its searches across shards look only at that one too, so a repository without sharding never
+reads another repository's databases.
 
 > Use it until you have a write-throughput problem or a policy forcing data location — which is
 > almost everyone. Stay here as long as you can.
@@ -64,7 +64,7 @@ only that shard too, so a repository that opted out cannot wander onto a sibling
 ### Embedded-bits UUID (`EmbeddedBitsShardingStrategy`)
 
 The shard pair is encoded into the UUID itself, so the shard is recoverable from the id with no
-lookup and no extra column. Chosen at creation, and bonded to the row for its life.
+lookup and no extra column. It is chosen when the row is created, and stays with the row for its whole life.
 
 ```python
 
@@ -76,7 +76,7 @@ finds the matching database in the registry, and opens the transaction there. No
 a directory service, and no sticky session at the load balancer — the id is self-describing.
 
 The shard is chosen **at creation time**: your create action calls `ShardedId[Wallet].generate(shard)`,
-and from then on the id and its shard are bonded for the row's lifetime. Choosing it is your
+and from then on the id and its shard stay together for the row's whole life. Choosing it is your
 call — typically the create action maps something you already know (tenant, region, regulatory
 class) onto a shard.
 
@@ -168,7 +168,7 @@ pressure for free.
 ## What sharding doesn't solve
 
 - **Cross-shard transactions.** No framework can; that is a property of distributed systems.
-- **Scatter-gather latency.** A predicate across N members hits N databases. In sync mode they
+- **Searches across shards.** A search by anything but the id asks all N members. In sync mode they
   are visited one after another, so it is the sum; in async mode they are asked at the same
   time, so it is the slowest one.
 - **Hot shards.** If 80% of traffic targets one customer, that customer's shard is hot however
@@ -179,7 +179,7 @@ members in a group of its own is a separate technique, and the one that actually
 third bullet.
 
 If you are reaching for sharding to fix a *read latency* problem, it is probably the wrong tool:
-caching, read replicas and CQRS materialisations are the usual right answers, and none of them
+caching, read replicas and precomputed read tables are the usual right answers, and none of them
 costs you cross-shard transactions.
 
 <LearnPager current="sharding-strategies" />
@@ -188,6 +188,5 @@ costs you cross-shard transactions.
 
 - [Adding a shard](/learn/sharding/) — one database to two, step by step
 - [Sagas](/learn/sagas/) — what to write when the work genuinely spans shards
-- Reference: [Sharding concepts](/reference/sharding/),
-  [Sharding configuration](/reference/sharding/),
-  [Multiple dialects](/reference/multi-database/)
+- Reference: [Sharding](/reference/sharding/),
+  [Multiple databases](/reference/multi-database/)

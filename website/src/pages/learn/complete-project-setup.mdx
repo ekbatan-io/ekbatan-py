@@ -710,8 +710,8 @@ refused.
 <div data-db="pg mysql mariadb" data-mode="sync">
 
 **Two pools on one member.** `primaryConfig` is for requests. `jobsConfig` is the scheduler's,
-sized at least twice its worker count, because the scheduler heartbeats from a housekeeping
-thread and a job body holding the last connection starves it. `app.py` (step 13) builds it with
+sized at its worker count plus three, for the scheduler's own three loops - one of them the
+heartbeat that marks running jobs alive, which a job holding the last connection would starve. `app.py` (step 13) builds it with
 `DataSource.from_config` and closes it.
 
 </div>

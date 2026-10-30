@@ -54,11 +54,7 @@ ordinary optimistic-lock version check, even when the two wallets live on differ
 Compare [`allow_cross_shard=True`](../database/sharding.md#cross-shard-actions), which would make
 this one action across two transactions with no recovery when the second fails.
 
-A client sees `202` and polls `GET /transfers/{id}`. What that endpoint reads is worth knowing,
-because it is the honest answer to "where does a saga's state live": **there is no saga table and
-no coordinator to ask.** The markers each step writes *are* the state, and the endpoint derives
-`IN_FLIGHT`, `COMPLETED` or `REFUNDED` from which of them exist. That is what choreography means
-— and it is why adding a step needs no schema change.
+
 
 ## What a saga costs a client: 202, not 200
 
@@ -74,7 +70,10 @@ has arrived nowhere. A 200 would be a claim about something still in flight. Ret
 status URL is not politeness - it is the API telling the truth about what the database currently
 says, and it is how people avoid being surprised by a saga in production.
 
-The status endpoint reads the step markers, because that *is* the state.
+Where does the status endpoint get its answer? **There is no saga table and no coordinator to
+ask.** Each step writes a marker row, and the endpoint derives `IN_FLIGHT`, `COMPLETED` or
+`REFUNDED` from which markers exist. The markers *are* the state - which is also why adding a step
+needs no schema change.
 
 ## Forward-only compensation
 
@@ -178,8 +177,8 @@ Notice also what it reads: `envelope.event`, and nothing else. The event carries
 transfer, so the handler needs neither the producing action's parameters nor a second row nor any
 knowledge of where the other wallet lives.
 
-**There is no saga coordinator**, and that is the design rather than an omission. Each handler
-knows one thing: given *this* event, run *that* action. Adding a fourth step means writing a
+No coordinator, by design: each handler knows one thing - given *this* event, run *that*
+action. Adding a fourth step means writing a
 fifth event and a third handler, and changing nothing that already works. The trade is that
 no single file shows you the whole workflow — the outbox does, after the fact.
 
@@ -210,15 +209,10 @@ async def perform(self, principal: str | None, params: CompleteTransferParams) -
     ...
 ```
 
-A check-then-act has a window. This has none, because the database refuses the duplicate and
-takes the credit down with it.
+Checking first and writing after leaves a gap that a second delivery can slip through. Here there
+is none: the database refuses the duplicate marker, and the credit beside it rolls back with it.
 
-## Terminal failures are events, not exceptions
 
-If the destination wallet is closed, retrying will never help. `CompleteTransferAction` emits
-`TransferFailedEvent` and **returns normally**. Raising would make the handler retry a transfer
-into a closed wallet forever — and "failed" is a business outcome that deserves a durable row
-like any other.
 
 ## Design rules
 
@@ -231,10 +225,8 @@ action's parameters to know what to do next. Put the next step's identifiers and
 the event itself. Self-describing events are what make choreography possible — a handler that
 had to look things up would need to know where they are.
 
-**Make each step idempotent**, with a unique constraint rather than a check. Delivery is
-at-least-once everywhere, so a step runs twice sooner or later. The example stages a
-`TransferStep` keyed by `(transfer_id, step)` *before* the credit, inside the same transaction:
-a replay hits the constraint and the credit beside it rolls back with it.
+**Make each step safe to run twice**, with a unique constraint rather than a check, as above.
+Delivery is at-least-once everywhere, so a step runs twice sooner or later.
 
 **Record terminal business failures as events, not exceptions.** A closed destination wallet
 will still be closed on the next attempt, so retrying forever does not help. The example writes

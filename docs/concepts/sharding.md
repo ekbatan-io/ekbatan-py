@@ -6,21 +6,21 @@ stay sharding-agnostic; routing happens at the edges.
 
 ## Two reasons to shard, two axes
 
-Most sharding designs use one number for "which database does this row live on" and let it
-conflate everything. A `ShardIdentifier` here is a `(group, member)` pair, and the two answer
+Most sharding designs use one number for "which database does this row live on", and make it
+answer two different questions at once. A `ShardIdentifier` here is a `(group, member)` pair, and the two answer
 different questions:
 
-| axis | the question | cardinality driven by | range |
+| axis | the question | what decides how many | range |
 | --- | --- | --- | --- |
 | **group** (policy) | where is this data *allowed* to live? | data residency law, contractual tenant isolation, business-domain separation. You do not pick how many you have; the world picks | 8 bits → 256 groups |
 | **member** (capacity) | how many writes per second can one database take? | capacity planning. You add members when one database starts to fall over | 6 bits → 64 members per group |
 
-The split matters because the two have completely different operational profiles. A new **group**
-- "we signed a bank that requires onshore data" - is a major event: new infrastructure, new
-region, new compliance posture, a separate failure domain. A new **member** is routine: same
-region, same VPC, same playbook, more compute.
+The split matters because the two have completely different operational profiles. A new **group** - "we signed a bank that requires its data to stay in the country" - is a major
+event: new infrastructure, a new region, new compliance rules, something that can fail on its
+own. A new **member** is routine: the same region, the same network, the same procedures, more
+machines.
 
-Conflating them into "shard #47" forces every routing decision through one lens. Routing for
+Folding both into one "shard #47" forces every routing decision through one lens. Routing for
 compliance is deterministic from the customer's properties; routing for capacity is whatever
 distributes load, usually a hash. Different concerns, different logic, different change cadences.
 
@@ -56,7 +56,7 @@ database, opens the transaction. No directory service, no sticky sessions at the
 The id describes itself.
 
 The shard is chosen **at creation**: `ShardedId[Wallet].generate(shard)`, and from then on the id and its
-shard are bonded for the row's life. Choosing it is your call - typically a small selector
+shard stay together for the row's whole life. Choosing it is your call - typically a small selector
 mapping tenant, region or regulatory class to a shard, inside the create action.
 
 The layout is fixed - the same bits, in the same places - so every service reading the id agrees
@@ -126,9 +126,9 @@ The good news is that most actions never need it. Routing customers to the same 
 wallets, and orders to the same shard as their customer, removes most cross-shard pressure for
 free.
 
-## Scatter reads: one shard at a time in sync mode
+## Searches across shards: one shard at a time in sync mode
 
-A predicate read across N shards visits them **one at a time** in sync mode: on eight shards it
+A search by anything but the id, across N shards, visits them **one at a time** in sync mode: on eight shards it
 takes eight round trips' time rather than one. In async mode the inherited reads ask every shard
 at the same time. The event fan-out drains every shard at once in both modes.
 
@@ -138,9 +138,9 @@ It is a write-throughput-and-policy tool. It does not:
 
 - **give you cross-shard transactions** - no framework can; that is a property of distributed
   systems, not of this one;
-- **speed up scatter-gather reads** - a predicate across N members hits N databases, and the
-  latency is the max, not the mean (in sync mode they are visited one after another, so it is
-  the sum);
+- **speed up searches across shards** - a search by anything but the id asks all N members,
+  and the wait is the slowest one (in sync mode they are asked one after another, so it is the
+  sum);
 - **remove hot shards** - if 80% of traffic targets one customer, that customer's shard is hot
   however many others exist. Pre-splitting a hot tenant across members of its own group is a
   separate technique.

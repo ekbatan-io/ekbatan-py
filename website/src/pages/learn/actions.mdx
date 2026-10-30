@@ -47,8 +47,8 @@ and refusing costs nothing because nothing has been written.
 **A retry is cheap and correct.** When a version check fails, phase 2 rolls back and the executor
 re-runs phase 1 from the top with a **fresh plan** — re-reading the row it lost the race on, so
 the second attempt is computed from the winner's state rather than patched onto the loser's.
-An action that only reads, computes and stages is safe to re-run by construction; one that
-posted to an external API in `perform()` is not, which is the real reason for the rule.
+An action that only reads, computes and stages is safe to re-run. One that called an external
+API inside `perform()` is not - which is the real reason to keep `perform()` free of side effects.
 
 **Sharding stays out of the action.** The grouping step is in phase 2, so `perform()` stages
 objects without knowing which database each one lands on. The same action body works on one
@@ -162,35 +162,29 @@ Three rules:
   one action is almost always a bug you would rather find here.
 - **`update()` returns the object at its next version**, so later reads in the same `perform()`
   see the increment.
-- **The plan is single-writer.** It is a plain dict; concurrent mutation is a data race.
+- **Only `perform()` itself stages.** The plan is not safe to change from two threads at once.
 
 ## Singletons + per-call state via a ContextVar
 
-One instance per class, shared by every concurrent invocation. Its only state is what the
-constructor set. Per-execution state — the plan, the clock, the principal — is bound into a
-**`ContextVar`** for the duration of `perform()`.
+There is one instance of each action class, shared by every call running at the same time. Its
+only state is what its constructor set: the clock and the repositories it was given. What belongs
+to a single call - its plan, its principal - is kept apart for each call, in a Python
+`ContextVar`, while `perform()` runs.
 
-So an action must not have mutable instance state, and `self.plan` must be reached from the
-thread or task running `perform()`.
+So an action must not change anything on `self` after it is built, and `self.plan` only works in
+the thread or task that is running `perform()`.
 
 ## Plan is single-writer; spawning threads is fine
 
-Spawning parallel work inside `perform()` is **allowed** — the *plan* is single-writer, not the
-action. Two hard rules:
+Running work in parallel inside `perform()` is **allowed**. Two rules:
 
-1. **Only the thread that invoked `perform()` may call `self.plan.add(...)` or
-   `self.plan.update(...)`.** The plan is a plain dict; concurrent mutation from a pool thread
-   is a data race with a correct-looking traceback. Even *reading* it from a pool thread is
-   unsupported, because the `ContextVar` binding does not propagate — `self.plan` raises there
-   rather than returning the wrong plan, which is the better of the two failures.
-2. **Do not share the action's transactional connection across threads.** It is bound to the
-   invoking thread, and a DBAPI connection is not thread-safe regardless.
+1. **Only the thread that called `perform()` may stage** on `self.plan`. From any other thread,
+   `self.plan` raises, rather than hand over a plan that is not safe to share.
+2. **Do not use the action's database connection from another thread.** It belongs to the
+   thread running the action.
 
-That second rule is why the non-propagation is correct rather than a limitation: a pool thread
-outliving the unit of work while holding its connection is exactly the bug it prevents.
-
-The supported pattern is fan out, **join**, and only then stage — from the invoking thread, or,
-in async mode, from `perform()` itself after the gather:
+The pattern is: fan out, **wait for every result**, and only then stage - from the thread that
+called `perform()`, or, in async mode, from `perform()` itself after the gather:
 
 <ModeTabs>
 <div slot="sync">
@@ -217,10 +211,10 @@ async def perform(self, principal: str | None, params: Params) -> Order:
 </div>
 </ModeTabs>
 
-For *reads*, prefer doing the fan-out **before** `executor.execute(...)` — at the caller — so
-the parallel work uses ordinary pool connections rather than anything belonging to the action.
-Inside `perform()`, keep parallelism to work that needs none of the action's state: external
-calls, replica reads on their own connections, pure computation.
+For *reads*, prefer doing the parallel work **before** `executor.execute(...)`, in the caller, so
+it uses ordinary connections from the pool. Inside `perform()`, keep parallel work to what needs
+nothing from the action: calls to other services, reads on connections of their own,
+computation.
 
 Under asyncio the rule is the same, for a different reason. A task started inside `perform()` -
 `asyncio.gather` makes one per read - gets a copy of the context, so `self.plan` does resolve
@@ -255,18 +249,16 @@ await executor.execute(None, WalletDepositMoneyAction, params, config=config)
 </div>
 </ModeTabs>
 
-Three details worth knowing:
+A few details worth knowing:
 
-**`max_retries` counts retries, not attempts.** `max_retries=1` runs the action twice. It is
-named for what it counts because `attempts=1` running twice is the sort of thing nobody catches
-in review and everybody hits in production.
+**`max_retries` counts retries, not attempts.** `max_retries=1` runs the action twice.
 
-**Matching looks through the cause chain**, so a driver wrapping a conflict is still recognised.
+**A wrapped error still matches.** If a driver wraps the conflict in an error of its own, the
+retry still recognises it.
 
-**Matching is by exact class, so a subclass does not match.** A policy for `EkbatanError` does
-not catch a `StaleRecordError` — name the class that is actually thrown. Which failures retry is
-then written down in one place, rather than widened by whatever subclasses exist. Order is the
-only precedence rule, so put narrow policies first.
+**A policy matches its exact class only.** A policy for `EkbatanError` does not catch a
+`StaleRecordError`, though that is a subclass of it: name the class that is actually raised. When
+several policies are given, the first one that matches is used.
 
 **A retry replays the whole action from phase 1, with a fresh plan.** Side effects outside the
 plan — logging, counters, an HTTP call — replay too. Keep `perform()` pure.
@@ -332,8 +324,7 @@ two-phase commit**, and there is no way to add one: the shards are separate data
 atomic commit across them does not exist to be opted into. A failure rolls back only its own
 shard; the ones that already committed stay committed, and the executor logs that loudly.
 
-So a partial commit here is the [dual-write trap](/learn/the-dual-write-trap/) wearing a
-different hat — two systems that can disagree, where the two systems happen to both be yours.
+So a partial commit here is the [dual-write trap](/learn/the-dual-write-trap/) again: two systems that can disagree, where both happen to be yours.
 Prefer opting in per call rather than as an executor default, so the risk is visible at the
 call site. If a partial commit would need compensating, the honest answer is a
 [saga](/learn/sagas/).

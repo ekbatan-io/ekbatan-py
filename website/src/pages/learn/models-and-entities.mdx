@@ -2,26 +2,26 @@
 layout: ../../layouts/DocLayout.astro
 title: Models and entities
 activeSection: learn
-lead: Two kinds of persistable object, why both are frozen, and what the generated builder buys you.
+lead: The two kinds of object you save - one whose changes are events, one whose changes are not - and why both are frozen.
 ---
 
 import CodeBlock from "../../components/CodeBlock.astro";
 import LearnPager from "../../components/LearnPager.astro";
 
-Both are immutable, both version-tracked, both with a `state` column that supports soft
-deletion. The difference is whether their changes are news. They are the same classes in both
-modes, sync and async: nothing on a model or an entity waits on the database, so every sample on
-this page is the same either way.
+Both are frozen dataclasses, both carry an `id`, a `state` and a `version`, and both are saved
+by a repository. The difference is whether their changes are news.
 
 | | `Model` | `Entity` |
 | --- | :---: | :---: |
 | `id`, `state`, `version` | yes | yes |
-| `created_date` / `updated_date` | **required**, and typed on the base | neither |
+| `created_date` / `updated_date` | **required** | neither |
 | Changes emit events | yes | no |
 
 Choose **`Model`** when a change should be recorded as an event. Choose **`Entity`** when the
 current state is enough: lookup tables, configuration, auxiliary records that take part in an
-action without needing a trail of their own.
+action without needing a history of their own.
+
+Both work the same in sync and async code: nothing on a model waits on the database.
 
 ## A model
 
@@ -73,98 +73,52 @@ class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
             return self
         return self.copy().with_event(WalletClosedEvent(model_id=str(self.id))).state(WalletState.CLOSED).build()`} />
 
-Three patterns worth naming. **`validate()`** holds the wallet's own rules and runs on every
-wallet made - see [below](#validate-the-models-own-rules). **A factory** (`open`) builds a *new* aggregate, calls
-`with_initial_version()` and attaches the creation event. **`copy()`** returns a builder
-pre-populated with the current state; mutators build on it, change what changed, attach an event
-and `build()`.
+Three patterns are worth naming:
 
-`close()` returning `self` when already closed is the shape to copy: nothing staged means
-nothing emitted, and the action's invocation is still recorded as a sentinel row.
+- **`validate()`** holds the wallet's own rules, and runs on every wallet made - see
+  [below](#validate-the-models-own-rules).
+- **A factory**, `create_wallet`, builds a *new* wallet: it sets the first version with
+  `with_initial_version()` and attaches the creation event.
+- **`copy()`** returns a builder filled in from the current wallet. A method such as `deposit()`
+  changes what changed, attaches an event and calls `build()`. The old wallet is untouched.
+
+`close()` returns `self` when the wallet is already closed. That is the shape to copy: nothing
+changed means no event, and the action is still recorded in the outbox.
 
 ## `validate()`: the model's own rules
 
-Every model and every entity defines `validate()`. It is the one place for the rules a model has
-beyond its field types:
+Every model and every entity defines `validate()`: the one place for rules its field types cannot
+express, such as "the balance is never negative".
 
-```python
-@dataclass(frozen=True, kw_only=True)
-class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
-    owner_id: UUID
-    currency: str
-    balance: Decimal
+It runs **every time a wallet is made** - by `build()`, by the constructor, and when a repository
+reads a row - so no path hands you a wallet that breaks its rules. Raise `ValidationError` (from
+`ekbatan.errors`) when one is broken.
 
-    def validate(self) -> None:
-        if self.balance < 0:
-            raise ValidationError("balance cannot be negative")
-```
-
-**It runs every time a model is made**: `build()`, `copy()...build()`, the constructor,
-`evolve()`, and `from_record` when a repository reads a row. So no path hands back a wallet with
-a negative balance - not a deposit, not a withdrawal, not a row read from the database.
-
-**Ekbatan's own checks run first.** By the time `validate()` runs, every field whose type does not
-allow `None` is set, `version` is at least 1, and on a model `updated_date` has fallen back to
-`created_date` and `events` is a tuple. So `validate()` only says what the types cannot; it never
-checks a `Decimal` field for `None`.
-
-**It is required.** A model or entity without it is refused when its class is defined - at import,
-not at the first row:
-
-```
-TypeError: Wallet must define validate(); write `pass` if it has no rules beyond its types
-```
-
-and mypy and pyright flag the line that makes one (`Cannot instantiate abstract class "Wallet"`).
-A model with no rules of its own says so:
+It is required. A model with no rules of its own says so:
 
 ```python
     def validate(self) -> None:
         pass  # no rules beyond its types
 ```
 
-**Raise `ValidationError`** (from `ekbatan.errors`). That is the convention, and what ekbatan's own
-checks raise. Any other exception works too; it reaches whoever made the row.
-
-**A rule applies to stored rows as well.** Reading a row runs `validate()`, so a rule added today
-refuses an old row that breaks it, where that row is read. Fix the stored rows before you ship a
-stricter rule.
-
-**A base class of your own**, one that real models inherit from, lists `ABC` to say it is not a
-model itself. The rule then applies to each model that inherits from it:
-
-```python
-@dataclass(frozen=True, kw_only=True)
-class AuditedModel[ID, S: Enum](Model[ID, S], ABC):
-    audited_by: str
-```
-
-A base that still has abstract methods of its own, besides `validate()`, is let through too.
-
-**Your own `__post_init__` is safe.** If a model defines one, ekbatan wraps it when the class is
-defined: its own checks first, then your `__post_init__`, then `validate()` - whether or not you
-call `super().__post_init__()`. Calling it does no harm and nothing runs twice. Keep rules in
-`validate()`; `__post_init__` is for work such as tidying a field.
+A model without it is refused as soon as its class is defined. The finer points - base classes of
+your own, a model with its own `__post_init__` - are in the
+[reference](/reference/model/#validate-the-models-own-rules).
 
 ## Why frozen
 
-`@dataclass(frozen=True, kw_only=True)` is ordinary Python — the standard library has had
-dataclasses since 3.7, and pydantic, pytest, FastAPI and SQLAlchemy all use frozen ones. What is
-unusual is *what* is frozen here. The ecosystem freezes **value objects**: cache keys, config
-values, durations. This framework freezes the **aggregate**.
+`@dataclass(frozen=True, kw_only=True)` is ordinary Python. What is unusual is *what* is frozen
+here: not small value objects, but the whole aggregate - the wallet itself.
 
-That is deliberate, and the reason is [two-phase execution](/learn/actions/). The plan holds a
-*reference* to what you staged, and the executor writes it later. With a mutable model, anything
-touching that object between staging and commit would silently change what got written — a
-deposit of 100 committing as 0.
+The reason is [two-phase execution](/learn/actions/). The plan holds a *reference* to what you
+staged, and the executor writes it later. If the model could change, anything touching it between
+staging and commit would silently change what got written - a deposit of 100 committing as 0.
 
-`kw_only` does two jobs. It stops transposition, because `owner_id` sits next to `currency` and
-`started_date` next to `completion_date`. It also makes the inheritance **legal at all**: the
-base carries `updated_date` and `events` with defaults, and a subclass field without one
-would otherwise be *"non-default argument follows default argument"*.
+`kw_only` means every field is passed by name, so two fields of the same type, such as
+`started_date` and `completion_date`, can never be swapped by accident.
 
-If you are arriving from Django or the SQLAlchemy ORM: what you give up is dirty tracking. There
-is no `session.commit()` working out what changed; you say what changed, through the plan.
+If you come from Django or the SQLAlchemy ORM, what you give up is dirty tracking: nothing works
+out what changed for you. You say what changed, through the plan.
 
 ## ModelEvent
 
@@ -175,104 +129,46 @@ class WalletMoneyDepositedEvent(ModelEvent["Wallet"]):
     new_balance: Decimal
 ```
 
-The class line names the model the event is about, and the constructor takes that model's id —
-`WalletMoneyDepositedEvent(model_id=str(self.id), amount=..., new_balance=...)`. Those two fill the
-outbox's `model_id` and `model_type` columns.
-A blank id is refused when the event is made, not when it is written.
+The class line names the model the event is about, and the constructor takes that model's id:
+`WalletMoneyDepositedEvent(model_id=str(self.id), amount=..., new_balance=...)`. Together they
+fill the outbox row's `model_id` and `model_type`.
 
 ### Deserialization (for in-process handlers)
 
-Events are stored as JSON in `events.payload` and read back into the same class when an
-in-process handler is invoked. **Nothing extra is needed for that round trip** — no annotation,
-no registered constructor, no per-handler mapping layer. The payload is rebuilt from the
-dataclass's own annotations, which is the one place the field types are already written down,
-and its `__init__` already takes keyword arguments named after its fields.
+An event is saved as JSON in the outbox row's `payload`, and read back into the same class when an
+in-process handler runs. **Nothing extra is needed** for that round trip: the dataclass's own
+field types say how each field is written and read.
 
-What the decoder does with each field, driven by its annotation:
+Field names are written in camelCase (`new_balance` becomes `newBalance`), decimals as JSON
+numbers, and times as ISO-8601 text. A `datetime` field must say which kind of time it holds -
+`Instant`, `LocalDateTime` or `OffsetDateTime`, from `ekbatan.time`; a plain `datetime` is refused
+when the event is written. The full table, type by type, is on
+[ModelEvent](/reference/model-event/).
 
-| Annotation | Written as | Read back as |
-|---|---|---|
-| `Decimal` | a JSON **number**: `10.50`, `1E+3` | the same `Decimal`, scale kept |
-| `float` | a number: `0.1`, `1.0E20` | `float` |
-| `Instant` (`ekbatan.time`) - no zone attached, UTC digits | ISO-8601 text ending in `Z`: `"2025-01-01T00:00:00.120Z"` | no zone attached, the same digits |
-| `LocalDateTime` - no zone attached | ISO-8601 text, no offset: `"2025-01-01T10:00:00"` | no zone attached, as written |
-| `OffsetDateTime` - zone attached | ISO-8601 text with the offset: `"...T02:00:00+02:00"` | zone attached, that offset |
-| plain `datetime` | **refused** - declare it one of the three | |
-| `date`, `time`, `timedelta` | ISO-8601 text: `"2025-01-01"`, `"10:00:00"`, `"PT1.5S"` | the same type |
-| `bytes` | base64: `"AQL/"` | `bytes` |
-| `UUID` | its text | `UUID` |
-| an `Enum` | its **member name**, never its ordinal | the member |
-| `Id`, `ShardedId` | `{"id": "...", "value": "..."}` | the typed id |
-| another `TypedValue` | `{"value": ...}` | the typed value |
-| a nested frozen dataclass | an object, keys as below | recursively, the same way |
-| `list` / `tuple` / `set` / `frozenset` / `dict` of any of the above | array / object | element by element |
-| `T \| None` | | the non-`None` arm, when there is exactly one |
-
-A `datetime` field says which kind of time it holds: `Instant`, `LocalDateTime` or
-`OffsetDateTime`, from `ekbatan.time` ([time kinds](/reference/multi-database/#time-kinds)). Python has one class for the three,
-and only the declaration tells a reader which it gets. A field declared plain `datetime`, or a
-value of the wrong sort for its kind - a zone attached in an `Instant` field - is refused when
-the event is written, inside `executor.execute`: the action fails and nothing is saved.
-
-**Anything else is refused** with a `ValidationError` naming its class, before anything is
-written: a plain class or an `attrs` class, for example (a `NamedTuple` is a tuple, so it is an
-array). Make it a dataclass to have it written and read back.
-
-**Keys are camelCase**: `new_balance` is written `newBalance`, in the order the fields are
-declared. A `dict` keeps its own keys, in insertion order; nothing is sorted. The camelCase keys
-and the value forms above are the JSON a Java service built on Ekbatan reads and writes, so the
-two can handle each other's events - see
-[Running beside a Java service](/reference/beside-java/#event-payloads).
-
-**Every JSON number is read as a `Decimal`**, so nothing is lost on the way in. One database is
-the exception: MySQL's `JSON` type stores a number with a fraction as a double, so `50.00` comes
-back `50.0` there.
-
-Enums travel by name - an ordinal changes meaning the moment somebody inserts a member in the
-middle, and nothing about that change looks dangerous at the time.
-
-Two limits worth knowing:
-
-- **A key the dataclass does not declare is dropped**, not an error. An additive change on the
-  producer cannot break a consumer that has not caught up — which is the same tolerance the
-  streaming path has, and for the same reason. **A key the JSON lacks leaves the field `None`**
-  (or its declared default).
-- **A union with more than one non-`None` arm is left as raw JSON.** There is no discriminator in
-  the payload to pick an arm with, so the decoder does not guess. Model that as a nested
-  dataclass with a `kind` field rather than as a union if a handler needs it typed.
-
-Every payload starts with `modelId` and `modelName` - the event's `model_id` and its model's
-class name - so a reader of the raw JSON knows what it is about; a Java consumer requires them
-there. `modelName` is not read back: it comes off the class line.
-
-Streaming-only consumers do not go through any of this: they read the JSON off the broker.
+Consumers that read events from Kafka do not use any of this: they read the JSON off the broker.
 
 ## Optimistic locking, always
 
-Every update carries `WHERE version = ?`. If another transaction got there first, zero rows
-match and `StaleRecordError` unwinds the action, which then retries once by default.
+Every update carries `WHERE version = ?`. If another transaction changed the row first, nothing
+matches, and `StaleRecordError` unwinds the whole action, which then retries once by default.
 
-**The write path takes no pessimistic row locks, ever.** Conflicts surface as an exception rather
-than as blocked threads. But note that is correct by *failing* — two deposits race and the loser
-raises. When losing is the wrong outcome, take a keyed lock first so the second caller waits and
-then succeeds.
+The framework never takes row locks. So two deposits racing on one wallet do not wait for each
+other: the loser fails and retries. When failing is the wrong outcome, take a
+[keyed lock](/reference/keyed-locks/) first, so the second caller waits and then succeeds.
 
 ## Generated builders
 
 `wallet.copy().balance(...)` works with nothing generated. What it cannot do is tell a *type
-checker* that `.balance(...)` takes a `Decimal` — setters resolve by name at runtime, so a
-`.balance("25.50")` is a string in a `NUMERIC` column that nothing complains about until the
-database does.
+checker* that `.balance(...)` takes a `Decimal`: the setters are found by name at runtime, so
+`.balance("25.50")` passes every check until the database refuses it.
 
-That is the one thing Python cannot work out for itself, and the one thing the generator exists
-for:
+Generating a builder per model fixes that:
 
 ```
 uv run python -m ekbatan.codegen myapp.model --out myapp/builders.py
 ```
 
-It imports the modules you name, finds every `Model` and `Entity` in them, and writes a builder
-per class. For a `Wallet` with `owner_id: UUID`, `currency: str` and `balance: Decimal`:
+For the wallet, it writes:
 
 ```python
 class WalletBuilder(ModelBuilder[Wallet, ShardedId[Wallet], WalletState]):
@@ -288,91 +184,25 @@ class WalletBuilder(ModelBuilder[Wallet, ShardedId[Wallet], WalletState]):
 
     def balance(self, value: Decimal) -> Self:
         return self.set(balance=value)
-
-
-def wallet(source: Wallet | None = None) -> WalletBuilder:
-    """A fresh WalletBuilder, optionally pre-loaded from an existing Wallet."""
-    made = WalletBuilder()
-    return made.copy_base(source) if source is not None else made
 ```
 
-**What is generated:**
-
-- A class named `<ModelName>Builder`, subclassing `ModelBuilder` (or `EntityBuilder`) with the
-  right type parameters.
-- A `builds` attribute naming the class it constructs — which is what `build()` calls, so there
-  is no `build()` override to generate.
-- One fluent setter per field the model **declared**, returning `Self` so the chain keeps its
-  type. `id`, `state`, `version`, `created_date` and `updated_date` are typed on the base and are
-  not repeated.
-- A module-level factory named after the model in snake case — `wallet()` for `Wallet`,
-  `wallet_account()` for `WalletAccount` — optionally pre-loaded from an existing instance.
-- The imports the file needs, emitted relative when `--out` lands inside your package.
-
-**What is not generated** — these stay on the model, where you can see them:
-
-- The dataclass itself and its field declarations.
-- Validation. `validate()`, and `deposit()` raising on a non-positive amount, are business
-  logic, not boilerplate.
-- Business methods, and the events they attach.
-- Factory methods like `Wallet.create_wallet(...)` that set up a fresh aggregate and its first event.
-- The one place your model names it — its own class line. The generator writes a separate file
-  and never edits your model:
-
-  ```python
-  class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
-      balance: Decimal
-  ```
-- Any conditional default or computed field. If a builder needs one, write that builder by hand;
-  the generator will not fight you for the name.
-
-**Commit the output**, and **regenerate it when a model changes.** It is derived from source
-you already have, unlike the schema module, which is derived from a database you have to start.
-
-Regenerating is not optional discipline, and it is worth knowing exactly what a stale builder
-costs, because it is less than you would hope: a setter the builder does not declare is **not**
-caught by a type checker — the base resolves setters through `__getattr__`, which accepts any
-name — and `build()` fails at runtime only if the new field is *required*, taking the default
-silently if it is not.
-
-So check it rather than remember it. This repository's `scripts/check-builders.py` does — it
-regenerates into memory, compares, and fails `make lint` on a builder that is missing or behind
-its model; a project of your own can run the generator the same way in CI. A builder without the generator's header is taken as hand-written, and only its
-existence is checked.
-
-**A model must name a typed builder**, on its class line:
+Then name the builder on the model's class line - it is the third type in the brackets, and it
+is what `copy()` returns:
 
 ```python
 class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
-    balance: Decimal
+    ...
 ```
 
-That third argument is the return type of `copy()` and `builder()`, so a checker reads the real
-setters. Leave it out and both refuse:
-
-```
-Wallet.copy() needs a typed builder, and Wallet has not named one.
-  generated   python -m ekbatan.codegen myapp.model --out <pkg>/builders.py
-  by hand     class WalletBuilder(ModelBuilder["Wallet", ...]): ...
-then name it on Wallet's class line, which is the whole of the wiring.
-```
-
-There is no compile step to catch a missing builder, so the refusal is **per route and at the
-call** — a model that only ever calls
-`copy()` needs only that override, and an entity built solely through a factory like
-`Notification.create_notification(...)` and never copied needs neither.
-
-**Generated or hand-written makes no difference** — what is required is a builder a checker can
-read, and writing one by hand is better where a setter needs a conditional default or a computed
-field. `ModelBuilder(X)` is still reachable by name, for a model defined inside a test with
-nowhere to put a builder. What is closed is reaching the untyped builder *through a model*.
-
-`evolve()` is unaffected, and is still the right call for a one-field change.
+**Commit the generated file, and regenerate it whenever a model changes.** A builder that has
+fallen behind its model is not caught by a type checker, so run the generator in CI and fail on a
+difference. What the generator writes and leaves alone, and how to write a builder by hand, is in
+the [reference](/reference/model/#builder-api).
 
 ## Soft deletion
 
-Nothing is physically removed. `delete()` on the model flips `state` to `DELETED` and emits an
-event like any other change, and every inherited read filters those rows out:
+Nothing is physically removed. `delete()` on the model flips its `state` to `DELETED` and emits an
+event, like any other change, and every read the repository gives you leaves deleted rows out:
 
 ```python
 def delete(self) -> Wallet:
@@ -381,25 +211,17 @@ def delete(self) -> Wallet:
     return self.copy().with_event(WalletDeletedEvent(model_id=str(self.id))).state(WalletState.DELETED).build()
 ```
 
-then `repo.update(wallet.delete())` (`await repo.update(...)` on an async repository), or
-`plan.update(wallet.delete())` inside an action.
+There is no `delete()` on the repository: a row that silently disappeared would leave every event
+already published about it pointing at nothing. Two things follow. Deleting is a domain decision,
+so the model says what it means - a wallet might refuse while it holds money. And a query you
+write yourself does not leave deleted rows out unless you say so.
 
-There is no `delete()` on the repository, and that is deliberate: a row that
-silently stopped existing would leave every event already published about it with nothing on the
-other side. What leaves is the wallet, not the history.
-
-Two things follow. **Deleting is a domain decision**, so the model says what it means — some
-models refuse to be deleted while they hold money. And **a query you write yourself does not get
-the filter**: the inherited reads apply it, a statement you build carries what you put in it, so
-add `WALLETS.c.state != WalletState.DELETED.name` when you drop to SQL.
-
-When a physical delete is genuinely required — an erasure request, purging expired rows — write
-it against your own rule. [`WalletRepository.erase`](/reference/repository/) in the
-example does exactly that, and refuses a wallet that still holds money.
+When a row truly has to go - an erasure request, say - write that delete yourself, against your
+own rules; the [repository reference](/reference/repository/) shows one.
 
 ## Inherited builder methods
 
-Both builders carry a shared set on the base, typed `Self` so the return stays your builder:
+Every builder has these, on top of its own setters:
 
 | | model | entity |
 | --- | :-: | :-: |
@@ -411,28 +233,24 @@ Both builders carry a shared set on the base, typed `Self` so the return stays y
 | `with_event(...)` / `events(...)` | yes | — |
 | `created_date(...)` / `updated_date(...)` | yes | — |
 
-`copy_base(other)` is what `model.copy()` returns first: the id, state, version, and for a model
-the events and timestamps, pre-populated — so domain code only names the fields that changed.
-
-The split is the whole difference between the two kinds. An entity has no events to attach and
-no timestamps to hold, so those methods are not on it to be called by mistake.
+`copy_base(other)` is what `copy()` starts from: the id, state, version, and for a model its
+events and dates, already filled in - so your code names only the fields that changed.
 
 ## Naming conventions
 
-Not enforced, but followed by every example, so a reader moving between services recognises
-what they are looking at.
+Not enforced, but followed by every example, so a reader moving between services recognises what
+they are looking at.
 
 - **Model** — a singular noun: `Wallet`, `Order`, `Subscription`.
 - **State enum** — `<Model>State`, values in `UPPER_SNAKE`: `WalletState.OPENED`,
   `OrderState.SHIPPED`. `GenericState` (`ACTIVE` / `DELETED`) is fine for an entity, or a model
-  with no real state machine.
+  with no real states of its own.
 - **Event** — `<Model><Verb>ed` + `Event`: `WalletCreatedEvent`, `WalletMoneyDepositedEvent`,
   `OrderShippedEvent`. Past tense: an event describes something that already happened.
-- **Action** — `<Verb><Model>Action`: `WalletCreateAction`, `WalletDepositMoneyAction`,
-  `ShipOrderAction`. Imperative: an action describes intent.
-- **Id** — no class of its own: `ShardedId[Wallet]` for a model whose rows are routed by id,
-  `Id[Notification]` otherwise. A type checker keeps two models' ids apart; at runtime they compare by
-  uuid.
+- **Action** — `<Model><Verb>Action`: `WalletCreateAction`, `WalletDepositMoneyAction`,
+  `WalletCloseAction`. Imperative: an action describes intent.
+- **Id** — `ShardedId[Wallet]` for a model whose rows are spread across databases by id,
+  `Id[Notification]` otherwise. A type checker keeps two models' ids apart.
 
 <LearnPager current="models-and-entities" />
 

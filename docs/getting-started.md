@@ -70,10 +70,11 @@ image = "postgres:17-alpine"
 uv run python -m ekbatan.schemagen
 ```
 
-It starts a throwaway container, runs **your** migrations into it, reflects the result and
-writes a module of SQLAlchemy `Table` definitions. Forced types, includes and excludes go in the
-same table - see [schemagen](database/schemagen.md). The output is **gitignored**, because it is
-derived from a database you have to start, and it is regenerated whenever the migrations change.
+It starts a throwaway database in a container - Docker must be running - applies **your**
+migrations to it, reads the resulting tables back, and writes them out as a module of SQLAlchemy
+`Table` definitions. Its other settings go in the same section; see
+[schemagen](database/schemagen.md). The output is **gitignored**, because it comes from a database
+you have to start, and it is regenerated whenever the migrations change.
 
 **Gitignored is not left out of the package - check that it is not.** Some build tools leave a
 gitignored file out of the wheel: poetry-core and hatchling drop `schema.py` unless told to keep

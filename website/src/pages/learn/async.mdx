@@ -7,11 +7,14 @@ lead: "Move an existing sync service to ekbatan.aio: the same models, events and
 
 import LearnPager from "../../components/LearnPager.astro";
 
-This walks through what changes, file by file, for a service you already have. Starting a new
-one? Pick **Async** in the [Complete project setup](/learn/complete-project-setup/) and take its files; deciding
-whether to? See [Sync or async?](/learn/sync-or-async/). The finished service is the
-`fastapi-wallet-rest-uv-async-pg` example (and `fastapi-wallet-rest-uv-async-mysql`, `fastapi-wallet-rest-uv-async-mariadb`), which
-passes its own tests; every snippet here is from it. The full reference is
+This page moves a sync service you already have to async, file by file.
+
+- Starting a new service instead? Pick **Async** in the
+  [Complete project setup](/learn/complete-project-setup/) and take its files.
+- Still deciding? See [Sync or async?](/learn/sync-or-async/).
+
+Every snippet here comes from the `fastapi-wallet-rest-uv-async-pg` example, which passes its own
+tests; it has MySQL and MariaDB twins. The full reference is
 [Native asyncio](/reference/runtime/async/).
 
 ## What changes and what does not
@@ -84,8 +87,9 @@ What it stages, and therefore what is committed and which events are written, is
 
 ## 4. The registries, from one file
 
-The urls in `ekbatan.yaml` keep naming the sync driver. The sync side connects with it; the async
-registry reads the same url as naming the database only and connects through its async default.
+The urls in `ekbatan.yaml` stay as they are, naming the sync driver. The sync side connects with
+that driver; the async registry takes only the database from the url, and connects with its own
+async driver.
 
 ```python
 layout = load_ekbatan_config(config_file).sharding
@@ -125,15 +129,19 @@ events_registry = (
 
 The handler's executor is an `AsyncActionExecutor` over `handler_registry`, with an async
 `CreateNotificationAction`; the handling job is given `handler_loop`, and fan-out and dispatch are built
-over `events_registry`. At shutdown: stop the jobs, close the handler's registry on its loop
-(`handler_loop.run(handler_registry.aclose())`), close the loop, close `events_registry` - its
-manager closes the jobs pool it was given - then the locks and `await lock_data_source.aclose()`,
-and last `await registry.aclose()`.
+over `events_registry`. At shutdown, close them in this order:
+
+1. stop the jobs;
+2. close the handler's registry on its loop - `handler_loop.run(handler_registry.aclose())` -
+   then close the loop;
+3. close `events_registry`, which also closes the jobs pool it was given;
+4. close the locks, then `await lock_data_source.aclose()`;
+5. last, `await registry.aclose()`.
 
 ## 5. The settings file
 
-One pool more, for the handler, and the session time zone set the documented way on every pool -
-written as libpq spells it, which asyncpg receives as its own `server_settings`:
+One pool more, for the handler. Every pool also sets the session's time zone to UTC; written as
+below, the async driver receives the setting too:
 
 ```yaml
 primaryConfig:                     # requests, on ekbatan.aio
@@ -196,7 +204,7 @@ async with lease:
 A second deposit on the same wallet waits its turn on the event loop, without blocking it, and
 then succeeds.
 
-## 7b. The handler
+## 8. The handler
 
 It runs after the deposit has committed - fan-out and dispatch pick the event up on their own
 threads - and it may extend `AsyncEventHandler`, with an `async def handle()`. Dispatch runs it on
@@ -217,7 +225,7 @@ class WalletMoneyDepositedEventHandler(AsyncEventHandler[WalletMoneyDepositedEve
         await self.executor.execute(None, CreateNotificationAction, CreateNotificationAction.Params(...))
 ```
 
-## 8. Run it, with the same cap at the door
+## 9. Run it, with the same cap at the door
 
 ```sh
 uvicorn fastapi_wallet_rest_async_pg.api:create_app --factory --limit-concurrency 50
@@ -228,7 +236,7 @@ connections, each request waiting at most `poolTimeout` for one - and `--limit-c
 the cap before that: past 50 open requests uvicorn answers 503 itself. Keep it a small multiple
 of the pool, so a burst waits briefly or is refused quickly.
 
-## 9. Test it
+## 10. Test it
 
 The example's test drives the endpoints with FastAPI's `TestClient`, unchanged. To reach past
 HTTP into the service, await on the loop the app runs on:

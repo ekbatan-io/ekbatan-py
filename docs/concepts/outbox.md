@@ -106,10 +106,13 @@ back is on [Models and entities](models-and-entities.md#modelevent).
 
 ## What the outbox row means
 
-An action that emits no events still writes **one row**, with `model_id`, `model_type`,
-`event_type` and `payload` all null. The action happened, and that is a fact worth keeping.
+An outbox row is not "a Kafka message stored in SQL". It is a committed event, with enough around
+it for a consumer to know where it came from: the action that committed it, the model it is
+about, its type, and the event itself as JSON.
 
-A consumer skips them with `event_type IS NULL`. The Debezium transforms already do.
+An action that emits no events still writes **one row**, with `model_id`, `model_type`,
+`event_type` and `payload` all null. The action happened, and that is a fact worth keeping. A
+consumer skips those rows by checking `event_type IS NULL`; the Debezium transforms already do.
 
 ## Two consumer paths
 
@@ -125,22 +128,15 @@ language wrote the row, so you use the ready-made transform JARs and build nothi
 see [Streaming the events](../beside-java.md#streaming-the-events). What this framework owes is
 the row format above.
 
-Both can run against the same outbox at once. In-process fan-out flips `delivered` from false to
-true, producing `UPDATE` rows; the Kafka transforms drop non-insert operations, so those flips
-are invisible downstream.
+Both can run against the same outbox at once. The in-process path marks each row `delivered`
+once it has handled it; the Kafka path ignores those updates, so they never become Kafka messages.
 
 ## One trap worth knowing
 
-`event_date` is the only ordering key — there is no ordinal column. Under a real
-clock that is fine. Under a **frozen** clock every row of a run ties and the order falls back to
-a random uuid. The test suite fell into this more than once.
-
-## Ordering, and the thing to know about it
-
-`event_date` is the only ordering key - there is no ordinal column. Under a real clock that is
-fine. Under a **frozen** clock, every row of a run ties and the order falls back to a random
-uuid, which is a trap the test suite fell into more than once. Assert on `action_name` or
-`action_id` rather than on position, or use a running clock.
+`event_date` is the only ordering key - there is no ordinal column. With a real clock that is
+fine. A test that freezes its clock gives every row of a run the same time, so their order is
+effectively random: pick a row by its `action_name` or `action_id`, not by its position, or use a
+running clock.
 
 ## See also
 

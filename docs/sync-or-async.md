@@ -15,8 +15,8 @@ Pick **sync** when:
 - the server is threaded (gunicorn, a worker loop), or your FastAPI endpoints are plain `def` -
   FastAPI already runs those on a thread;
 - the service is mostly event handlers and jobs;
-- you have no reason to change. Threads are fine for database work: the wait releases the GIL
-  either way.
+- you have no reason to change. Threads are fine for database work: Python lets other threads
+  run while one waits on the database.
 
 A lone request is a little faster on sync. The numbers are on
 [Native asyncio](runtime/async.md#when-to-use-it).
@@ -84,11 +84,10 @@ wallet = await executor.execute(None, WalletDepositMoneyAction, params)
 Some work is sync in both modes. An async service builds a sync `DatabaseRegistry` beside its
 async one, from the same `ekbatan.yaml`, for it:
 
-- **event fan-out and dispatch** - two jobs that read the outbox and run the handlers. They run
-  a sync handler on a thread and an async one on their handler loop, one event loop on a thread
-  of its own;
-- **distributed jobs** - `execute` is a plain `def`, run on the scheduler's threads. The *work*
-  inside one may be async: `execute` hands a coroutine to a `HandlerLoop` and waits for it -
+- **the event jobs** - the two background jobs that read the outbox and call your handlers
+  ([the local event handler](events/local-event-handler.md)). The handlers themselves may be sync or async;
+- **distributed jobs** - their `execute` is a plain `def`, run on the scheduler's threads. The
+  *work* inside one may still be async -
   [a job whose work is async](runtime/async.md#a-job-whose-work-is-async);
 - **migrations** - run once at startup, before any pool opens;
 - **schemagen** and **codegen** - build steps, not part of the running service.

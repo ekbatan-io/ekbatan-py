@@ -31,19 +31,19 @@ The shape of the surface, before we type a line:
                 WalletDepositMoneyAction,
                 WalletDepositMoneyAction.Params(wallet_id, amount, recipient))
                         ▼
-        ┌─── Phase 1 — perform() ──────────────────┐
-        │  self.wallet_repository.get_by_id(wallet_id)             │
-        │  wallet.deposit(amount)                  │
-        │      ↳ attaches WalletMoneyDepositedEvent      │
-        │  self.plan.update(updated)               │
-        └──────────────────────────────────────────┘
+        ┌─── Phase 1 — perform() ──────────────────────────┐
+        │  wallet = self.wallet_repository.get_by_id(...)  │
+        │  updated = wallet.deposit(amount)                │
+        │      ↳ attaches WalletMoneyDepositedEvent        │
+        │  self.plan.update(updated)                       │
+        └──────────────────────────────────────────────────┘
                         ▼
-        ┌─── Phase 2 — the executor commits ───────┐
-        │  one transaction, one shard:             │
-        │     UPDATE wallets  WHERE id=? AND v=?   │
-        │     INSERT events   (1 row)              │
-        │  commit                                  │
-        └──────────────────────────────────────────┘
+        ┌─── Phase 2 — the executor commits ───────────────┐
+        │  one transaction:                                │
+        │     UPDATE wallets  WHERE id=? AND version=?     │
+        │     INSERT events   (1 row)                      │
+        │  commit                                          │
+        └──────────────────────────────────────────────────┘
 ```
 
 ## 1. Define the event
@@ -63,10 +63,9 @@ model's name once for every event of this class, and the wallet's id is passed w
 made - `WalletMoneyDepositedEvent(model_id=str(self.id), ...)`. Those two go into the outbox's `model_id` and `model_type`
 columns, so a consumer correlates without opening the payload.
 
-Notice what is *not* in it. The deposit endpoint also takes a `recipient`, and it is absent
-here: a delivery address has no business inside a money-deposited event. It travels as an action
-parameter instead, and a handler reads it off the envelope. See
-[ModelEvent](/reference/model/).
+Notice what is *not* in it. The deposit endpoint also takes a `recipient`, and it is absent here:
+a delivery address has no business inside a money-deposited event. It travels as one of the
+action's parameters instead, and a handler that needs it reads it from there.
 
 ## 2. Define the model
 
@@ -104,13 +103,10 @@ references to immutable snapshots, and a partial write is not expressible.
 back - after its own checks, so no wallet with a negative balance can exist. See
 [Models and entities](/learn/models-and-entities/#validate-the-models-own-rules).
 
-**Time is UTC, and stored as given.** A model's dates come from the framework's clock
-(`self.clock.instant()` in an action) - an `Instant`, UTC with no zone attached
-([time kinds](/reference/multi-database/#time-kinds)) - and are stored in zone-less columns
-exactly as they are: the framework never converts a time
-([What you give is what is stored](/reference/multi-database/#what-you-give-is-what-is-stored)). UTC is the strong
-recommendation everywhere - in your code and on the database - see
-[Always UTC](/reference/multi-database/#always-utc).
+**Time is UTC, and stored as given.** A model's dates come from the framework's clock -
+`self.clock.instant()` inside an action - which gives UTC with no zone attached. They are stored
+exactly as they are: the framework never converts a time. Use UTC everywhere, in your code and on
+the database; [Always UTC](/reference/multi-database/#always-utc) says why.
 
 `deposit(amount)` is the only place this event is ever attached. That is the whole discipline —
 events are produced inside the model, staged inside the action's `perform()`, and persisted by
@@ -155,13 +151,16 @@ class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, UUID]):
 </div>
 </ModeTabs>
 
-That is the whole repository. `get_by_id`, `find_all_where`, `add`, `update`, counting and existence are
-inherited. `WalletsRecord` is the table's record, which schemagen writes into `schema.py` beside
-`WALLETS`: a `dict` with a key per column, typed as the column reads - `record.column_owner_id()` (preferred),
-or `record["owner_id"]` - so mypy checks the mapping against the table. The mapping between a record and the model is yours to write, and
-when the names line up it is the two methods above: every field to the column of the same name. A repository without
-them is refused when it is created, so a renamed column can never quietly stop matching. Where a
-name or a shape differs, write the mapping out instead.
+That is the whole repository. `get_by_id`, `find_all_where`, `add`, `update`, counting and
+existence are inherited.
+
+`WALLETS` is the table, and `WalletsRecord` is one of its rows: a `dict` with a key per column.
+Both come from a module generated from your database schema - [Install it](/learn/install/)
+shows how - so a type checker can check your code against the real columns.
+
+The two methods are the mapping between a row and a wallet, and you always write them. When the
+field names match the column names, as here, each is one line. Where a name or a shape differs,
+write the mapping out by hand. A repository without them is refused when it is created.
 
 What you add are the questions your business actually asks:
 
@@ -295,12 +294,13 @@ async def deposit(wallet_id: UUID, body: DepositRequest, service: Service) -> Wa
 </div>
 </ModeTabs>
 
-`service` is the one built at startup, handed over by a FastAPI dependency — not built per
-request, which would open a connection pool per request.
-[Wiring with FastAPI](/reference/wiring-fastapi/) is that seam, and names the other sharp
-mistake: calling the sync API from an `async def` endpoint blocks the event loop. A sync
-endpoint is a plain `def`, which FastAPI runs on a worker thread; an async one is `async def`
-and awaits `ekbatan.aio`.
+`service` is built once, at startup, and handed to each request by a FastAPI dependency. Building
+it per request would open a new connection pool every time.
+
+One mistake to avoid: do not call the sync API from an `async def` endpoint - it blocks every other
+request while it waits. A sync endpoint is a plain `def`, which FastAPI runs on a worker thread;
+an async one is `async def` and awaits `ekbatan.aio`.
+[Wiring with FastAPI](/reference/wiring-fastapi/) has the details.
 
 Who is acting is a separate concern. The executor takes a principal; in a real service it comes
 from your authentication layer.
@@ -330,8 +330,7 @@ One row, with `event_type = 'WalletMoneyDepositedEvent'`, `model_type = 'Wallet'
 [`events`](/reference/tables/events/) for what every column means.
 
 The keys are camelCase and decimals are JSON numbers. Every number is read back as a `Decimal`,
-so the scale survives. (A Java service built on Ekbatan writes the same text for the same event -
-see [Running beside a Java service](/reference/beside-java/#event-payloads).)
+so `10.00` stays `10.00`.
 
 ## What just happened
 
@@ -425,8 +424,8 @@ transaction**, and only a test against a real database checks it.
 
 ## Next
 
-→ **[Consuming events](/learn/consuming-events/)** — turn that outbox row into work. Two paths:
-in-process handlers with no broker, and Debezium → Kafka.
+→ **[Install it](/learn/install/)** — put ekbatan into a project of your own. After that,
+[Consuming events](/learn/consuming-events/) turns the outbox row you just saw into work.
 
 <LearnPager current="your-first-action" />
 

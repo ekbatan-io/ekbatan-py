@@ -76,9 +76,9 @@ uv run python -m ekbatan.codegen myapp.model --out myapp/builders.py
 ```
 
 `wallet.copy().balance(...)` works with nothing generated. What it cannot do is tell a *type
-checker* that `.balance(...)` takes a `Decimal` — the setters resolve by name at runtime, so a
-checker sees only `__getattr__`. That is the one thing worth generating, and the only thing
-this generates. Commit the output: it is derived from source you already have.
+checker* that `.balance(...)` takes a `Decimal`: the setters are looked up by name while the
+program runs, so a checker cannot see them. That is the one thing worth generating, and the only
+thing this generates. Commit the output: it is derived from source you already have.
 
 **Table definitions — gitignored.**
 
@@ -94,10 +94,11 @@ image = "postgres:17-alpine"
 uv run python -m ekbatan.schemagen
 ```
 
-Starts a throwaway container, runs **your** migrations into it, reflects the result. Forced
-types, includes and excludes go in the same table - see [schemagen](/reference/schemagen/). The
-output is gitignored because it is derived from a database you have to start, and it is
-rebuilt whenever the migrations change.
+It starts a throwaway database in a container - Docker must be running - applies **your**
+migrations to it, reads the resulting tables back, and writes them out as Python table
+definitions. Its other settings go in the same section; see [schemagen](/reference/schemagen/).
+The output is gitignored because it comes from a database you have to start, and it is rebuilt
+whenever the migrations change.
 
 **Gitignored is not left out of the package - check that it is not.** Some build tools leave a
 gitignored file out of the wheel: poetry-core and hatchling drop `schema.py` unless told to keep

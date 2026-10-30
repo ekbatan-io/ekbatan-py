@@ -20,7 +20,7 @@ it.
               ┌─────────────────┴──────────────────┐
               ▼                                    ▼
     in-process handlers                       Debezium CDC
-    fan-out + dispatch jobs                   WAL/binlog → raw topic
+    fan-out + dispatch jobs                   change log → raw topic
               │                                    │
         handler code                        router / stream app
               │                                    │
@@ -28,8 +28,10 @@ it.
 ```
 
 You do not have to pick one. In-process handlers and CDC can run against the same table at once:
-fan-out's `delivered = true` flip is an `UPDATE`, and the streaming transforms drop non-insert
-operations, so only the original inserts reach Kafka.
+the in-process path marks each row `delivered`, and the Kafka transforms ignore those updates, so
+only the original rows reach Kafka. Without a transform, rows go to Kafka as JSON and Debezium
+publishes those updates too: set the connector's `skipped.operations` to `u,d,t` so it publishes
+inserts only.
 
 ## Choose a delivery topology
 
@@ -103,15 +105,13 @@ stream exists: the broker topology never reaches into the database write path.
 
 Two background jobs do the work. **Fan-out** turns one event row into one delivery row per
 subscribed handler, in `event_notifications`; **dispatch** polls those rows and calls your
-handler, with retry, backoff and expiry. Both are ordinary distributed jobs on the same
-registry, so cluster exclusivity, heartbeating and crash recovery are inherited rather than
-re-implemented.
+handler, with retry, backoff and expiry. Both are ordinary distributed jobs: only one instance in the cluster runs each at a time, and if
+an instance crashes mid-run, another picks the work up.
 
 ### A.1 Turn it on
 
-There is no module to add — the in-process path ships in the framework. It is off until you
-register a handler and the handling job. `handling.enabled` (default off) is the switch your
-wiring reads to decide whether to register the job; once registered, the job runs:
+There is nothing to install - the in-process path is part of the framework. It is off until you
+register a handler and switch handling on:
 
 <ModeTabs>
 <div slot="sync">
@@ -187,9 +187,10 @@ class WalletMoneyDepositedEventHandler(AsyncEventHandler[WalletMoneyDepositedEve
 A class that extends `EventHandler` — or `AsyncEventHandler`, whose `handle()` is `async def` —
 and writes three methods. No decorator and no annotation.
 
-- **`name()`** — the durable subscription id, written to `event_notifications.handler_name`.
-  Cluster-stable; see below.
-- **`event_type()`** — the payload class this handler accepts. It drives deserialisation.
+- **`name()`** — the handler's permanent id, written on every delivery row. Keep it the same on
+  every instance and across releases; see below.
+- **`event_type()`** — the event class this handler accepts, and the class its stored JSON is read
+  back into.
 - **`handle(envelope)`** — your logic, `async def` on an `AsyncEventHandler`; it runs after the
   action, on dispatch's threads, in either mode. `envelope.event` is the typed payload;
   `envelope.action_params` is the source action's parameters, which is where routing concerns
@@ -212,14 +213,13 @@ class MoneyDepositedWelcomeHandler(EventHandler[WalletMoneyDepositedEvent]):
         return WalletMoneyDepositedEvent
 ```
 
-Aliases are lookup-only: dispatch resolves old rows through them, fan-out keeps writing the
-canonical name. This is the single most confusing thing in the pipeline, so here it is as a
-picture:
+An alias only finds the old rows; new rows are written under the new name. This is the single
+most confusing thing in the pipeline, so here it is as a picture:
 
 <AliasRenameFlow />
 
-Drop the alias once no non-terminal rows remain under the old name. Keeping it longer is
-harmless.
+Remove the alias once no rows under the old name are still waiting to be handled. Keeping it
+longer does no harm.
 
 ### A.3 Run it
 
@@ -241,7 +241,8 @@ are automatic — see
 
 ## Path B — Debezium CDC → Kafka
 
-When the consumers are other services, a lake or a warehouse, tail the table with Debezium.
+When the consumers are other services, a data lake or a warehouse, let Debezium follow the table
+and publish its rows to Kafka.
 
 **Nothing in this path is Python code, and that is the point.** The connector and the transform
 run inside Kafka Connect, whichever language wrote the row. What your service owes the pipeline
@@ -273,7 +274,7 @@ Capture only the outbox:
     "transforms": "encodeAvro",
     "transforms.encodeAvro.type": "io.ekbatan.events.streaming.debeziumsmt.avro.OutboxToAvroTransform",
     "transforms.encodeAvro.action.event.schema": "/schemas/ActionEvent.avsc",
-    "transforms.encodeAvro.payload.schemas": "com.example.finance.WalletMoneyDepositedEvent:/schemas/WalletMoneyDepositedEvent.avsc",
+    "transforms.encodeAvro.payload.schemas": "com.example.finance.avro.WalletMoneyDepositedEvent:/schemas/WalletMoneyDepositedEvent.avsc",
 
     "errors.tolerance": "all",
     "errors.log.enable": "true"
@@ -281,14 +282,14 @@ Capture only the outbox:
 }
 ```
 
-`table.include.list` is `eventlog.events` because the framework keeps its two event tables in
-`eventlog` - a schema of its own in each database on PostgreSQL, and on MySQL and MariaDB a
-database of its own, so there the connector lists `eventlog.events` too. (On MySQL and MariaDB that
-database is the server's: the connector sees the events of every database on it.)
+`table.include.list` names `eventlog.events`: the framework keeps its event tables in `eventlog`,
+a schema of its own on PostgreSQL and a database of its own on MySQL and MariaDB. On MySQL and
+MariaDB that one database serves the whole server, so the connector sees the events of every
+database on it.
 
-The transform **drops UPDATE rows** — including fan-out's `delivered` flip — **skips sentinel
-rows** where `event_type` is null, and encodes the row as Avro using the schemas you mount into
-the Connect container. No Schema Registry is required. For Protobuf, swap in
+The transform **drops updates** - such as the in-process path marking a row `delivered` - and
+**skips the row an action writes when it emits no event** (`event_type` is null). It encodes
+every other row as Avro, using the schemas you mount into the Connect container. No Schema Registry is required. For Protobuf, swap in
 `OutboxToProtobufTransform` and give it descriptor sets. See
 [Streaming with Debezium](/reference/events/streaming/).
 
@@ -315,7 +316,7 @@ A consumer that wants the row as an object rather than as bytes has `ActionEvent
 `ekbatan.streaming`, which is the consumer-side view of an outbox row — the action's context and
 the event it produced, in one frozen dataclass.
 
-With Variant A (JSON on the wire), a consumer is an ordinary Kafka consumer and nothing else:
+Without a transform, rows reach Kafka as JSON, and a consumer is an ordinary Kafka consumer:
 
 ```python
 consumer = KafkaConsumer(
@@ -328,21 +329,22 @@ consumer = KafkaConsumer(
 for message in consumer:
     row = message.value
     if row["event_type"] is None:
-        continue                                  # a sentinel; the action changed nothing
+        continue                                  # the action emitted no event
     handle(row["event_type"], row["payload"])
 ```
 
-With Variant B the value is `bytes`. `ActionEvent.from_avro` or `ActionEvent.from_protobuf`
+With a transform, the value is Avro or Protobuf `bytes`. `ActionEvent.from_avro` or `ActionEvent.from_protobuf`
 decodes the envelope first, then `payload` is decoded with the schema that matches its
 `event_type` - `read_avro_payload(event.payload, schema)`, or your message class's
 `FromString`. The two-step is the point: a consumer routes on `event_type` without parsing a body
 it may not have a schema for. Each format needs its extra, `ekbatan[avro]` or
 `ekbatan[protobuf]`; see [Reading Avro and Protobuf](/reference/events/streaming/#reading-avro-and-protobuf).
 
-**A Variant A consumer needs the sentinel check**, as above. An action that decided there was
-nothing to do still writes a row with `event_type` null, and raw CDC publishes it like any other.
-Variant B consumers do not: the transforms drop sentinels before they reach a topic. That is one
-more reason the variant is a deployment-wide choice rather than a per-consumer one.
+**A JSON consumer needs the `event_type is None` check**, as above. An action that decided there
+was nothing to do still writes a row with `event_type` null, and Debezium publishes it like any
+other. Avro and Protobuf consumers do not: the transforms drop those rows before they reach a
+topic. That is one more reason the format is chosen once for the whole deployment, not per
+consumer.
 
 ### B.3 Fan out or rekey downstream
 
@@ -377,9 +379,9 @@ What works:
 - **an idempotency key** on an external call;
 - **`model_id` as the message key** when ordering matters per aggregate.
 
-The shape worth internalising is that **idempotency is a unique constraint inside the
-transaction that does the work**, not a check-then-act in application code. A check-then-act has
-a window. This has none:
+The idea to remember: **make a repeat harmless with a unique constraint, inside the transaction
+that does the work** - not by checking first and writing after. Between a check and a write, a
+second delivery can slip in. A unique constraint leaves no gap:
 
 <ModeTabs>
 <div slot="sync">
@@ -430,7 +432,7 @@ its own clean transaction and its own outbox rows. That is what a saga is built 
   durable write, inside the action's transaction, and everything else consumes from it.
 
 If you start in process and add CDC later, **no application code changes.** The connector starts
-tailing the same table; backfill earlier rows with `snapshot.mode`.
+following the same table, and Debezium's `snapshot.mode` setting can send the earlier rows too.
 
 ## Next
 
