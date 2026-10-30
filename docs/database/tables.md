@@ -1,13 +1,17 @@
 # Framework tables
 
+The tables the framework itself reads and writes: which ones you need, where they live, and how
+they get into your database.
+
 An application has two kinds of table:
 
 - **yours** - `wallets`, `orders`, `notifications`;
 - **the framework's** - written by the framework or one of its runtime helpers.
 
-This is the map. The individual pages carry the full DDL per dialect, column by column.
+This page is the map of the framework's tables. Each one also has a page of its own, with the
+full DDL for each database, column by column.
 
-| table | needed when | written by | shape |
+| table | needed when | written by | built by |
 | --- | --- | --- | --- |
 | [`events`](tables/events.md) | you use the default outbox persister, which is the normal setup | the executor, inside the action's transaction | `outbox_table()` |
 | [`event_notifications`](tables/event-notifications.md) | optional - only with the in-process event handler | the fan-out job creates rows, the dispatch job updates them | `notifications_table()` |
@@ -26,10 +30,11 @@ using it means all three tables.
 | distributed jobs only | no | no | yes |
 | a custom `EventPersister` that writes somewhere else | up to you | no, unless you also handle in-process | only if you use distributed jobs |
 
-The last row is the one that surprises people. The outbox table is the *default* persister's
-choice, not the framework's requirement: swap the persister and `events` is yours to shape -
-a different retention, a partitioned table, a second column your consumers need. What you cannot
-swap is *when* it is written, which is the part that makes it atomic.
+The last row surprises people. The `events` table belongs to the default persister, not to the
+framework. Write your own persister and the table is yours to shape: a different retention, a
+partitioned table, an extra column your consumers need. What you cannot change is *when* the
+events are written - inside the action's transaction - because that is what makes the rows and
+their events commit together.
 
 ## Table pages
 
@@ -54,10 +59,10 @@ EVENT_NOTIFICATIONS = notifications_table(metadata)
 SCHEDULED_TASKS = scheduled_tasks_table(metadata)
 ```
 
-**Where the two event tables are is fixed**, and nothing passes them to the framework: the
-executor's default event writer, the fan-out job and the handling job name them themselves.
-`outbox_table()` and `notifications_table()` take no name and no schema - they describe exactly
-the tables the framework uses:
+**The two event tables have fixed names, in a fixed place.** You never pass them to the
+framework: the executor's default event writer, the fan-out job and the dispatch job name them
+themselves. So `outbox_table()` and `notifications_table()` take no name and no schema. They
+describe exactly the tables the framework uses:
 
 | database | the two event tables |
 | --- | --- |
@@ -65,15 +70,15 @@ the tables the framework uses:
 | MySQL, MariaDB | `eventlog.events`, `eventlog.event_notifications` - a database of their own, one per server |
 | SQLite | `events`, `event_notifications` - in the file |
 
-On MySQL and MariaDB a schema *is* a database, so `eventlog` is a database of its own beside
-yours. Your first migration creates it - `CREATE DATABASE IF NOT EXISTS eventlog;` - and the login
-needs the right to create it and to use it. There is one per server, shared by every database on
-it: two shards, or two applications, on one server write into the same two tables. A shard on a
-server of its own has an `eventlog` of its own.
+On MySQL and MariaDB a schema *is* a database, so `eventlog` is a database of its own, beside
+yours. Your first migration creates it with `CREATE DATABASE IF NOT EXISTS eventlog;`, and the
+login needs the right to create it and to use it. There is one `eventlog` per server, shared by
+every database on it: two shards, or two applications, on one server write into the same two
+tables. A shard on a server of its own has its own `eventlog`.
 
-SQLite has no schemas, so there every data source maps `eventlog` onto the file - and so does a
-connection you open from its `sqlalchemy_engine`. An engine you build yourself with SQLAlchemy
-needs the same mapping before you read these tables through it:
+SQLite has no schemas. There, every data source maps `eventlog` onto the database file, and so
+does a connection you open from its `sqlalchemy_engine`. An engine you build yourself with
+SQLAlchemy needs the same mapping before you read these tables through it:
 
 ```python
 from sqlalchemy import create_engine
@@ -82,19 +87,22 @@ from ekbatan.schema import eventlog_translation
 engine = create_engine(url, execution_options={"schema_translate_map": eventlog_translation("sqlite")})
 ```
 
-In practice you do not write the tables by hand at all - `schemagen` emits them alongside your
-own tables, and `migrate()` creates them from your migration files. See [schemagen](schemagen.md)
-and [Migrations](migrations.md). `create_all` makes `eventlog` before the two tables: the schema
-on PostgreSQL, the database on MySQL and MariaDB.
+In practice you rarely write these tables by hand. `migrate()` creates them from your migration
+files, and `schemagen` emits them alongside your own tables - see [Migrations](migrations.md)
+and [schemagen](schemagen.md). If you use `create_all` instead, it makes `eventlog`
+before the two tables: the schema on PostgreSQL, the database on MySQL and MariaDB.
 
-In a sharded application every shard gets its own copy of all three - except that on MySQL and
-MariaDB, shards on one server share its `eventlog`. `migrate()` applies the same migration files
-to each.
+In a sharded application every shard gets its own copy of all three tables. The exception is
+MySQL and MariaDB, where shards on one server share its `eventlog`. `migrate()` applies the same
+migration files to each shard.
+
+If an existing database keeps the two event tables somewhere else, move them in your next
+migration, as below.
 
 ### Tables already in PostgreSQL's default schema
 
-A PostgreSQL database whose migrations put the two event tables in its default schema moves them
-in its next migration. Rows, keys and indexes go with each table:
+A PostgreSQL database that has the two event tables in its default schema moves them into
+`eventlog`. Rows, keys and indexes go with each table:
 
 ```sql
 CREATE SCHEMA IF NOT EXISTS eventlog;
@@ -104,8 +112,8 @@ ALTER TABLE event_notifications SET SCHEMA eventlog;
 
 ### Tables already in your own database on MySQL and MariaDB
 
-A MySQL or MariaDB database whose migrations put the two event tables beside its own moves them
-into `eventlog` in its next migration. Rows and indexes go with each table:
+A MySQL or MariaDB database that has the two event tables beside its own moves them into
+`eventlog`. Rows and indexes go with each table:
 
 ```sql
 CREATE DATABASE IF NOT EXISTS eventlog;

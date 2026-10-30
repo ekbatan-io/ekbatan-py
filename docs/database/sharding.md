@@ -1,48 +1,56 @@
 # Sharding
 
-The reference. For *why* there are two axes and when to reach for each strategy, read
-[Concepts → Sharding](../concepts/sharding.md) first; this page is the configuration and the
-wire format.
+How to lay out your shards, give a model an id that says which shard it lives on, and route
+repositories, actions and migrations by it.
+
+This is the reference. Why there are two axes, and when to reach for each, is in
+[Concepts → Sharding](../concepts/sharding.md) - read that first.
 
 ## Two axes: group + member
 
-A `ShardIdentifier` is a numeric `(group, member)` pair, and the two axes answer different
-questions:
+A `ShardIdentifier` is a pair of numbers, `(group, member)`. The two answer different questions:
 
-- **Group** is the **policy** axis - boundaries forced on you from outside. Data residency
-  ("Mexico data stays in Mexico"), a tenant isolation contract, a business-domain separation.
-  How many groups you have is decided by those constraints, not by you. **8 bits, up to 256.**
-- **Member** is the **capacity** axis - horizontal scale inside one policy boundary. You add a
-  member when one database cannot take the write throughput. How many is capacity planning.
-  **6 bits, up to 64 per group.**
+- **Group** is the **policy** axis: boundaries forced on you from outside. Data residency
+  ("Mexico data stays in Mexico"), a tenant isolation contract, a separate business domain. Those
+  constraints decide how many groups you have, not you. **8 bits, up to 256.**
+- **Member** is the **capacity** axis: more databases inside one policy boundary. You add a
+  member when one database cannot take the writes. How many is capacity planning. **6 bits, up to
+  64 per group.**
 
 ```python
 from ekbatan.sharding import DEFAULT_SHARD, ShardIdentifier
 
-GLOBAL_SHARD = ShardIdentifier(0, 0)      # prints as "0:0"; DEFAULT_SHARD is this
+GLOBAL_SHARD = ShardIdentifier(0, 0)   # prints as "0:0"; DEFAULT_SHARD is this one
 MEXICO_SHARD = ShardIdentifier(1, 0)
-MEXICO_2 = ShardIdentifier(1, 1)    # a second database for the same policy boundary
+MEXICO_2 = ShardIdentifier(1, 1)       # a second database inside the same policy boundary
 ```
 
-16,384 addressable shards, and the numbers travel **inside the id** rather than in a lookup
-table - see [Self-describing IDs](#self-describing-ids-shardedid).
+That is 16,384 possible shards. The numbers travel **inside each id**, not in a lookup table -
+see [Self-describing IDs](#self-describing-ids-shardedid).
 
-Members of one group are assumed to share network locality and a failure domain: same region,
-same VPC, same availability zone. A predicate read inside a group scatters across every member
-of it, so intra-group latency is what that read costs. Names like `global-eu-1`, `global-eu-2`
-reflect the convention. Nothing enforces it - a connection url is opaque to the framework - but
-it is the shape the design assumes, and ignoring it makes scatter reads slower than they look.
+The members of one group are expected to sit close together: same region, same VPC, same
+availability zone. Names like `global-eu-1` and `global-eu-2` follow that. Nothing checks it - the
+framework does not look inside a url - but the design assumes it. A read that visits every shard
+is slower when the shards are far apart.
 
-A shard this deployment does not have routes to the default and **logs a warning
-saying so** - see [Unregistered shards](#unregistered-shards-fall-back-to-default-and-say-so)
-below, and `UnknownShardPolicy.FAIL` if you want it to be an error instead.
+An id that names a shard this deployment does not have goes to the default shard, and **a warning
+says so** - see [Unregistered shards](#unregistered-shards-fall-back-to-default-and-say-so) below.
+Set `UnknownShardPolicy.FAIL` to make it an error instead.
 
 ## Declarative configuration
 
-The layout has two levels: **groups** of **members**, each member one shard with a named map of
-datasources.
+The layout has two levels: **groups**, each holding **members**. Each member is one shard, with
+its database connections listed by name.
 
 ```python
+from ekbatan import (
+    DatabaseRegistry,
+    DataSourceConfig,
+    ShardGroupConfig,
+    ShardingConfig,
+    ShardMemberConfig,
+)
+
 layout = ShardingConfig(
     default_shard=GLOBAL_SHARD,
     groups=(
@@ -64,19 +72,22 @@ registry = DatabaseRegistry.from_config(layout)
 # async mode: the same layout, AsyncDatabaseRegistry.from_config(layout) from ekbatan.aio
 ```
 
-A member's `(group, member)` is its `ShardIdentifier`. Its `configs` map has two reserved names
-and room for any other:
+The same layout can also be read from a YAML, TOML, JSON or INI file: see
+[Config files](config-files.md).
+
+A member's `(group, member)` pair is its `ShardIdentifier`. Its `configs` has two reserved names,
+and room for any others you need:
 
 | key | |
 | --- | --- |
-| `"primaryConfig"` | **required.** The pool for writes and transactional reads |
-| `"secondaryConfig"` | optional. A read replica for non-transactional reads; omit it and both go to the primary |
-| anything else | yours - `"jobsConfig"`, `"lockConfig"`, `"analyticsConfig"`. Read back with `member.config_for(name)` and build with `DataSource.from_config(...)`; the registry builds only the two above |
+| `"primaryConfig"` | **required.** The pool for writes, and for reads inside a transaction |
+| `"secondaryConfig"` | optional. A read replica, for reads outside a transaction. Leave it out and those reads go to the primary |
+| anything else | yours - `"jobsConfig"`, `"lockConfig"`, `"analyticsConfig"`. The registry builds pools only for the two above. Read yours back with `member.config_for(name)`, and build it with `DataSource.from_config(...)` |
 
-The two reserved names are spelled exactly as shown. A group needs a `name`; a member's `name` is
-optional and labels its spans and log lines.
+Spell the two reserved names exactly as shown. A group needs a `name`. A member's `name` is
+optional; it labels the member's spans and log lines.
 
-`DataSourceConfig` is the pool:
+`DataSourceConfig` is one connection pool:
 
 | | default | |
 | --- | --- | --- |
@@ -91,17 +102,20 @@ optional and labels its spans and log lines.
 | `data_source_properties` | `{}` | extra driver settings, handed over as given |
 | `echo` | False | log every statement |
 
-**`max_overflow=0` by default**, where SQLAlchemy's own default is 10. An overflow connection is
-opened on demand and closed on return, so a burst that exceeds `pool_size` silently becomes a
-burst of connection *establishment* against the database - which is the expensive part, and
-exactly when you can least afford it. A fixed pool makes the limit visible as waiting rather than
-invisible as latency.
+**`max_overflow` is 0 by default**, where SQLAlchemy's own default is 10. An overflow connection
+is opened when it is needed and closed when it is returned. So a burst beyond `pool_size` silently
+becomes a burst of new connections to the database - the expensive part, at exactly the moment you
+can least afford it. With a fixed pool, the limit shows up as waiting, where you can see it,
+rather than as hidden latency.
 
-The same layout can be read from a YAML, TOML, JSON or INI file: see [Config files](config-files.md).
+A connection is retired by age (`pool_recycle`), not by how long it has been idle. There is no
+setting for a minimum number of idle connections.
 
-**The login lives in `username` and `password`, never in the url**. A url
-is logged and repeated, so one that carries a user name or a secret is refused, and the message
-says where each goes instead, without repeating the url:
+### The login
+
+**The login goes in `username` and `password`, never in the url.** A url gets logged and
+repeated, so a url that carries a user name or a secret is refused. The error says where each part
+goes instead, without repeating the url:
 
 ```python
 DataSourceConfig(
@@ -111,12 +125,24 @@ DataSourceConfig(
 )
 ```
 
-Both are optional: leave `username` out only when the driver supplies the user, and `password` for
-a login that has none. A url SQLAlchemy cannot parse - two hosts written `h1:3306,h2:3306` - is
-read from its text instead. `split_login(url)` takes the login out of a url that arrives with one, such as a test container's.
+Both are optional. Leave out `username` only when the driver supplies the user, and `password` for
+a login that has none. The check also covers a url SQLAlchemy cannot parse, such as two hosts
+written `h1:3306,h2:3306`: the framework then reads the url's text itself.
 
-**`data_source_properties` are handed to the driver as given** - a number stays a number, a group
-stays a group, an object stays an object:
+When a url arrives with a login in it, such as a test container's, `split_login(url)` from
+`ekbatan.config` takes the login out:
+
+```python
+from ekbatan.config import split_login
+
+url, username, password = split_login(container.get_connection_url())
+config = DataSourceConfig(url=url, username=username, password=password)
+```
+
+### Driver settings
+
+**`data_source_properties` are handed to the driver as given.** A number stays a number, and a
+group of settings stays a group:
 
 ```python
 DataSourceConfig(
@@ -130,26 +156,21 @@ DataSourceConfig(
 )
 ```
 
-`user`, `password` and PyMySQL's `passwd` are refused there, in any letter case, because they would
-silently win over `username` and `password`. Other secrets that have no field of their own - a
-client key's `sslpassword`, PyMySQL's `ssl_key_password` - belong here. An empty value (`None`) is
-refused. Which setting names hold a login or a secret, for every setting of psycopg, PyMySQL and
-sqlite3, is decided in the ledger `tests/driver_settings.tsv`. The pool and the migrator both
-connect with the same login and the same settings.
+Three names are refused there, in any letter case: `user`, `password` and PyMySQL's `passwd`.
+They would silently win over `username` and `password`. Other secrets that have no field of their
+own belong here - a client key's `sslpassword`, PyMySQL's `ssl_key_password`. A setting with no
+value (`None`) is refused. The pool and the migrator both connect with the same login and the same
+settings.
 
-**It never prints the password**, nor any `data_source_properties` value - every one of those is
-treated as a secret. Printing a `DataSourceConfig`, or anything that holds one - a layout, a member,
-a migration result - shows `***` in their place. `log.info(layout)` is safe to write.
+**The password is never printed**, and neither is any `data_source_properties` value: all of them
+are treated as secrets. Printing a `DataSourceConfig`, or anything that holds one - a layout, a
+member, a migration result - shows `***` in their place. `log.info(layout)` is safe to write.
 
-A connection is retired by age (`pool_recycle`), not by how long it sat idle, and there is no
-floor on how many stay open while idle.
+## Sharded models
 
-## Sharded models and repositories
-
-A model that participates in sharding declares its id type as `ShardedId` instead of `Id`:
+A model that takes part in sharding declares its id type as `ShardedId` instead of `Id`:
 
 ```python
-
 @dataclass(frozen=True, kw_only=True)
 class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
     owner_id: UUID
@@ -179,35 +200,55 @@ class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
         )
 ```
 
-**That is the whole of the model's participation.** One base class on the id, and one argument at
-the single point where a row is created. Nothing else on the model mentions a shard, because
-after `generate(shard)` the id carries it — the row is bonded to that database for its lifetime,
-and `ShardedId[Wallet].generate` is the only place that decision can be made.
+**That is all the model has to do.** One id type, and one argument at the single point where a row
+is created. Nothing else on the model mentions a shard, because after `generate(shard)` the id
+carries it. The row stays on that database for its whole life, and `ShardedId[Wallet].generate`
+is the only place that decision is made.
 
-No field holds the shard, and deliberately so: a column would be a second copy of something the
-primary key already says, free to disagree with it after a bad backfill. Reading it out of the id
+No field holds the shard, on purpose. A column would be a second copy of what the primary key
+already says, free to disagree with it after a bad backfill. Reading the shard out of the id
 cannot drift.
 
-The framework's own tables need no change at all. Each shard carries its own `events` and
-`event_notifications`, and an event is written to the database whose row it describes — so the
-outbox is sharded by construction rather than by configuration.
+The framework's own tables need no change at all. Each shard has its own `events` and
+`event_notifications`, and an event is written to the same database as the row it describes. So
+the outbox is sharded without any setting.
 
-### Reaching a specific shard
+## Self-describing IDs: `ShardedId`
 
-```python
-registry.manager(MEXICO_SHARD)          # the transaction manager for one shard
-registry.default                  # the default shard's
-registry.effective_shard(key)     # where this key lives
-registry.shards                   # every configured identifier
+The shard is packed into the random part of a UUIDv7 (the `rand_b` bits, in the standard's
+terms):
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│ MSB: [48-bit timestamp][4-bit version=7][12-bit rand_a]         │
+│ LSB: [2-bit variant][8-bit GROUP][6-bit MEMBER][48-bit rand]    │
+└────────────────────────────────────────────────────────────────┘
 ```
 
-An `AsyncDatabaseRegistry` answers the same four. You need these rarely. A repository routes for you; these are for the admin script, the
-reconciliation job, and the test that asserts placement.
+Ekbatan for Java packs the shard into the same bits, so a Java service can read the shard out of
+an id in this service's events - see [Running beside a Java service](../beside-java.md#ids).
+
+Making one, and reading it back:
+
+```python
+wallet_id = ShardedId[Wallet].generate(MEXICO_SHARD)      # on that shard for the row's whole life
+wallet_id.shard                            # -> ShardIdentifier(1, 0)
+wallet_id.minted_at                        # -> datetime, from the v7 timestamp
+```
+
+`ShardedId[Wallet].random()` makes one on the default shard. The timestamp is in the high bits,
+so ids sort by the time they were made. That keeps a primary-key index from fragmenting the way
+random (v4) uuids do.
+
+**An edge case in sorting.** Comparing two ids in Python (`<`, `sorted`) reads each half of the
+uuid as a signed number. Version 7 ids still sort by time. But a random `Id[...]` whose first
+digit is `8`-`f` sorts before one starting `0`-`7`, while the database's own order is unsigned.
+This is the order a Java service gives the same ids, so the two agree.
 
 ## Sharded repositories
 
 Opt a repository in by passing a `ShardingStrategy` to `super().__init__`. The bundled
-`EmbeddedBitsShardingStrategy` decodes the shard from the id's embedded bits:
+`EmbeddedBitsShardingStrategy` reads the shard from the bits inside the id:
 
 **Sync**
 
@@ -229,9 +270,8 @@ class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, UUID]):
         )
 ```
 
-That one keyword is the entire difference from an unsharded repository. There is no second line
-to change, because `to_record` / `from_record` are the same and the id type already carries
-the shard.
+That one keyword is the whole difference from an unsharded repository. `to_record` and
+`from_record` stay the same, because the id type already carries the shard.
 
 What it changes about the inherited reads and writes:
 
@@ -243,27 +283,27 @@ What it changes about the inherited reads and writes:
 | anything passed `shard=` | that shard, and only that one |
 
 A read across every shard visits them in shard order. `find_one_where` and `exists_where` stop at
-the first shard that has the row, so a lookup that is lucky costs one query, and a shard after
-that one is never asked. If a shard fails, the whole read fails with that shard's own error and
-a note naming it - `ekbatan: reading shard 1:0 (mexico) failed, so the whole read failed`. There
-are no partial results.
+the first shard that has a match, so the shards after it are never asked. If a shard fails, the
+whole read fails, with that shard's own error and a note naming it:
+`ekbatan: reading shard 1:0 (mexico) failed, so the whole read failed`. There are no partial
+results.
 
-`find_all_by_ids(ids)` is the one worth calling out: it **groups the ids by shard and queries each
-shard once**, rather than one query per id. Duplicates are collapsed first, and an empty input
-returns an empty list without going near a database — never `IN ()`, and never an accidental
-full-table read.
+`find_all_by_ids(ids)` deserves a mention: it **groups the ids by shard and queries each shard
+once**, not once per id. Duplicates are dropped first. An empty input returns an empty list
+without touching a database - never `IN ()`, and never an accidental read of the whole table.
 
 ### Shard-aware accessors for custom queries
 
-When an inherited method does not cover the question, the accessors take the same routing
-information the inherited ones use — so a hand-written query lands on the right database without
-you working out which one that is:
+When no inherited method answers your question, write the query yourself with these accessors.
+They take the same routing information the inherited methods use, so a hand-written query lands
+on the right database without you working out which one that is. A key is what the id column
+holds - for a `ShardedId`, its `.value`:
 
 **Sync**
 
 ```python
 def find_all_by_owner_beside(self, wallet_id: ShardedId[Wallet], owner_id: UUID) -> list[Wallet]:
-    with self.readonly_db(key=wallet_id) as conn:          # that wallet's shard
+    with self.readonly_db(key=wallet_id.value) as conn:    # that wallet's shard
         return conn.rows(
             select(WALLETS).where(WALLETS.c.owner_id == owner_id)
         ).fetch(self.from_record)
@@ -275,7 +315,7 @@ def find_all_by_owner_beside(self, wallet_id: ShardedId[Wallet], owner_id: UUID)
 async def find_all_by_owner_beside(
     self, wallet_id: ShardedId[Wallet], owner_id: UUID
 ) -> list[Wallet]:
-    async with self.readonly_db(key=wallet_id) as conn:    # that wallet's shard
+    async with self.readonly_db(key=wallet_id.value) as conn:   # that wallet's shard
         found = await conn.rows(select(WALLETS).where(WALLETS.c.owner_id == owner_id))
         return found.fetch(self.from_record)
 ```
@@ -283,68 +323,49 @@ async def find_all_by_owner_beside(
 | accessor | connection |
 |---|---|
 | `db(key=…)` / `db(model=…)` / `db(shard=…)` | the writer for that shard, outside any transaction |
-| `readonly_db(key=…)` / `readonly_db(shard=…)` | the **replica**, for a read that tolerates lag |
+| `readonly_db(key=…)` / `readonly_db(shard=…)` | the **replica**, for a read that can be a little behind - the primary where no replica is configured |
 | `tx_db(key=…)` | the transaction already open on that shard, or `None` |
 | `tx_db_else_db(key=…)` | that transaction, or no transaction at all |
 | `dbs()` / `readonly_dbs()` | **every** shard's, one at a time, as `(shard, conn)` pairs |
 
-All three are **keyword-only**, so a call always says which one it is routing by rather than
-leaving it to argument position. Passing more than one is not an error — `shard=` wins, then
-`model=`, then `key=` — and passing none routes to the default shard. Pass one.
+The routing arguments - `key=`, `model=` and `shard=` - are **keyword-only**, so a call always
+says what it routes by. Pass one. Passing more than one is not an error: `shard=` wins, then
+`model=`, then `key=`. Passing none routes to the default shard.
 
-*Which accessor* you reach for is the explicit decision here. There is no implicit "join the
-transaction if there is one" default: `db()` is outside a transaction and `tx_db_else_db()` joins
-one, and you say which you meant. See [Repositories](../database/repositories.md).
+Which accessor you call is the decision, and you make it explicitly. Nothing joins a transaction
+behind your back: `db()` works outside any transaction, and `tx_db_else_db()` joins the open one.
+See [Repositories](repositories.md).
 
 An **unsharded** repository's `dbs()` visits only the default shard, even when the registry holds
-several. A repository that opted out of routing should not silently acquire a scatter.
+several. A repository that did not opt in to sharding should not quietly start reading every
+shard.
 
-## Self-describing IDs: `ShardedId`
+### Reaching a specific shard
 
-The shard is packed into the `rand_b` region of a UUIDv7:
-
-```
-┌────────────────────────────────────────────────────────────────┐
-│ MSB: [48-bit timestamp][4-bit version=7][12-bit rand_a]         │
-│ LSB: [2-bit variant][8-bit GROUP][6-bit MEMBER][48-bit rand]    │
-└────────────────────────────────────────────────────────────────┘
-```
-
-Ekbatan for Java puts the shard in the same bits, so a Java service reads the shard out of an id
-in this one's events - see [Running beside a Java service](../beside-java.md#ids).
-
-Minting and reading:
+You rarely need these: a repository routes for you. They are for an admin script, a
+reconciliation job, or a test that checks where a row landed:
 
 ```python
-wallet_id = ShardedId[Wallet].generate(MEXICO_SHARD)      # bonded to that shard for the row's life
-wallet_id.shard                            # -> ShardIdentifier(1, 0)
-wallet_id.minted_at                        # -> datetime, from the v7 timestamp
+registry.manager(MEXICO_SHARD)           # the transaction manager for one shard
+registry.default                         # the default shard's
+registry.effective_shard(MEXICO_SHARD)   # the shard actually used: the default, if this one is not configured
+registry.shards                          # every configured identifier
 ```
 
-`ShardedId[Wallet].random()` uses the default shard. Because the timestamp is the high bits, ids sort
-chronologically - which is what keeps a primary key index from fragmenting the way a v4 does.
-Comparing two ids (`<`, `sorted`) reads each half of the uuid as a signed number: version 7 ids
-sort by time, but a random `Id[...]` whose first digit is `8`-`f` sorts before one starting
-`0`-`7` (the database's own order is unsigned). A Java service sorts the
-same ids in the same order.
+An `AsyncDatabaseRegistry` answers the same four. To ask where an id lives, ask its repository:
+`wallet_repository.shard_for(wallet_id.value)`.
 
 ## Custom sharding strategies
 
-When the shard is not derivable from the id — you need to move rows between shards, or the key
-is something the id does not carry — implement `ShardingStrategy` and override `shard_for` on
-the repository.
+The bundled strategy reads the shard from the id. Write your own when that is not enough. Two
+cases justify it:
 
-The cost is that the id stops being self-describing: every read that starts from an id alone
-needs the strategy to locate the row first, which is a round trip you pay implicitly on each
-lookup. A strategy that cannot resolve a shard from an id is fine in itself - it just has to
-route from something else - but the first id-only call on such a repository raises
-`UnsupportedError`, naming the strategy and telling you to override `shard_for()`. Refused rather
-than guessed at, because guessing here means reading the right row from the wrong database and
-finding nothing.
+- **Moving live data between shards.** The shard bits stay in an id for the row's whole life, so
+  moving a row would make its id wrong.
+- **Placement by a key the id does not carry**, decided after the row was created.
 
-
-The interface is small. A strategy answers one question — which shard does this key live on —
-and declares whether it can answer it from an id alone:
+A strategy answers one question - which shard does this row, or this id, live on - and says
+whether it can answer from an id alone:
 
 ```python
 class ShardingStrategy(Protocol):
@@ -352,42 +373,40 @@ class ShardingStrategy(Protocol):
     def uses_shard_aware_id(self) -> bool: ...
 
     def shard_for_id(self, key: object) -> ShardIdentifier | None: ...
+
+    def shard_for(self, persistable: object) -> ShardIdentifier | None: ...
 ```
 
-`shard_for_id` returns `None` to mean *use the default shard*, rather than guessing.
+`shard_for_id` and `shard_for` return `None` to mean *use the default shard*, rather than guess.
 
-`uses_shard_aware_id` is what the repository checks at construction. A strategy that cannot
-resolve a shard from an id, used by a repository whose reads start from ids, raises there
-rather than on the first lookup — the failure lands where somebody can fix it.
+Both cases pay the same price: the id stops saying where its row is. A read that starts from an id
+needs a lookup before it can route - a round trip on every such read. That is why the
+embedded-bits strategy is the default, though it is the less flexible one.
 
-Two cases justify writing one. **Re-sharding live data**, because embedded bits are bonded to
-the row for its lifetime and a move would invalidate the id. And **a key the id does not
-carry**, where placement follows something decided after creation.
-
-Both pay the same price: the id stops being self-describing, so a read starting from an id
-needs a lookup before it can route. That is a round trip on every such read, and it is why the
-embedded-bits strategy is the default despite being the less flexible one.
+A strategy whose `uses_shard_aware_id` is `False` is fine in itself: rows still route through its
+`shard_for`. But the first call that has only an id to go on - `get_by_id`, for one - raises
+`UnsupportedError`. The error names the strategy and tells you to override `shard_for()` on the
+repository, which is where your lookup goes. It is refused rather than guessed at, because a guess
+means reading the right id from the wrong database and finding nothing.
 
 ## Unregistered shards fall back to default, and say so
 
-An id naming a shard this deployment has not configured **lands on the default**.
-That is what lets a staging database with one shard read ids minted where there are four.
+An id naming a shard this deployment has not configured **lands on the default shard**. That is
+what lets a staging database with one shard read ids made where there are four.
 
-It is also exactly what a mistyped shard identifier does, and that one writes to the wrong
-database. Nothing at the call site can tell the two apart, so the framework does not try to.
-**What it does instead is say it happened:**
+A mistyped shard identifier does exactly the same thing, and that one writes to the wrong
+database. Nothing at the call site can tell the two apart, so the framework does not try. **What
+it does instead is say it happened:**
 
 ```
 WARNING  io.ekbatan.core.shard.DatabaseRegistry  Shard ShardIdentifier(9, 9) is not registered, routing to default ShardIdentifier(0, 0) [registered=[ShardIdentifier(0, 0), ShardIdentifier(1, 0)]]
 ```
 
 A silent fallback is what would make a typo expensive: the write succeeds, the row is in the wrong
-database, and nothing surfaces until somebody counts.
-The warning is unconditional — it fires under either policy, because it is the diagnosis, not the
-enforcement.
+database, and nothing shows until somebody counts.
 
-A deployment that holds the **whole** layout can go further, because there an unregistered shard
-can only be a bug:
+A deployment that holds the **whole** layout can go further. There an unregistered shard can only
+be a bug, so make it an error:
 
 ```python
 from ekbatan import UnknownShardPolicy
@@ -403,26 +422,29 @@ ShardingConfig(
 ValidationError: shard 9:9 is not registered and unknown_shard_policy is FAIL; registered: ['0:0', '1:0']
 ```
 
+Under `FAIL` this error takes the place of the warning.
+
 In code the policy is the enum, `UnknownShardPolicy.USE_DEFAULT_SHARD` or
-`UnknownShardPolicy.FAIL`; a string there is refused with a `TypeError`. In a config file it is a
-word, read by `UnknownShardPolicy.from_`: case and separators do not matter, so `fail`, `FAIL`,
-`useDefaultShard`, `use_default_shard` and `USE-DEFAULT-SHARD` all work, and an empty value is the
-default.
+`UnknownShardPolicy.FAIL`. A string there is refused with a `TypeError`. In a config file it is a
+word, read by `UnknownShardPolicy.from_`. Case and separators do not matter, so `fail`, `FAIL`,
+`useDefaultShard`, `use_default_shard` and `USE-DEFAULT-SHARD` all work, and an empty value means
+the default.
 
-It is applied where routing resolves, so it covers **reads and writes alike** — `find_by_id(id)` on an
-unregistered shard raises just as `add(model)` does. Leave it alone if your deployment is a
-**subset** of the layout: turning it on there refuses exactly the foreign-id reads the fallback
-exists for.
+The policy applies wherever routing happens, so it covers **reads and writes alike**:
+`find_by_id(id)` on an unregistered shard raises just as `add(model)` does. Leave it off if your
+deployment holds only **part** of the layout. There it would refuse exactly the reads of other
+deployments' ids that the fallback exists for.
 
-`None` is a different thing and warns about nothing: it means no strategy proposed a shard, which
-is the ordinary unsharded path.
+A strategy that returns `None` is a different case, and warns about nothing. It means no strategy
+proposed a shard, which is the ordinary unsharded path.
 
-Running unsharded on purpose is `NoShardingStrategy`: every key maps to the default, and its
-scatter accessors visit only that shard.
+Running unsharded on purpose is `NoShardingStrategy`: every key maps to the default shard, and its
+`dbs()` and `readonly_dbs()` visit only that shard.
 
 ## Cross-shard actions
 
-Refused by default. `CrossShardError` names the two shards involved.
+An action whose changes land on more than one shard is refused by default: `CrossShardError`
+names the two shards involved. To allow it, say so for that one call:
 
 **Sync**
 
@@ -446,50 +468,51 @@ await executor.execute(
 )
 ```
 
-With it on: one transaction per shard, each committing independently, and the action's outbox row
-written to **every** involved shard so each holds the full context. A failure rolls back only its
-own shard and the framework logs the partial commit, naming what stayed.
-
-The outbox row is duplicated to every involved shard **under the same id**, so a consumer
-reading any one of them sees the whole action, and a consumer reading all of them can tell it was
-one action rather than several.
+With it on, each shard gets its own transaction, and each commits on its own. The action's outbox
+row is written to **every** shard involved, under the same id. So a consumer reading any one shard
+sees the whole action, and a consumer reading all of them can tell it was one action rather than
+several. If one shard fails, only that shard rolls back, and the framework logs an error naming
+the shards that stayed committed.
 
 **This is not two-phase commit.** There is no such thing to have across separate databases. Each
-shard commits on its own, so a partial commit is not an edge case the framework failed to handle
-— it is the actual semantics, and the flag exists to make you say you accept them. The shards
-that already committed stay committed.
+shard commits on its own, so a partial commit is not an edge case the framework failed to handle.
+It is what the flag means, and the flag exists to make you say you accept it. Shards that already
+committed stay committed.
 
-Per call rather than per executor, so the risk is visible where the risk is taken. An executor
-default is for a dedicated executor whose actions are *all* designed for per-shard commits, and
-nothing else.
+Set it per call, so the risk is visible where the risk is taken. Making it an executor's default
+(`config=` when you build the executor) is only for an executor whose actions are *all* designed
+for per-shard commits.
 
-Reach for it only when the operation is genuinely cross-region or cross-tenant and the domain is
-designed to be eventually consistent. If a partial commit would need compensating, you want a
+Use it only when the operation really spans regions or tenants, and the domain is designed to be
+eventually consistent. If a partial commit would need undoing, you want a
 [saga](../concepts/sagas.md): one action per shard, chained through the outbox, with a compensating
-action when a later step fails. Slower to write, and the only version that recovers from a
-partial failure without a human.
+action when a later step fails. Slower to write, and the only version that recovers from a partial
+failure without a human.
 
 ## Migrating every shard
 
 ```python
-migrate(layout, MIGRATIONS)                        # all of them
-migrate(layout, MIGRATIONS, shards=[MEXICO_SHARD])       # one
+migrate(layout, MIGRATIONS)                          # every shard
+migrate(layout, MIGRATIONS, shards=[MEXICO_SHARD])   # only these
 ```
 
-Ordered by the configuration rather than by the argument, and an unknown identifier is refused
-rather than skipped. Migrations are sync in both modes: an async service runs this at startup,
-before it opens its async pools. See [Migrations](migrations.md).
+`MIGRATIONS` is the directory of your `.sql` files. Shards are migrated in the order of the
+configuration, whatever order `shards=` lists them in. An identifier the configuration does not
+have is refused, not skipped. Migrations are sync in both modes: an async service runs this at
+startup, before it opens its async pools. See [Migrations](migrations.md).
 
 ## What sharding does not provide
 
-In sync mode a scatter read visits shards **one at a time**, not side by side: on eight shards it
-takes eight round trips' time rather than one. In async mode the inherited reads ask every shard
-at the same time, so they cost about one round trip; `dbs()` and `readonly_dbs()` still go one
-shard at a time in both modes. The event jobs are different - they drain every shard at once,
-see [Concurrency](../runtime/concurrency.md#5-fan-out-and-dispatch---shards-and-handlers-side-by-side).
+Side-by-side reads in sync mode. There a read across every shard visits them **one at a time**:
+on eight shards it takes eight round trips, not one. In async mode the inherited reads ask every
+shard at the same time, so they cost about one round trip. `dbs()` and `readonly_dbs()` still go
+one shard at a time in both modes. The event jobs are different: they work through every shard at
+once - see
+[Concurrency](../runtime/concurrency.md#5-fan-out-and-dispatch---shards-and-handlers-side-by-side).
 
 ## See also
 
 - [Concepts → Sharding](../concepts/sharding.md) - the reasoning
+- [Repositories](repositories.md) - the shard-aware accessors
 - [Migrations](migrations.md) - applying migrations across shards
 - [`fastapi-wallet-rest-uv-sharded-pg`](../../ekbatan-py-examples/fastapi-wallet-rest-uv-sharded-pg) (sync) and [`fastapi-wallet-rest-uv-async-sharded-pg`](../../ekbatan-py-examples/fastapi-wallet-rest-uv-async-sharded-pg) (async)

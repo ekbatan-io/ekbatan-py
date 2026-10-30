@@ -2,26 +2,20 @@
 layout: ../../../layouts/DocLayout.astro
 title: Observability
 activeSection: reference
-lead: "The action pipeline is instrumented with the OpenTelemetry API only - no SDK. The API is a required dependency; with no SDK registered at runtime every call is a no-op, so the framework costs nothing to an application that does not want tracing, and the no-SDK path is the one most of the test suite exercises."
+lead: "What the framework reports through OpenTelemetry - spans, their attributes, and metrics - and the names of its loggers. It depends on the OpenTelemetry API only, not the SDK. With no SDK installed, every call does nothing and costs nothing; install one to collect the data."
 ---
 
-The span, attribute and metric names below are the same ones Ekbatan for Java uses, so a filter on
-`ekbatan.action.name` catches a Python service and a Java service alike - see
-[Running beside a Java service](/reference/beside-java/#traces-and-logs).
-
 ## Bringing your own SDK
+
+Install an SDK and an exporter:
 
 ```
 uv add opentelemetry-sdk opentelemetry-exporter-otlp
 ```
 
-Configure through the standard environment variables - `OTEL_EXPORTER_OTLP_ENDPOINT`,
-`OTEL_SERVICE_NAME`. The framework uses whatever the global provider returns, for both traces and
-metrics.
-
-This repository keeps the SDK in its own dependency group rather than in an extra, so that
-`uv sync --all-extras` does **not** install it and every other CI job runs as an application with
-no SDK. One CI job asks for the group and asserts the span names and their scope.
+Configure them through the standard environment variables, such as
+`OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_SERVICE_NAME`. The framework uses whatever the global
+provider returns, for both traces and metrics.
 
 ## Span hierarchy
 
@@ -36,12 +30,12 @@ Each `executor.execute(...)` produces:
         └── [ekbatan.event.persist]   the outbox rows
 ```
 
-A single-shard action gives one of each. A cross-shard action gives one transaction span - with
-its nested repository and event spans - **per involved shard**.
+A single-shard action gives one of each. A cross-shard action gives one transaction span, with
+its repository and event spans inside it, **for each shard it touches**.
 
-**Every `transaction()` block is a span**, a nested one too: a nested block is a transaction of
-its own. A repository call joining the open transaction is not a boundary and makes
-no transaction span. See [the transaction manager](/reference/transaction-manager/#do-not-nest).
+**Every `transaction()` block is a span**, a nested one too, because a nested block is a
+transaction of its own. A repository call that joins the open transaction starts nothing new, so
+it makes no transaction span. See [the transaction manager](/reference/transaction-manager/#do-not-nest).
 
 ## Attributes
 
@@ -59,36 +53,39 @@ no transaction span. See [the transaction manager](/reference/transaction-manage
 | `ekbatan.batch.size` | int | repository | rows in the batch |
 | `ekbatan.event.count` | int | event.persist | events written |
 
-`db.operation.name` uses the OpenTelemetry semantic-convention *key* with framework-specific
-values, because the executor always writes through the batch methods. Everything else is under
-`ekbatan.*`.
+`db.operation.name` is OpenTelemetry's standard attribute name, with the framework's own values:
+the executor always writes in batches. Every other attribute is under `ekbatan.*`.
 
 ### Attributes on a partial cross-shard commit
 
-A cross-shard action that commits some shards and fails another sets, on the failing span:
+When a cross-shard action commits some shards and then fails on another, the failing span gets:
 
-| | |
+| attribute | meaning |
 | --- | --- |
 | `ekbatan.shard.partial_commit_failure` | that this happened |
 | `ekbatan.shard.committed_shards` | which shards are already committed and cannot be undone |
 | `ekbatan.shard.failed_shard` | which one did not |
 
-The same facts are logged at ERROR, on a line starting `CRITICAL:`. Putting them on the span as
-well means the trace that shows
-the failure also shows exactly what state the data is in - which is the question anyone looks at
-that trace to answer.
+The same facts are logged at ERROR, on a line starting `CRITICAL:`. Having them on the span too
+means the trace that shows the failure also shows what state the data was left in - the first
+thing anyone reading that trace needs to know.
 
 ### The instrumentation scope
 
-`io.ekbatan.core`, with the installed package's version. The meter is
-`io.ekbatan.events.localeventhandler`.
+The scope - the name the spans are reported under - is `io.ekbatan.core`, with the installed
+package's version. The meter is `io.ekbatan.events.localeventhandler`.
+
+If you also run a service built on Ekbatan for Java, it reports the same span, attribute and
+metric names under the same scope. So a filter on `ekbatan.action.name`, a dashboard or an alert
+covers both services - see [Running beside a Java service](/reference/beside-java/#traces-and-logs).
 
 ## Loggers
 
 The loggers are standard `logging` loggers under `io.ekbatan`, so one setting covers them all:
-`logging.getLogger("io.ekbatan").setLevel(logging.WARNING)`. They are named like `io.ekbatan.core...`
-rather than after Python modules because those are the names a Java service built on Ekbatan logs
-the same lines under, so one logging config covers both - see
+`logging.getLogger("io.ekbatan").setLevel(logging.WARNING)`.
+
+The names look like Java class names, not Python modules, on purpose: a service built on Ekbatan
+for Java logs the same lines under the same names, so one logging setup covers both - see
 [Running beside a Java service](/reference/beside-java/#traces-and-logs).
 
 | logger | logs |
@@ -106,19 +103,20 @@ the same lines under, so one logging config covers both - see
 | `io.ekbatan.events.localeventhandler.job.EventHandlingJob` | handler failures and discarded notifications |
 | `io.ekbatan.flyway.FlywayMigrator` | migrations |
 
-While a target migrates, each line the migrator logs carries two extra record attributes:
-`ekbatanShard` (`1:0`) and `ekbatanTarget` (`mexico/member-0`). Write `%(ekbatanShard)s` in a format
-string to show one, and give the formatter `defaults={"ekbatanShard": "", "ekbatanTarget": ""}` for
-the lines logged outside a migration. They are on the migrator's own lines only - not on lines a
-driver logs in the meantime.
+While a database is being migrated, each line the migrator logs carries two extra attributes on
+its log record: `ekbatanShard` (e.g. `1:0`) and `ekbatanTarget` (e.g. `mexico/member-0`). To
+show one, write `%(ekbatanShard)s` in a format string, and give the formatter
+`defaults={"ekbatanShard": "", "ekbatanTarget": ""}` for the lines logged outside a migration.
+Only the migrator's own lines carry them, not lines a driver logs in the meantime.
 
 ## Retry events
 
-Each retry adds a span **event** named `retry` to the action span, with `retry.count` and
-`retry.exception` - the matched exception's class name, which may have come from the cause chain.
+Each retry adds a span **event** named `retry` to the action span, with two attributes:
+`retry.count`, and `retry.exception` - the class name of the exception that matched, which may
+have been found in the cause chain.
 
-Retries are not their own spans. Each retry re-runs perform and persist, so the child spans of
-every attempt already appear under the action span; a separate level would be redundant.
+Retries are not spans of their own. Each retry runs perform and persist again, so the child spans
+of every attempt already appear under the action span.
 
 ## Errors
 
@@ -126,15 +124,15 @@ A failing span is marked `ERROR` and the exception is recorded on it.
 
 ## Context propagation
 
-The ambient transaction is a `ContextVar`, which is per-thread **and** per-async-task, so context
-flows naturally under a threaded server and an asyncio one alike. Work handed to a pool from
-inside a unit of work does not inherit it - correct, and the same rule as the transaction itself.
-See [Concurrency](/reference/runtime/concurrency/).
+The current span is kept in a `ContextVar`, like the open transaction: one value per thread
+**and** per asyncio task. So traces follow the work under a threaded server and an asyncio one
+alike. Work handed to a thread pool from inside a unit of work does not inherit it - the same rule
+as for the transaction. See [Concurrency](/reference/runtime/concurrency/).
 
 ## Metrics
 
-From the **event pipeline only**. The core emits spans and no metrics: action execution is traced,
-not counted.
+Metrics come from the **event pipeline only**. Actions are traced, not counted: the core emits
+spans and no metrics.
 
 | instrument | type | unit | tags | from |
 | --- | --- | --- | --- | --- |
@@ -146,16 +144,16 @@ not counted.
 
 ### What each one answers
 
-**`handled`** is throughput and failure rate. The `handler` tag is what distinguishes one broken
-handler from a general problem.
+**`handled`** gives throughput and failure rate. The `handler` tag tells one broken handler apart
+from a general problem.
 
-**`handler.duration`** is which handler is *slow*, as opposed to which is failing. A handler
-degrading from 5 ms to 5 s shows here long before it starts raising.
+**`handler.duration`** shows which handler is *slow*, as opposed to failing. A handler going from
+5 ms to 5 s shows here long before it starts raising.
 
-**`delivery.lag`** is how far behind delivery is running, and it is the one to alert on: a shard
-falling behind still reports perfectly healthy success counts, so **no counter can reveal a
-growing backlog.** Recorded on success only, so it measures time-to-delivery rather than
-time-spent-failing.
+**`delivery.lag`** shows how far behind delivery is running, and it is the one to alert on. A
+shard falling behind still reports healthy success counts, so **no counter can show a growing
+backlog.** It is recorded on success only, so it measures the time to deliver, not time spent
+failing.
 
 ### `outcome` values
 
@@ -166,10 +164,10 @@ time-spent-failing.
 | `expired_preflight` | the row was already past the retention window when claimed - the handler never ran |
 | `expired_postfailure` | it raised, and the next retry would land past the deadline |
 
-`handler.duration` uses a narrower `outcome` - just `succeeded` or `failed`. At the moment a
-handler returns, the only known fact is whether it raised; whether that becomes a retry or an
-expiry is decided afterwards, against the post-invocation clock. `expired_preflight` never appears
-in the histogram at all, because no handler ran.
+`handler.duration` uses a narrower `outcome`: just `succeeded` or `failed`. When a handler
+returns, the only known fact is whether it raised. Whether a failure becomes a retry or an expiry
+is decided afterwards, against the clock at that moment. `expired_preflight` never appears in the
+histogram, because no handler ran.
 
 ### What to alert on
 
@@ -177,25 +175,25 @@ in the histogram at all, because no handler ran.
 
 **`handled{outcome="expired_postfailure"}` above zero means events were discarded.** A
 notification reaches that state only after failing for the whole retention window - seven days by
-default - so any occurrence is a delivery that was permanently given up on. Each is also logged at
-ERROR with the handler name and an example event id.
+default - so each one is a delivery that was given up for good. Each is also logged at ERROR with
+the handler name and an example event id.
 
 **A steady stream of `failed_retry` on a single `handler`** usually means that handler cannot
-succeed at all - the classic case being an `ImportError` from a missing optional dependency, which
-no amount of retrying fixes. Alerting on that catches it in minutes, where the discard alert above
-only fires a week later, once the events are gone.
+succeed at all. The classic case is an `ImportError` from a missing optional dependency, which no
+amount of retrying fixes. An alert on this catches it in minutes; the discard alert above fires
+only a week later, once the events are gone.
 
 ### Known caveat
 
-`ekbatan.events.fanned_out` counts rows **read**, not rows written. On a deployment with a real
-replica and non-zero lag, a round can re-read events it has already delivered, so the counter
+`ekbatan.events.fanned_out` counts rows **read**, not rows written. On a deployment with a read
+replica that lags behind, a round can re-read events it has already delivered, so the counter
 over-reports. Treat it as an upper bound.
 
 ## Read-path tracing is not instrumented
 
 A repository's reads produce no spans of their own. They run inside `perform()`, which already has
-one, and instrumenting every lookup would be noise for an action that does several. Instrument
-them in your own repository method if you need it.
+one, and a span for every lookup would be noise in an action that does several. Add spans in your
+own repository method if you need them.
 
 ## See also
 

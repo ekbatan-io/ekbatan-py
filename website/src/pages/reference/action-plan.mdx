@@ -44,10 +44,9 @@ happen on the thread that entered it. If the action fans work out to a pool to g
 **join the children first and only then stage from the thread that invoked `perform()`.** In
 async mode the same rule holds for tasks: gather the reads, then stage from `perform()` itself.
 
-The GIL is not the reprieve it looks like. A single dict assignment is atomic; the staging path
-is not — it checks whether the id is already staged, stamps the row, and then assigns, and two
-threads can both pass the check. The failure is a lost write with a correct-looking traceback,
-which is exactly the kind you find in production rather than in a test.
+Python's GIL does not make this safe. Staging checks whether the id is already staged, stamps the
+row, and then stores it, and two threads can both pass the check. The result is a lost write,
+with no error when it happens - the kind of bug you find in production rather than in a test.
 
 ## Methods
 
@@ -81,8 +80,8 @@ Everything staged, keyed by type — a **read-only view**, not the map itself. A
 real one could empty the plan, and the executor would then commit a unit of work that had quietly
 become a no-op.
 
-`bool(plan)` is false when nothing was staged. That is not an error: see the sentinel row
-below.
+`bool(plan)` is false when nothing was staged. That is not an error: such an invocation still
+writes one outbox row, as below.
 
 ## Lifecycle
 
@@ -105,4 +104,4 @@ cannot tell from a crash.
 
 - [Action](/reference/action/) — what holds the plan
 - [ActionExecutor](/reference/action-executor/) — what flushes it
-- [`events`](/reference/tables/events/) — where the sentinel row lands
+- [`events`](/reference/tables/events/) — where that row lands

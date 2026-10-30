@@ -2,46 +2,50 @@
 layout: ../../layouts/DocLayout.astro
 title: TransactionManager
 activeSection: reference
-lead: "The executor is the right entry point for business operations - anything that changes a domain object and emits events. Sometimes you need transactional access outside that: an admin script backfilling a column, a startup hook reconciling two tables, a multi-step read that does not fit the action sh"
+lead: "A transaction manager runs one database transaction on one shard. Business operations - anything that changes a domain object and emits events - go through the executor. This is for the other work that needs a transaction: an admin script backfilling a column, a startup hook reconciling two tables, a multi-step read that does not fit an action, batch maintenance with no event worth emitting."
 ---
 
 import ModeTabs from "../../components/ModeTabs.astro";
 
-For those, take a transaction manager directly. It is the same primitive the executor uses
-internally: one transaction, one connection, commit-or-roll-back, with the connection bound to
-the calling context so any repository you call from inside joins it.
+The executor uses the same transaction manager inside. Each transaction runs on one connection,
+and commits when the block ends, or rolls back if the block fails. While the block runs, any
+repository you call joins the transaction, without being handed the connection.
 
 ## What it owns
 
-You rarely construct one. Reach through the registry:
+You rarely build one yourself. Get it from the registry:
 
 ```python
-tm = registry.default                      # the default shard
-tm = registry.manager(MEXICO_SHARD)              # a specific one
+tm = registry.default                  # the default shard
+tm = registry.manager(MEXICO_SHARD)    # a specific one
 ```
 
 Each one owns four things, for exactly one shard:
 
-- **One pool pair** — the primary `DataSource`, and the replica's if that shard has one. A data
-  source is one database's pool, built from its config with `DataSource.from_config`; SQLAlchemy's
-  own engine behind it is `data_source.sqlalchemy_engine`. A manager takes nothing else - an
-  `Engine` is refused - and its `close()` closes the data sources it was given.
-- **A dialect** - the data source's, as the layout names it: `postgres`, `mysql`, `mariadb` or
-  `sqlite`, unless you pass `dialect=`. It is what picks the keyed-lock provider, the
-  `RETURNING` support and the column renderings, so it is the manager's business rather than a
-  per-call argument.
+- **Its connection pools** — the primary's `DataSource`, and the replica's if that shard has one.
+  A data source is one database's connection pool, built from its config with
+  `DataSource.from_config`. The SQLAlchemy engine behind it is `data_source.sqlalchemy_engine`. A
+  manager accepts only data sources (a plain SQLAlchemy `Engine` is refused), and its `close()`
+  closes the data sources it was given.
+- **A dialect** - which kind of database it is: `postgres`, `mysql`, `mariadb` or `sqlite`. It is
+  read from the data source's url, unless you pass `dialect=`. The dialect decides which
+  keyed-lock provider is used, whether `RETURNING` is available, and how some column types are
+  written. That is why it belongs to the manager, not to each call.
 - **A `ShardIdentifier`** — `ShardIdentifier(0, 0)` when you are not sharding. It labels the
   OpenTelemetry span and is what `DatabaseRegistry` routes by.
-- **A `ContextVar`** holding the in-flight transaction's connection for the duration of a
-  `tm.transaction()` block. A `ContextVar` rather than a thread local, so the binding follows an
-  `await` and a `ThreadPoolExecutor` does not inherit one by accident.
+- **A `ContextVar`** holding the open transaction's connection while a `tm.transaction()` block
+  runs. It is a `ContextVar` rather than a thread-local, so the connection follows an `await`, and
+  a `ThreadPoolExecutor` does not pick it up by accident.
 
 In async mode the registry is an `AsyncDatabaseRegistry` and each manager an
 `AsyncTransactionManager`, from `ekbatan.aio`: the same four things, with `AsyncDataSource` pools,
 and every block below is `async with`. A cancelled task rolls its transaction back like any
 other failure.
 
-## The `tm.transaction()` family
+## Opening a transaction
+
+Open a block with `tm.transaction()`. This backfill finds the wallets that have no currency,
+fixes them, and writes an audit row, all in one transaction:
 
 <ModeTabs>
 <div slot="sync">
@@ -77,26 +81,27 @@ async with tm.transaction() as tx:
 </div>
 </ModeTabs>
 
-`clock.instant()` is written exactly as it is - UTC with no zone attached, which is what the
+Both writes commit together or neither does. That is the same atomicity an action gives you,
+without the rest of what an action does: no plan, no outbox row, no retry on a lost version race.
+
+`clock.instant()` is written exactly as it is: UTC with no zone attached, which is what the
 zone-less `at` column holds. Nothing converts it on the way in or out
 ([What you give is what is stored](/reference/multi-database/#what-you-give-is-what-is-stored)).
 
-Both writes commit together or neither does - the same atomicity an action gives you, without any
-of the action machinery: no plan, no outbox row, no retry on a lost version race.
+Besides `tx.execute`, as above, there is `tx.rows(statement)`, for a statement whose rows become
+objects. It has the same `fetch(mapper)` methods a repository uses, described in
+[Repositories](/reference/repository/#examples). `tx.connection` is the `Db` underneath, for everything else SQLAlchemy
+offers.
 
-`tx.rows(statement)` is forwarded too, for a statement whose rows become objects - the same
-`fetch(mapper)` family a repository uses, described in [Repositories](/reference/repository/#write-the-mapping).
-`tx.connection` is the `Db` underneath, for everything else SQLAlchemy offers.
-
-**One `with` block covers every case.** The block can compute and keep any value you want, and
-an exception of any kind leaves it, rolling the transaction back on the way.
+As with any `with` block, values you compute inside are still there after it. An exception of
+any kind that leaves the block rolls the transaction back on the way out.
 
 ## Do not nest
 
-**Do not nest.** The framework does not simulate nested transactions or savepoints. A
-`tm.transaction()` inside another one on the same `tm` does not fail loudly: it opens a *second*
-transaction on a *second* pooled connection, with its own commit boundary. That is almost never what you want. Structure your code to do all the work
-inside one outer block.
+The framework does not simulate nested transactions or savepoints. A `tm.transaction()` inside
+another one on the same `tm` does not fail loudly. It opens a *second* transaction, on a *second*
+connection from the pool, which commits on its own. That is almost never what you want. Do all the
+work inside one outer block.
 
 What the inner block gets:
 
@@ -105,44 +110,44 @@ What the inner block gets:
   writes;
 - inside it, `tx_db` and `tx_db_else_db` find the inner transaction; after it, the outer one
   again;
-- a write to a row the outer block has locked waits for a lock the same thread holds - until the
-  database's lock timeout, or for ever where there is none. On SQLite, any inner write after an
+- a write to a row the outer block has locked waits for a lock its own thread holds: until the
+  database's lock timeout, or forever where there is none. On SQLite, any inner write after an
   outer one waits for the file lock and fails with "database is locked".
 
 An action run inside a transaction you opened is the same case: the executor opens its own
 transaction, so the action commits on its own and stays committed if your block then rolls back.
 
-## Direct usage — a worked example
+## What the block does, step by step
 
 1. Borrow a connection from the **primary** pool.
-2. Bind it into the ambient context for this manager.
+2. Store it in the current context, for this manager, where repositories will find it.
 3. `BEGIN`, then run your block.
 4. Normal return: `COMMIT`, release the connection.
 5. Exception: `ROLLBACK`, release, re-raise.
 
-The transaction is begun, committed and rolled back by hand rather than through SQLAlchemy's own
-`with conn.begin()`. That context manager rolls back for you, but it has nowhere to report that
-**the rollback itself** failed - and SQLAlchemy then returns the connection to the pool and hands
-it to the next caller, still carrying whatever the rollback did not undo. This framework refuses
-to do that: a failed rollback marks the transaction dirty and the connection is evicted rather
-than released.
+**Edge case: a rollback that fails.** If the `ROLLBACK` itself fails, the connection is closed
+instead of going back to the pool. Closing it makes the database discard whatever was still
+pending.
 
-The reasoning behind the eviction is worth knowing because it is counter-intuitive: restoring
-autocommit on a connection whose transaction may still be open **is itself a commit**. psycopg
-issues an explicit `COMMIT`; MySQL and MariaDB send `SET autocommit=1`, which they document as an
-implicit commit. Restoring it after a failed rollback would commit the very transaction that just
-failed to roll back. Physically closing the connection makes the server discard what was pending.
+This is why the framework begins, commits and rolls back by hand, rather than through
+SQLAlchemy's `with conn.begin()`. That context manager has no way to report that **the rollback
+itself** failed. SQLAlchemy would return the connection to the pool and hand it to the next
+caller, still carrying whatever the rollback did not undo.
 
-**A failed commit is not on its own grounds for eviction.** The `COMMIT` is issued inside the
-`try`, so a commit that raises falls into the same `except` as any other failure and gets a
-`ROLLBACK` like any other transaction. If that rollback succeeds, the connection is clean and
-goes back to the pool normally. Only a rollback that *also* fails leaves the state unknown, and
-only then is the connection thrown away.
+Nor can such a connection be saved by turning autocommit back on. On a connection whose
+transaction may still be open, that **is itself a commit**: psycopg sends an explicit `COMMIT`, and MySQL and MariaDB send
+`SET autocommit=1`, which they document as an implicit commit. It would commit the very
+transaction that just failed to roll back.
+
+**A failed commit alone does not close the connection.** It is handled like any other failure:
+the framework sends a `ROLLBACK`, and if that works, the connection is clean and goes back to the
+pool. Only when that rollback *also* fails is the state unknown, and only then is the connection
+thrown away.
 
 ## Repository writes join automatically
 
-Because the connection is bound into the ambient context rather than passed around, a repository
-write inside the block uses it:
+Because the connection is stored in the current context rather than passed around, a
+repository write inside the block uses it:
 
 <ModeTabs>
 <div slot="sync">
@@ -165,40 +170,39 @@ async with tm.transaction():
 </div>
 </ModeTabs>
 
-Reads are a choice. Inherited reads see committed state on the primary; if a read must see this
-block's own uncommitted writes, use `tx.execute` / `tx.rows` or a repository method built on
-`tx_db_else_db`. See [Repositories](/reference/repository/).
+Reads are a choice. The inherited reads see committed data on the primary. If a read must see
+this block's own uncommitted writes, use `tx.execute` / `tx.rows`, or a repository method built
+on `tx_db_else_db`. See [Repositories](/reference/repository/).
 
-The mechanism is the ambient transaction, and it is worth being precise about it because it is
-what makes a repository call read the same inside a unit of work and outside one.
+How it works: opening a transaction stores its connection in a `ContextVar`, keyed by the
+manager. Every repository write goes through `tx_db_else_db(...)`, which looks there first.
+Inside the block it finds the connection and joins the transaction. Outside, it finds nothing,
+and each statement commits on its own. Nothing is passed through arguments, and no repository
+takes a connection parameter.
 
-Opening a transaction binds its connection to a `ContextVar`, keyed by the manager. A second
-manager for the same shard (another registry, or
-one built on a member's `jobsConfig`) sees no transaction there and opens its own, on its own
-database. Every repository
-write goes through `tx_db_else_db(...)`, which looks in that binding first: inside the block it
-finds the connection and joins, outside it finds nothing and each statement commits on its own.
-Nothing is threaded through arguments, and no repository takes a connection parameter.
+Because the key is the manager, a second manager for the same shard (from another registry, or
+one built on a member's `jobsConfig`) sees no transaction there. It opens its own, on its own
+database.
 
-Two consequences follow, and both are the point rather than side effects:
+What follows from this:
 
 - **A repository method written once works in both places.** The same `wallet_repository.update(...)` is
   part of your transaction inside the block and a standalone write outside it.
-- **The binding does not propagate to a thread pool.** Work handed to a pool
-  (`ThreadPoolExecutor.submit`) from inside a transaction does not inherit it, which is correct:
-  another thread is another connection, and quietly sharing one would corrupt both. See
+- **The transaction does not follow work into a thread pool.** Work handed to a pool
+  (`ThreadPoolExecutor.submit`) from inside a transaction does not get it, and that is correct:
+  another thread needs another connection, and quietly sharing one would corrupt both. See
   [Concurrency](/reference/runtime/concurrency/).
 - **An async transaction is shared with the tasks started inside it.** A task copies the
-  caller's context, so `gather` or a `TaskGroup` inside `async with tm.transaction()` sees the
-  transaction, and their statements take turns on its one connection - all of it inside the
-  transaction. Keep such tasks inside the block: one still running after it ends finds the
-  connection closed.
-- **A sync transaction belongs to the thread that opened it.** `asyncio.to_thread`, anyio's
-  `to_thread.run_sync`, Starlette's `run_in_threadpool` - anything that copies the caller's
-  context into a new thread - carries the transaction along. That thread
-  is refused with `TransactionThreadError` the moment it reaches for the transaction, rather
-  than sharing the connection - one connection serves one thread at a time - or quietly using
-  one of its own, which would leave its work behind on a rollback:
+  caller's context. So tasks started with `gather` or a `TaskGroup` inside
+  `async with tm.transaction()` see the transaction, and their statements take turns on its one
+  connection, all inside the transaction. Keep such tasks inside the block: one still running
+  after it ends finds the connection closed.
+- **A sync transaction belongs to the thread that opened it.** Some helpers copy the caller's
+  context into a new thread: `asyncio.to_thread`, anyio's `to_thread.run_sync`, Starlette's
+  `run_in_threadpool`. The transaction goes along with the context. When that thread reaches for
+  the transaction, it is refused with `TransactionThreadError`. Sharing the connection is not
+  safe, since one connection serves one thread at a time. And quietly using a connection of its
+  own would leave that thread's work in place if the transaction rolled back:
 
   ```python
   with tm.transaction():
@@ -207,21 +211,21 @@ Two consequences follow, and both are the point rather than side effects:
 
   Do that work in the thread that opened the transaction, or outside it. `loop.run_in_executor`
   and a pool's `submit` copy no context, so their threads simply find no transaction.
-- **A block ends in the context it began in.** Opened in one copy of the context and closed in
-  another - a FastAPI sync `yield` dependency does exactly that - the work in between ran
-  outside the transaction, and the block's end raises `TransactionContextError` saying so. Open
-  the transaction where the work runs: see
+- **A block must end in the context it began in.** A FastAPI sync `yield` dependency, for
+  example, opens the block in one copy of the context and closes it in another. The work in
+  between then ran outside the transaction, so the end of the block raises
+  `TransactionContextError` to say so. Open the transaction where the work runs: see
   [Wiring with FastAPI](/reference/wiring-fastapi/#never-open-a-transaction-in-a-dependency).
 
-What does *not* join is a read you route yourself. `db()` and `readonly_db()` open their own
-connections deliberately — see [Repositories](/reference/repository/#picking-the-right-one).
+What does *not* join is a connection you ask for yourself: `db()` and `readonly_db()` open
+their own connections on purpose — see [Repositories](/reference/repository/#picking-the-right-one).
 
 ## When NOT to use it directly
 
-If the operation changes a model and emits an event, **write an action instead.** The action path
-gets you the outbox row written atomically with the domain row - which is the entire point of the
-framework - plus retry on a lost version race, the span hierarchy, cross-shard validation, and
-fan-out into the event pipeline.
+If the operation changes a model and emits an event, **write an action instead.** An action
+writes the outbox row in the same transaction as the domain row, which is the whole point of the
+framework. It also gives you a retry on a lost version race, tracing spans, the cross-shard check,
+and delivery into the event pipeline.
 
 `tm.transaction()` is the escape hatch. Reach for it when the work genuinely does not fit:
 
@@ -230,8 +234,8 @@ fan-out into the event pipeline.
 - multi-step reads that want one consistent snapshot and write nothing;
 - batch maintenance where one event per row would be useless outbox volume.
 
-If you find yourself reaching for it for ordinary business work, that is a signal the operation
-wants to be an action.
+If you find yourself using it for ordinary business work, the operation should probably be an
+action.
 
 ## Read-only access (no transaction needed)
 
@@ -259,10 +263,10 @@ async with tm.connection(readonly=True) as conn: ... # the replica, tolerates la
 Inside a `tm.transaction()` block these hand you that transaction's connection instead, so a
 read written this way joins rather than opening a second one.
 
-Outside one, no transaction is opened and nothing is bound — the connection runs in
-`AUTOCOMMIT`, so each statement stands on its own and commits itself. The framework sets this
-on purpose, because SQLAlchemy will not do it by default: an `execute` outside a transaction quietly begins one, and
-a connection closed without `commit` rolls it back, so a write would simply vanish.
+Outside one, no transaction is opened. The connection runs in `AUTOCOMMIT`, so each statement
+stands on its own and commits itself. The framework sets this on purpose. By default, SQLAlchemy
+quietly begins a transaction on the first `execute`, and rolls it back when the connection is
+closed without a `commit`, so a write would simply vanish.
 
 `readonly=True` asks for the replica and falls back to the primary when a shard has none. It is
 never the default, because a replica has not necessarily seen what you just wrote.
@@ -270,8 +274,8 @@ never the default, because a replica has not necessarily seen what you just wrot
 ## Cross-shard
 
 A transaction manager is **per shard**, and there is no two-phase commit. If you need writes
-across shards you cannot have them atomically - that is a property of distributed systems, not of
-this framework.
+across shards, you cannot have them atomically. That is true of distributed systems in general,
+not only of this framework.
 
 <ModeTabs>
 <div slot="sync">
@@ -294,14 +298,14 @@ async with registry.manager(MEXICO_SHARD).transaction(): ...   # work B
 </div>
 </ModeTabs>
 
-An escape hatch, with the same partial-commit risk as `allow_cross_shard=True` on an action. If a
-partial commit would need compensating, use a [saga](/learn/sagas/).
+This is an escape hatch, with the same risk of a partial commit as `allow_cross_shard=True` on an
+action. If a partial commit would need undoing, use a [saga](/learn/sagas/).
 
 ## Tracing
 
-The block produces an `ekbatan.transaction` span with `ekbatan.shard.group` and
-`ekbatan.shard.member` attributes, one per block - a nested block is a transaction of its own and
-gets its own span.
+Each block produces one `ekbatan.transaction` span, with `ekbatan.shard.group` and
+`ekbatan.shard.member` attributes. A nested block is a transaction of its own, and gets its own
+span.
 
 ## See also
 

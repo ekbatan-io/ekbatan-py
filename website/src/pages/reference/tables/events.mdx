@@ -2,24 +2,25 @@
 layout: ../../../layouts/DocLayout.astro
 title: events
 activeSection: reference
-lead: "The outbox. Domain rows and event rows commit in the same transaction, so this table is the reliable source that in-process handlers, CDC connectors and broker publishers read after the commit."
+lead: "The outbox table. Domain rows and their event rows commit in the same transaction, so this table is the reliable record that in-process handlers, CDC connectors such as Debezium, and broker publishers read after the commit."
 ---
 
 **Needed when:** you use the default persister, which is the normal setup.
 **Written by:** the executor, inside the action's transaction.
 **Built by:** `ekbatan.schema.outbox_table(metadata)`.
-**Where:** `eventlog.events` - in a schema of its own in each database on PostgreSQL, in a
-database of its own, one per server, on MySQL and MariaDB; `events` in the file on SQLite. Fixed,
-as the framework names it itself - see [Framework tables](/reference/tables/).
+**Where:** `eventlog.events`. On PostgreSQL `eventlog` is a schema in each database; on MySQL and
+MariaDB it is a database of its own, one per server; on SQLite the table is plain `events`, in
+the file. The place is fixed, because the framework names the table itself - see
+[Framework tables](/reference/tables/).
 
-It is not a `Model` or an `Entity`. It has no version and no soft-delete state - nothing updates
-a committed event row except the `delivered` flag, and that belongs to the consumer.
+It is not a `Model` or an `Entity`: it has no version and no soft-delete state. Nothing updates
+a committed event row except the `delivered` flag, and that flag belongs to the consumer.
 
 ## DDL
 
-You do not write this by hand; `outbox_table()` describes it and your migration creates it. The
-DDL below is the table SQLAlchemy emits for it, with the two indexes the examples' migrations add
-(see [Indexes](#indexes) - they are yours to choose).
+You do not write this by hand: `outbox_table()` describes it, and your migration creates it.
+Below is the DDL SQLAlchemy emits for it, plus the two indexes the examples' migrations add. The
+indexes are yours to choose - see [Indexes](#indexes).
 
 ### PostgreSQL
 
@@ -69,10 +70,13 @@ CREATE TABLE eventlog.events (
     delivered       BOOL         NOT NULL,
     PRIMARY KEY (id)
 );
+
+CREATE INDEX ix_events_action_id ON eventlog.events (action_id);
+CREATE INDEX ix_events_undelivered ON eventlog.events (delivered, event_type, event_date);
 ```
 
-`DATETIME(6)` rather than bare `DATETIME`: MySQL's default truncates to whole seconds, silently,
-and an outbox whose only ordering key is a second-resolution timestamp orders badly.
+`DATETIME(6)`, not a bare `DATETIME`: MySQL's default silently cuts times to whole seconds, and
+an outbox whose only ordering key is a timestamp orders badly at one-second resolution.
 
 ## Columns
 
@@ -92,10 +96,17 @@ and an outbox whose only ordering key is a second-resolution timestamp orders ba
 | `event_date` | no | when the event was produced, UTC. **The only ordering key** |
 | `delivered` | no | false on every insert; the fan-out job flips it. A CDC-only deployment ignores it |
 
+If you stream this table with the Debezium transforms from Ekbatan for Java, these are the
+columns they read, and they line up with the Java framework's `events` table. A Java service and
+a Python service never share one table, though. Each keeps its own, and on MySQL and MariaDB,
+where `eventlog` belongs to the whole server, that means a server each. What differs is on
+[Running beside a Java service](/reference/beside-java/#the-events-table).
+
 ## Sentinel rows
 
-An action that emits no events still writes **one row**, with `model_id`, `model_type`,
-`event_type` and `payload` all null. The action happened, and that is a fact worth keeping.
+An action that emits no events still writes **one row**, called a sentinel row, with
+`model_id`, `model_type`, `event_type` and `payload` all null. The action happened, and that is a
+fact worth keeping.
 
 A consumer skips them with `event_type IS NULL`. The Debezium transforms already do.
 
@@ -109,10 +120,10 @@ it loses the event for every consumer that had not yet read it.
 
 ## Ordering
 
-`event_date` is the only ordering key - there is no ordinal column. Under a real
-clock that is fine. Under a **frozen** clock every row of a run ties and the order falls back to
-a random uuid. The test suite fell into this more than once; assert on `action_name` or
-`action_id` rather than on position.
+`event_date` is the only ordering key; there is no sequence-number column. With a real clock
+that is fine. With a **frozen** clock, as in tests, every row of a run has the same time, and the
+order falls back to a random uuid. So in tests, assert on `action_name` or `action_id`, not on a
+row's position.
 
 ## Dialect types
 
@@ -126,21 +137,17 @@ The columns, their order and nullability are the same on every database. Where t
 
 ### MariaDB's native UUID type
 
-MariaDB 10.7+ has a native 16-byte `UUID` type. SQLAlchemy does not emit it, so the table here
-says `CHAR(36)`: 36 bytes a value against 16. It matters at outbox scale and nowhere else. A
-table created with the native type works too - a uuid written to it reads back the same, and
-`CAST(id AS CHAR)` gives the usual hyphenated text - so if your migration says `UUID`, nothing
-in your service changes.
-
-A Java service never shares this table with a Python one - each keeps its own, and on MySQL and
-MariaDB, where `eventlog` is the server's, that means a server each - but the Java
-Debezium transforms read this one, so its columns line up with Java's; what differs is on
-[Running beside a Java service](/reference/beside-java/#the-events-table).
+MariaDB 10.7 and later have a native 16-byte `UUID` type. SQLAlchemy does not emit it, so the
+table here says `CHAR(36)`: 36 bytes a value instead of 16. That matters at outbox scale and
+nowhere else. A table created with the native type works too: a uuid written to it reads back the
+same, and `CAST(id AS CHAR)` gives the usual hyphenated text. So if your migration says `UUID`,
+nothing in your service changes.
 
 ## Indexes
 
 `outbox_table()` declares no indexes. Your migration creates them, because the right ones depend
-on the database. The examples create two: `action_id`, to find every row of one action, and the
+on the database: one declaration cannot be a partial index on PostgreSQL and a composite one on
+MySQL. The examples create two: one on `action_id`, to find every row of one action, and the
 undelivered index below.
 
 ### The undelivered index, and what it costs
@@ -153,30 +160,27 @@ CREATE INDEX ix_events_undelivered ON eventlog.events (event_type, event_date)
     WHERE delivered = FALSE;
 ```
 
-MySQL and MariaDB have no partial indexes, so their migrations use a composite one:
+MySQL and MariaDB have no partial indexes, so their migrations use a composite one, with the flag
+as its first column:
 
 ```sql
 CREATE INDEX ix_events_undelivered ON eventlog.events (delivered, event_type, event_date);
 ```
 
-The difference in size is large. Measured on PostgreSQL 17, 500,000 rows with a 1% backlog - a
-steady-state outbox that CDC is keeping up with:
+The difference in size is large. Measured on PostgreSQL 17, with 500,000 rows and a 1% backlog -
+an outbox that CDC is keeping up with:
 
 | index | size |
 | --- | --- |
 | `(delivered, event_type, event_date)` - the composite form | **3,528 kB** |
 | `(event_type, event_date) WHERE delivered = FALSE` - the partial form | **56 kB** |
 
-Sixty-three times, because the composite holds every row ever written and the partial one holds
-only the backlog. Every insert pays for it, on the hot path.
+Sixty-three times smaller, because the composite holds every row ever written and the partial one
+only the backlog. Every insert pays to keep the index up to date, on the hot path.
 
 **The index is yours, not the framework's.** `ekbatan.schema` declares the table's *shape* - the
-contract a CDC connector binds to - and nothing about its physical design. It used to declare
-three indexes, and that was the whole reason PostgreSQL went without the partial form: one
-declaration cannot be `WHERE delivered = FALSE` on one database and a composite on another, so
-it was the composite everywhere.
-
-So write it in your migration, the way every example here does.
+columns a CDC connector reads - and nothing about its physical design. So write the index in your
+migration, the way every example here does.
 
 ## See also
 

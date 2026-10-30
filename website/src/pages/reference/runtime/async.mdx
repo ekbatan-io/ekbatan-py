@@ -2,14 +2,14 @@
 layout: ../../../layouts/DocLayout.astro
 title: "Native asyncio"
 activeSection: reference
-lead: "The same framework with every wait on the database awaited - actions whose perform is a coroutine, async repositories, and an executor you await - in the package ekbatan.aio. The rules - one transaction per unit of work, the rows and their events committed together, the optimistic lock, soft delete, retries, sharding - are the same code as the sync API's, so they mean exactly the same thing."
+lead: "The package <code>ekbatan.aio</code> is the same framework for asyncio code: <code>perform</code> is an <code>async def</code>, and you await the repositories and the executor. The rules do not change. One transaction per unit of work, rows and their events committed together, the optimistic lock, soft delete, retries and sharding all run the same code as in the sync API."
 ---
 
 ## When to use it
 
 Use it when the service is an asyncio app - FastAPI or Starlette with `async def` endpoints -
-and many requests wait on the database at once. Measured on one PostgreSQL, the same deposit
-both ways, a pool of 40 connections:
+and many requests wait on the database at once. Here is the same deposit measured both ways, on
+one PostgreSQL with a pool of 40 connections:
 
 | requests in flight | sync API in a 40-thread pool | `ekbatan.aio` on asyncpg |
 | ---: | --- | --- |
@@ -17,16 +17,16 @@ both ways, a pool of 40 connections:
 | 50 | 626 a second, median 75 ms | 977 a second, median 47 ms |
 | 1000 | 576 a second, median 1621 ms | 874 a second, median 587 ms |
 
-So: about one and a half times the work under load, and a much shorter wait for most requests.
-A lone request is a little slower on asyncpg than on psycopg. The full tables, and how a pool
-timeout changes them, are [below](#the-pool-is-the-cap).
+Under load, async does about one and a half times the work, and most requests wait much less.
+A lone request is a little slower on asyncpg than on psycopg. The full tables, and what a short
+pool timeout changes, are [below](#the-pool-is-the-cap).
 
-Choosing between the two, and what stays the same, is on [Sync or async?](/learn/sync-or-async/). This page
-is the async details: drivers, the pool, tasks, locks, the handler loop.
+How to choose between the two, and what stays the same, is on [Sync or async?](/learn/sync-or-async/).
+This page has the async details: drivers, the pool, tasks, locks and event handlers.
 
 ## Install
 
-One extra per database, beside the sync one:
+Each database has an async extra. Install it beside the sync one:
 
 | extra | async driver | sync driver it sits beside |
 | --- | --- | --- |
@@ -39,18 +39,23 @@ One extra per database, beside the sync one:
 uv add "ekbatan[postgres,postgres-async,migrations]"
 ```
 
-Keep the sync extra. Migrations, `schemagen`, distributed jobs and the event fan-out and
+Keep the sync extra. Migrations, `schemagen`, distributed jobs, and the event fan-out and
 dispatch jobs are sync, and connect through the sync driver.
 
 ## What is async, and what is not
 
-Every class that waits on the database has an async twin in `ekbatan.aio`, named with the
-`Async` prefix; models, events, ids, the registries of actions and repositories, and config are
-shared; fan-out, dispatch, jobs, migrations and `schemagen` stay sync, on threads. The full list,
-side by side, is on [Sync or async?](/learn/sync-or-async/#what-differs). `to_record` and `from_record` stay plain
-`def`: mapping waits on nothing.
+- **Async:** every class that waits on the database has an async version in `ekbatan.aio`, with
+  the same name and an `Async` prefix.
+- **Shared by both:** models, events, ids, the registries of actions and repositories, and config.
+- **Sync, on threads:** fan-out, dispatch, jobs, migrations and `schemagen`.
+
+`to_record` and `from_record` stay plain `def`, because mapping a row waits on nothing. The full
+list, side by side, is on [Sync or async?](/learn/sync-or-async/#what-differs).
 
 ## A service, written async
+
+The wallet deposit, async. What changes: the classes come from `ekbatan.aio`, `perform` and the
+custom finder are `async def`, and every database call is awaited.
 
 ```python
 from ekbatan.aio import AsyncAction, AsyncActionExecutor, AsyncDatabaseRegistry, AsyncModelRepository
@@ -89,14 +94,14 @@ wallet = await executor.execute(None, WalletDepositMoneyAction, params)
 await registry.aclose()                     # or: async with registry: ...
 ```
 
-Everything is built the way the sync API is built, including the builders:
-`AsyncDatabaseRegistry.builder()` and `AsyncActionExecutor.builder()`. An executor refuses the
-other kind of action when it is built, so a sync `Action` cannot end up awaited by mistake.
+Everything is built as in the sync API, builders included: `AsyncDatabaseRegistry.builder()`
+and `AsyncActionExecutor.builder()`. Each executor refuses the other kind of action when it is
+built, so a sync `Action` cannot end up awaited by mistake.
 
 ## One config file, two drivers
 
-An async service still has sync parts - the jobs, event fan-out and dispatch among them - so one layout file
-has to serve both. The url names the database; each side picks its own driver:
+An async service still has sync parts, such as the jobs and the event fan-out and dispatch. So
+one layout file serves both. The url names the database, and each side picks its own driver:
 
 | url in the file | sync registry connects with | async registry connects with |
 | --- | --- | --- |
@@ -107,17 +112,19 @@ has to serve both. The url names the database; each side picks its own driver:
 | `postgresql+asyncpg://` | - | asyncpg, as written |
 | `postgresql+psycopg_async://` | - | psycopg's own async mode, as written |
 
-A url that names a sync driver, or none, connects through the database's async default. One that
-names an async driver is used as written. `async_url(config)` shows which url a config connects
-to, and `ASYNC_DEFAULT_DRIVERS` holds the defaults.
+A url that names a sync driver, or none, connects through the database's async default. A url
+that names an async driver is used as written. `async_url(config)` shows which url a config
+connects to, and `ASYNC_DEFAULT_DRIVERS` holds the defaults.
 
-psycopg's own async mode needs no extra install - it is psycopg - and takes libpq's settings as
-they are written. The whole PostgreSQL suite runs on it as well as on asyncpg.
+psycopg's own async mode needs no extra install, since it is psycopg itself, and it reads the
+same driver settings as sync psycopg. It is tested as fully as asyncpg.
 
 ## Driver settings, and UTC
 
-`data_source_properties` reach the async driver as they are given, with one exception: asyncpg
-does not read libpq's settings, so the ones written for libpq are made asyncpg's.
+`data_source_properties` - the extra settings a layout hands to the driver - reach the async
+driver as given, with one exception. psycopg's settings are those of libpq, PostgreSQL's own
+client library, and asyncpg does not read them. So the framework translates the ones written for
+libpq:
 
 | written for libpq | reaches asyncpg as |
 | --- | --- |
@@ -134,34 +141,43 @@ dataSourceProperties:
   # init_command: SET time_zone = '+00:00'       # MySQL and MariaDB, PyMySQL and aiomysql
 ```
 
-Measured against a database whose own default zone is Tehran: the session reports UTC on
-asyncpg and on aiomysql, and Tehran without the setting. A layout only async code reads can also
-use asyncpg's own spelling, `server_settings: {TimeZone: UTC}`. Something in `options` that is
-not a `-c` setting is refused, and so is a setting given twice; the refusal never repeats a value.
+Checked against a database whose own default zone is Tehran: with the setting, the session
+reports UTC on asyncpg and on aiomysql; without it, Tehran.
 
-**asyncpg is strict about time zones.** It refuses an aware `datetime` for a `TIMESTAMP` (zone-less)
-column, where psycopg accepts one. The framework hands every time to the driver as it is, so
-this meets only an aware value you give it yourself. The default clock's `instant()` has no zone
-attached and passes on every driver
+The edge cases:
+
+- A layout that only async code reads can also use asyncpg's own spelling,
+  `server_settings: {TimeZone: UTC}`.
+- Anything in `options` that is not a `-c` setting is refused, and so is a setting given in two
+  places.
+- The error never repeats the value, because every `data_source_properties` value is treated as
+  a secret.
+
+**asyncpg is strict about time zones.** It refuses a `datetime` that carries a zone (an aware
+one) for a zone-less `TIMESTAMP` column, where psycopg accepts it. The framework hands every time
+to the driver as it is, so you only meet this with an aware value you pass in yourself. The
+default clock's `instant()` has no zone attached and works on every driver
 ([What you give is what is stored](/reference/multi-database/#what-you-give-is-what-is-stored)).
 
 ## The pool is the cap
 
-There is no limit of the framework's own on how many units of work run at once. The connection
-pool is the limit. An async pool is built from the same `DataSourceConfig` as a sync one -
-`pool_size`, `max_overflow`, `pool_timeout`, `pool_recycle`, pre-ping - and:
+The framework sets no limit of its own on how many units of work run at once. The connection
+pool is the limit. An async pool is built from the same `DataSourceConfig` as a sync one, with
+the same settings: `pool_size`, `max_overflow`, `pool_timeout`, `pool_recycle`, and pre-ping - a
+check that a connection still works before it is handed out. When the pool is full:
 
-- past `pool_size + max_overflow`, requests queue for a connection;
+- past `pool_size + max_overflow` connections, requests queue for one;
 - a request that waits longer than `pool_timeout` fails with SQLAlchemy's `TimeoutError`
-  ("QueuePool limit of size 10 overflow 0 reached, connection timed out, timeout 5.00"), which
-  carries no url and no password. Map it to a 503 with `Retry-After`.
+  ("QueuePool limit of size 10 overflow 0 reached, connection timed out, timeout 5.00"). The
+  message carries no url and no password. Answer it with a 503 and a `Retry-After` header.
 
-Limit the work in flight at the server too, so a burst is refused at the door rather than
-queued inside: `uvicorn --limit-concurrency 50` answers 503 itself past 50 open requests. Keep
-that a small multiple of the pool.
+Limit the requests in flight at the server too, so a burst is turned away at the door rather
+than queued inside. `uvicorn --limit-concurrency 50` answers 503 itself once 50 requests are
+open. Keep that number a small multiple of the pool size.
 
-Measured with 2000 deposits per row, a pool of 40, PostgreSQL in a local container (one laptop,
-so read the shape, not the exact numbers):
+The measurements: 2000 deposits per row, a pool of 40, PostgreSQL in a local container. This is
+one laptop, so read the shape, not the exact numbers. p50 is the median wait, and p99 the wait of
+the slowest request in a hundred.
 
 **`pool_timeout` 30 s, the default**
 
@@ -172,8 +188,9 @@ so read the shape, not the exact numbers):
 | 200 | 581/s, p50 342 ms, p99 427 ms | 955/s, p50 123 ms, p99 786 ms | 780/s, p50 162 ms, p99 922 ms |
 | 1000 | 576/s, p50 1621 ms, p99 1839 ms | 874/s, p50 587 ms, p99 2196 ms | 796/s, p50 773 ms, p99 2382 ms |
 
-Nothing timed out. The slowest one in a hundred waits longer on async at 200 and 1000: every
-request starts at once and then queues at the pool, less evenly than in front of 40 threads.
+Nothing timed out. At 200 and 1000 requests the slowest one in a hundred waits longer on async:
+every request starts at once and then queues at the pool, less evenly than in front of 40
+threads.
 
 **`pool_timeout` 0.5 s**
 
@@ -183,47 +200,53 @@ request starts at once and then queues at the pool, less evenly than in front of
 | 1000 | none failed; p50 1557 ms, p99 1674 ms | 967 of 2000 failed fast; p50 399 ms, p99 797 ms |
 
 With a short timeout, overload is refused quickly instead of queued, and the requests that are
-served stay fast. The sync API never waits at the pool here: its 40 threads queue the work in
-front of it. The pre-ping costs 1.5 to 2.5 ms per unit of work on both drivers (two checkouts
-each); it is on by default, as on a sync pool. `scripts/bench-async.py` runs all of this.
+served stay fast. The sync API never waits at the pool here, because its 40 threads hold the work
+back in front of it.
+
+Pre-ping costs 1.5 to 2.5 ms per unit of work on both drivers, since each unit of work takes a
+connection from the pool twice. It is on by default, as on a sync pool.
 
 ## Reads across shards run at once
 
-A read with no shard named - `find_all_where`, `find_all`, `count`, `count_where`,
-`exists_where`, `find_one_where`, and `find_all_by_ids` across the shards its ids live on - asks every shard **at the same time**, so it
-costs about one shard's round trip rather than one per shard. The answer is the sync one:
+A read that names no shard asks every shard **at the same time**, so it costs about one shard's
+round trip rather than one per shard. These reads do it: `find_all_where`, `find_all`, `count`,
+`count_where`, `exists_where`, `find_one_where`, and `find_all_by_ids` (across the shards its
+ids live on).
+
+The answer is the one the sync read gives:
 
 - rows come back first shard first, as in sync;
-- if one shard fails, the whole read fails: the reads still running on the other shards are
-  cancelled, and that shard's own error is raised - the same exception the sync read raises,
-  with the same note naming the shard, e.g. `ekbatan: reading shard 1:0 (mexico) failed, so the
-  whole read failed and the reads still running on the other shards were cancelled`. There are
-  no partial results;
+- if one shard fails, the whole read fails. The reads still running on the other shards are
+  cancelled, and that shard's own error is raised, with the same note naming the shard as in
+  sync - e.g. `ekbatan: reading shard 1:0 (mexico) failed, so the whole read failed and the
+  reads still running on the other shards were cancelled`. There are no partial results;
 - `find_one_where` and `exists_where` take the answers in shard order and stop at the first
-  shard that has the row, as the sync calls do: the reads after it are cancelled, and a broken
-  shard after it does not fail the call. A shard fails them only when every shard before it
-  said "not here" - exactly when the sync call, which asks one shard at a time, would reach it.
+  shard that has the row, as the sync calls do. The reads after it are cancelled, so a broken
+  shard after it does not fail the call. A broken shard fails the call only when every shard
+  before it said "not here" - exactly when the sync call, asking one shard at a time, would have
+  reached it.
 
-`dbs()` and `readonly_dbs()` hand connections to your own code, so they stay as in sync: one
-shard at a time, and lazy - `async for shard, conn in wallets.readonly_dbs():`.
+`dbs()` and `readonly_dbs()` hand connections to your own code, so they work as in sync: one
+shard at a time, each opened only when you reach it -
+`async for shard, conn in wallet_repository.readonly_dbs():`.
 
 ## Transactions, tasks, cancellation and timeouts
 
-The open transaction lives in a `ContextVar`, one per task, so two requests on one event loop
-never see each other's transaction.
+The open transaction is kept in a `ContextVar` - a Python variable that holds a separate value
+for each asyncio task - so two requests on one event loop never see each other's transaction.
 
-- **Inside `perform`** no transaction is open, and each read takes a connection of its own: reads
-  gathered with `asyncio.gather` run at the same time.
-- **Inside one transaction** every statement joins its one connection. Statements gathered there
-  take turns - SQLAlchemy queues them - and commit together: no error, and no speed-up.
+- **Inside `perform`** no transaction is open, and each read takes a connection of its own:
+  reads gathered with `asyncio.gather` run at the same time.
+- **Inside one transaction** every statement uses its one connection. Statements gathered there
+  take turns (SQLAlchemy queues them) and commit together: no error, and no speed-up either.
 - **A cancelled task** rolls its transaction back, and the connection goes back to the pool clean.
 - **`asyncio.timeout(...)`** around `await executor.execute(...)` is a cancellation: whether it
   fires during `perform` or while the transaction is open, nothing is committed.
 
 ## Keyed locks, around the unit of work
 
-The caller takes the lock around `await executor.execute(...)`, as on the sync side - the lock
-spans `perform` and the commit, and the action knows nothing about it:
+Take the lock around `await executor.execute(...)`, as on the sync side. The lock then covers
+both `perform` and the commit, and the action knows nothing about it:
 
 ```python
 from ekbatan.aio.locks import AsyncPostgresKeyedLockProvider
@@ -240,28 +263,43 @@ async with lease:
     ...
 ```
 
-The same backends as the sync providers, holding the same keys - `AsyncPostgresKeyedLockProvider`,
-`AsyncMySQLKeyedLockProvider`, `AsyncMariaDBKeyedLockProvider`, and `AsyncRedisKeyedLockProvider`
-on redis-py's own `redis.asyncio` in `ekbatan.aio.locks.redis` - so an async service and a sync
-one contend for one lock, and on Redis a Java one too. The same rules: `max_hold` bounds every hold, `try_acquire`
-answers contention with `None` and a broken backend with `LockAcquisitionError`, a blank key is
-refused, a lease may be released twice, the outermost hold's `max_hold` governs.
+There is an async provider for each sync one, on the same backend and holding the same keys:
 
-- **The holder is the task.** A task that takes a key it holds re-enters; any other task waits -
-  one it started inside the held region included, `asyncio.gather` too.
+- `AsyncPostgresKeyedLockProvider`
+- `AsyncMySQLKeyedLockProvider`
+- `AsyncMariaDBKeyedLockProvider`
+- `AsyncRedisKeyedLockProvider`, in `ekbatan.aio.locks.redis`, on redis-py's own `redis.asyncio`
+
+So an async service and a sync one contend for the same lock - and on Redis, so does a service
+built on Ekbatan for Java ([Running beside a Java service](/reference/beside-java/#keyed-locks)).
+
+The rules are the sync ones:
+
+- `max_hold` bounds every hold, and the outermost hold's `max_hold` is the one that counts;
+- `try_acquire` returns `None` when someone else still holds the key after `max_wait`, and
+  raises `LockAcquisitionError` when the backend is broken;
+- a blank key is refused;
+- releasing a lease twice is allowed.
+
+How the async ones behave:
+
+- **The holder is the task.** A task that takes a key it already holds re-enters it. Any other
+  task waits - including one it started inside the held region, and the tasks of an
+  `asyncio.gather`.
 - **Waiting does not block the loop.** Other requests run while one waits for a lease.
-- **A wait that is cancelled or timed out** gives its connection back closed, so no lock can be
-  left behind on a pooled connection; a cancelled holder releases on its way out of `async with`.
+- **A wait that is cancelled or times out** hands its connection back closed, so no lock can be
+  left behind on a pooled connection. A cancelled holder releases the lock on its way out of
+  `async with`.
 - **A SQL lease holds an async connection** for its whole hold: give the locks a pool of their
   own (`lockConfig`), sized for the leases held at once.
 
-The sync providers refuse to be taken on an event loop's thread, and say to use these.
+The sync providers refuse to run on an event loop's thread, and their error says to use these.
 
 ## Event handlers, after the unit of work
 
-A handler never runs inside an action. The action commits its rows and its events; later, fan-out
-and dispatch - jobs on their own threads - pick the events up and run the handlers, a batch at a
-time. That is the same whatever kind the request path is.
+A handler never runs inside an action. The action commits its rows and its events. Later,
+fan-out and dispatch - jobs, on threads of their own - pick the events up and run the handlers, a
+batch at a time. This is the same whether the request path is sync or async.
 
 A handler may extend `AsyncEventHandler`, whose `handle()` is `async def`, to await an
 `AsyncActionExecutor`:
@@ -281,15 +319,16 @@ class WalletMoneyDepositedEventHandler(AsyncEventHandler[WalletMoneyDepositedEve
         await self.executor.execute(None, CreateNotificationAction, CreateNotificationAction.Params(...))
 ```
 
-Dispatch runs an async handler on its **handler loop** - one event loop on a thread of its own,
-open for as long as the dispatch is - while the delivery thread waits for it; a batch of async
-handlers runs on that loop at the same time. Success, retry, backoff and expiry are decided
-exactly as for a sync handler, from what the handler returned or raised. A registry may hold
-both kinds.
+Dispatch runs an async handler on its **handler loop**: one event loop, on a thread of its own,
+open for as long as dispatch is. The delivery thread waits for it, and a batch of async handlers
+runs on that loop at the same time. Success, retry, backoff and expiry are decided exactly as for
+a sync handler, from what the handler returned or raised. Sync and async handlers can be
+registered side by side.
 
-**What an async handler awaits belongs to the handler loop.** An async pool is bound to the loop
-it is used on, so give the handlers a registry and executor of their own (the examples use a
-`handlersConfig` pool), and close them on that loop at shutdown, before the loop:
+**What an async handler awaits belongs to the handler loop.** An async pool is tied to the event
+loop it is used on. So give the handlers a database registry and an executor of their own (the
+examples use a `handlersConfig` pool), and at shutdown close them on that loop, before closing
+the loop itself:
 
 ```python
 handler_loop = HandlerLoop()
@@ -305,26 +344,27 @@ handler_loop.run(handler_registry.aclose())
 handler_loop.close()
 ```
 
-Without `.handler_loop(...)` the dispatch makes its own, started only when an async handler first
-runs. Fan-out and dispatch themselves read and write the `events` and `event_notifications`
-tables through a sync registry, built from the same layout file.
+Without `.handler_loop(...)`, dispatch makes its own loop, started only when an async handler
+first runs. Fan-out and dispatch themselves read and write the `events` and
+`event_notifications` tables through a sync registry, built from the same layout file.
 
 The `fastapi-wallet-rest-uv-async-pg`, `fastapi-wallet-rest-uv-async-mysql`,
 `fastapi-wallet-rest-uv-async-mariadb` and `fastapi-wallet-rest-uv-async-sharded-pg` examples are
-this shape: async requests under an async keyed lock, an async handler, a pool per use.
-`fastapi-wallet-saga-uv-async-pg` runs a whole saga's later steps as async handlers.
+built this way: async requests under an async keyed lock, an async handler, and a pool for each
+use. `fastapi-wallet-saga-uv-async-pg` runs a whole saga's later steps as async handlers.
 
 ## A job whose work is async
 
-A distributed job is sync in every service: the scheduler claims its row and calls `execute` on
-one of its threads, and heartbeats it from another. The *work* inside it can still be async.
-`execute` hands a coroutine to a `HandlerLoop` - an event loop on a thread of its own, the same
-kind dispatch runs async handlers on - with `loop.run(...)`, and waits for it:
+A distributed job is sync in every service. The scheduler claims its row, calls `execute` on one
+of its threads, and sends its heartbeat from another. The *work* inside it can still be async:
+`execute` hands a coroutine to a `HandlerLoop` with `loop.run(...)`, and waits for it. A
+`HandlerLoop` is an event loop on a thread of its own - the same kind dispatch runs async
+handlers on.
 
 ```python
 class WalletStipendJob(DistributedJob):
     def __init__(self, loop: HandlerLoop, executor: AsyncActionExecutor, wallet_repository: WalletRepository):
-        self.loop = loop                  # the loop `executor` and `wallets` were built for
+        self.loop = loop                  # the loop `executor` and `wallet_repository` were built for
         self.executor = executor
         self.wallet_repository = wallet_repository
 
@@ -342,23 +382,26 @@ registry = AsyncDatabaseRegistry.from_config(layout)    # used only on `loop`
 # at shutdown: jobs.stop(), then loop.run(registry.aclose()), then loop.close()
 ```
 
-The job's thread waits, so whatever the coroutine raises, `execute` raises: the claim, the
-heartbeat, a failure and its retry are the scheduler's, exactly as for a sync job. What the work
-awaits is built for that loop and closed on it, after the jobs have stopped. Give dispatch the
-same loop (`.handler_loop(loop)`) and an async handler shares the work's registry.
+The job's thread waits, so whatever the coroutine raises, `execute` raises. The claim, the
+heartbeat, a failure and its retry are the scheduler's, exactly as for a sync job. Everything the
+work awaits is built for that loop, and closed on it after the jobs have stopped. Give dispatch
+the same loop (`.handler_loop(loop)`) and an async handler can share the work's registry.
 
-Worth it when the work waits on many things at once and can await them together. A job that is
-a few statements in a row gains nothing: write it sync, over a sync executor - an async service
-can run that beside itself unchanged. `job-worker-uv-async-pg` is this shape.
+This is worth it when the work waits on many things at once and can await them together. A job
+that runs a few statements in a row gains nothing: write it sync, over a sync executor. An async
+service can run such a job beside itself unchanged. `job-worker-uv-async-pg` is built this way.
 
 ## One kind per service
 
 A service is all-sync or all-async on its request path. Two registries over one database are
 two pools, and **one transaction cannot span them**. Never call the sync API from inside an
-`async def`: it blocks the event loop for every request at once. See
+`async def`: it blocks the event loop, and with it every request at once. See
 [Sync or async?](/learn/sync-or-async/).
 
 ## Testing an async action
+
+Both helpers run the action's `perform` against a bare plan, with no executor and nothing
+committed: `async_run_action` returns what it staged, and `AsyncActionSpec` adds the checks.
 
 ```python
 staged = await async_run_action(None, WalletDepositMoneyAction(clock, wallet_repository), params)
@@ -368,24 +411,29 @@ checked = await AsyncActionSpec.of(WalletDepositMoneyAction(clock, wallet_reposi
 checked.assert_updated(Wallet, lambda w: w.balance == Decimal("150.00"))
 ```
 
-`execute` and `assert_throws` are awaited; what comes back is the sync `ActionAssert`, so every
-check is the sync one. `count_statements(registry)` takes an async registry as well, around
+`execute` and `assert_throws` are awaited. What comes back is the sync `ActionAssert`, so every
+check works as in sync. `count_statements(registry)` takes an async registry as well, around
 awaited work.
 
 ## Passwords
 
-As on the sync side, no password is printed: not by an async data source, its engine or url, a
-manager or a registry, not in a connection refused by asyncpg, psycopg's async mode or aiomysql,
-not by an async keyed lock, its lease or its refusal - a Redis url's password included - and not
-with the engine's echo on. Tested with a marker password on PostgreSQL (asyncpg and psycopg async), MySQL, MariaDB and
-Redis.
+As on the sync side, no password is ever printed. That covers:
+
+- an async data source, its engine and its url, a transaction manager, and a registry;
+- the error when asyncpg, psycopg's async mode or aiomysql refuses a connection;
+- an async keyed lock, its lease and its errors, including the password in a Redis url;
+- the SQL the engine logs with `echo` on.
+
+This is checked with a test password on PostgreSQL (asyncpg and psycopg async), MySQL, MariaDB
+and Redis.
 
 ## gevent
 
-`ekbatan.aio` does not run under gevent's monkey-patching: aiosqlite's worker threads become
-greenlets that block the event loop's own thread, and units of work stall at the pool. gevent
-and asyncio are two answers to the same question - pick one per service. The sync API under
-gevent is covered in [Concurrency](/reference/runtime/concurrency/#gevent-cheap-blocking-with-nothing-to-change).
+`ekbatan.aio` does not run under gevent's monkey-patching: aiosqlite's worker threads, for one,
+become greenlets that block the event loop's own thread, and units of work stall at the pool.
+gevent and asyncio are two answers to the same question, so pick one per service. Running the
+sync API under gevent is covered in
+[Concurrency](/reference/runtime/concurrency/#gevent-cheap-blocking-with-nothing-to-change).
 
 ## Reference
 

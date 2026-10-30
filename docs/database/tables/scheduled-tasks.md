@@ -1,19 +1,20 @@
 # `scheduled_tasks`
 
-Optional. Needed when you use distributed jobs, or anything built on them - and the in-process
-event handler is built on them, because fan-out and dispatch *are* jobs.
+The table distributed jobs run on. Optional: needed only if you use distributed jobs - or the
+in-process event handler, whose fan-out and dispatch *are* jobs too.
 
 **Needed when:** you use distributed jobs, or the in-process event handler.
 **Written by:** db-scheduler.
 **Built by:** `ekbatan.schema.scheduled_tasks_table(metadata, name="scheduled_tasks", schema=None)`.
 
-This table is **owned by [db-scheduler](https://github.com/kagkarlsson/db-scheduler)**, not by
-this framework. The job registry is a small facade over it and deliberately does not wrap the
-table in a model. The schema here is db-scheduler's own, unchanged.
+This table is **owned by [db-scheduler](https://github.com/kagkarlsson/db-scheduler)**, the
+scheduling library the jobs run on, not by this framework. The job registry is a thin layer over
+db-scheduler and does not wrap the table in a model. The schema here is db-scheduler's own,
+unchanged.
 
-The scheduler itself is published from this repository as `ekbatan-py-db-scheduler` - a port of
-db-scheduler, a separate distribution with its own tests, pinned to the version `ekbatan` was cut
-with.
+The scheduler comes with `ekbatan` as a dependency: `ekbatan-py-db-scheduler`, a Python version
+of db-scheduler, published by this project, released together with `ekbatan` and pinned to the
+matching version.
 
 ## DDL
 
@@ -42,8 +43,6 @@ CREATE INDEX scheduled_tasks_priority_execution_time_idx
     ON scheduled_tasks (priority, execution_time);
 ```
 
-MySQL and MariaDB are the same with `BLOB` for `BYTEA` and `DATETIME(6)` for the timestamps.
-
 ### MySQL and MariaDB
 
 The same table, with `BLOB` for `BYTEA` and `DATETIME(6)` for the timestamps:
@@ -67,15 +66,16 @@ CREATE TABLE scheduled_tasks (
 
 CREATE INDEX scheduled_tasks_execution_time_idx ON scheduled_tasks (execution_time);
 CREATE INDEX scheduled_tasks_last_heartbeat_idx ON scheduled_tasks (last_heartbeat);
+CREATE INDEX scheduled_tasks_priority_execution_time_idx
+    ON scheduled_tasks (priority, execution_time);
 ```
 
-`DATETIME(6)` is the one to get right here rather than anywhere else on this page: the scheduler
-compares `execution_time` and `last_heartbeat` against instants that are not whole seconds, and a
-bare `DATETIME` truncates.
+`DATETIME(6)` is the thing to get right here: the scheduler compares `execution_time` and
+`last_heartbeat` against times that are not whole seconds, and a bare `DATETIME` cuts them to
+whole seconds.
 
-`scheduled_tasks_priority_execution_time_idx` is emitted here too — all three indexes are the
-same on every dialect. It is omitted from the snippet above only for length; see
-[Indexes](#indexes) for what each is for.
+The three indexes are the same on every database; [Indexes](#indexes) says what the priority one
+is for.
 
 ## Columns
 
@@ -88,23 +88,26 @@ same on every dialect. It is omitted from the snippet above only for length; see
 | `picked` | no | whether some instance has claimed it |
 | `picked_by` | yes | which one |
 | `last_success`, `last_failure` | yes | the last outcomes |
-| `consecutive_failures` | yes | the backoff input |
+| `consecutive_failures` | yes | how many runs in a row have failed; the backoff is based on it |
 | `last_heartbeat` | yes | **the liveness signal.** An execution whose heartbeat stops is declared dead and run again elsewhere |
 | `version` | no | optimistic locking, the same idea as everywhere else |
 | `priority` | yes | which due execution to take first |
 
-`task_name` + `task_instance` is the primary key, and that composite is the entire
-cluster-exclusivity mechanism: a recurring job is one row, so exactly one instance can hold it.
+`task_name` plus `task_instance` is the primary key, and that key is all it takes to run each job
+on only one instance across the cluster: a recurring job is one row, so only one instance can
+hold it.
 
 ## The heartbeat is why the jobs pool is separate
 
-`last_heartbeat` is written from a housekeeping thread, continuously, for every execution this
+`last_heartbeat` is written by a background thread, over and over, for every execution this
 instance holds. If that thread cannot get a connection, the heartbeat stops, and the execution is
 declared dead and **run again somewhere else** - while it is still running here.
 
-That is why [Wiring](../../wiring.md) gives jobs their own pool, sized at **at least twice the worker
-count**. A job body holding the last connection starves the heartbeat. db-scheduler warns at
-startup when the pool is too small, and it warned while the examples were being written.
+That is why jobs get a pool of their own (see [Wiring](../../wiring.md)), with **at least
+`workers + 3` connections**: one for each worker, plus one for each of the scheduler's three
+loops - polling for due work, writing heartbeats, and finding dead executions. A job body holding
+the last connection starves the heartbeat.
+db-scheduler warns at startup when the pool is too small.
 
 ## Dialect types
 
@@ -114,11 +117,11 @@ MariaDB.
 
 ### If the time columns are `timestamptz`
 
-The scheduler writes and reads its times exactly as it is given them, as the rest of the
-framework does, and its default clock gives the current UTC time with no zone attached - the
-right kind for the `TIMESTAMP` columns above. A table created by another migration may declare
-the PostgreSQL time columns `timestamptz` instead. Those hand back
-times *with* a zone, so give the scheduler a clock that has one too:
+An edge case. The scheduler writes and reads its times exactly as it is given them, as the rest
+of the framework does. Its default clock gives the current UTC time with no zone attached - the
+right kind for the `TIMESTAMP` columns above. But a table created by some other migration may
+declare the PostgreSQL time columns `timestamptz` instead. Those hand back times *with* a zone,
+so give the scheduler a clock that has one too:
 
 ```python
 from datetime import UTC, datetime
@@ -138,40 +141,39 @@ registry = (
 )
 ```
 
-This is the scheduler's own clock, from db-scheduler, and its one method keeps db-scheduler's
-name, `now()` - unlike Ekbatan's `Clock`, whose reading is `instant()`.
+This is the scheduler's own clock, from db-scheduler, not Ekbatan's `Clock`. That is why its one
+method is `now()`, where Ekbatan's `Clock` has `instant()`.
 
-Without it the scheduler compares its naive clock with the zoned times PostgreSQL hands back,
-and Python refuses. Measured with a one-second job on a `timestamptz` table: the job still ran,
-but every restart logged `TypeError: can't compare offset-naive and offset-aware datetimes`
-while reconciling the recurring job with its row, and the scheduler's other comparisons of a
-stored time with the clock (purging rows of unknown tasks, for one) fail the same way. With the
-aware clock: no error.
+Without it, the scheduler compares its zone-less clock with the zoned times PostgreSQL hands back,
+and Python refuses. Tried with a one-second job on a `timestamptz` table: the job still ran, but
+every restart logged `TypeError: can't compare offset-naive and offset-aware datetimes` while
+matching the recurring job to its row. The scheduler's other comparisons of a stored time with
+the clock - purging rows of unknown tasks, for one - fail the same way. With the clock above,
+there is no error.
 
-Keep the session in UTC either way. Writing a **naive** datetime into a `timestamptz` column
-makes PostgreSQL interpret it in the *session* timezone. Measured, writing `2026-09-15 12:00:00`:
+Keep the database session in UTC either way. A **naive** datetime - one with no zone - written
+into a `timestamptz` column is read by PostgreSQL in the *session's* time zone. Measured, writing
+`2026-09-15 12:00:00`:
 
 | session timezone | naive value lands as | aware value lands as |
 | --- | --- | --- |
 | `UTC` | `12:00:00 UTC` | `12:00:00 UTC` |
 | `America/New_York` | **`16:00:00 UTC`** | `12:00:00 UTC` |
 
-Four hours off, silently, and every execution fires at the wrong time. This is why the framework
-tables use `TIMESTAMP` without a zone everywhere else, and why CI runs the PostgreSQL suite a
-second time under a non-UTC process. If you write to this table yourself, write the same kind of
-time the scheduler's clock gives.
+Four hours off, silently, and every execution fires at the wrong time. This is why the framework's
+tables use `TIMESTAMP` without a zone everywhere else. If you write to this table yourself, write
+the same kind of time the scheduler's clock gives.
 
 ## Indexes
 
 ### Index names and the priority ordering
 
-Each index name starts with the table name - `scheduled_tasks_execution_time_idx` and so on. That
-is what SQLAlchemy's naming convention produces, and it keeps the names unique when one schema
-holds two schedulers.
+Each index name starts with the table's name - `scheduled_tasks_execution_time_idx` and so on -
+so the names stay unique when one schema holds two schedulers, each with its own table.
 
 The scheduler takes due executions highest priority first, then oldest first
 (`priority DESC, execution_time ASC`). The index is `(priority, execution_time)`, with no
-direction; at this table's size the difference was not measurable.
+direction: at this table's size the difference could not be measured.
 
 ## See also
 

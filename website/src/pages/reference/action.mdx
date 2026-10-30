@@ -103,8 +103,9 @@ actions = (
 ```
 
 That is what lets `executor.execute(principal, WalletDepositMoneyAction, params)` take the **class** — the
-registry is the map from class to constructed instance. Pass an instance directly and no registry
-is needed, which is the form a test usually wants.
+registry is the map from class to constructed instance. An instance passed to `execute` is
+refused, because it would run without being registered. To run an action you just built, as a
+test does, use `ActionSpec.of(action)` (`AsyncActionSpec` in async mode).
 
 The registry also decides nothing about *how* the action runs. Retries and cross-shard allowance
 are [`ExecutionConfiguration`](/reference/action-executor/), set as the executor's default or on
@@ -132,9 +133,8 @@ executor.execute(principal, WalletDepositMoneyAction, params)
 ```
 
 Phase one touches no transaction. Phase two is the only place one is opened, and it always wraps
-every staged change together with the matching event rows. **A partial write is not
-expressible** — there is no code path that writes a domain row without its outbox row, because
-they are the same statement batch in the same transaction.
+every staged change together with the matching event rows. **A partial write cannot happen**: there is no code path that writes a domain row without its
+outbox row, because both are written in the same transaction.
 
 The grouping step in phase two is what makes sharding invisible to phase one: `perform()` stages
 objects, and only afterwards does the executor work out which database each one belongs to. An
@@ -151,9 +151,8 @@ The accumulator for this invocation. A property rather than a field: it resolves
 `ContextVar` bound for the duration of `perform()`, so one shared action instance serves every
 concurrent invocation safely. See [ActionPlan](/reference/action-plan/).
 
-Ambient because it cannot be anything else. A repository call three frames down stages onto the
-same plan without ever mentioning it, and threading it through every signature between would put
-framework plumbing in the middle of domain code.
+It is reached this way rather than passed as an argument, so a repository call several calls
+deep can stage onto the same plan without every function in between having to pass it along.
 
 ### `clock`
 
@@ -174,8 +173,8 @@ A test that freezes one and not the other asserts on two different instants.
 Your logic. Read what you need, build the new immutable objects, stage them, return the result.
 It must be free of side effects you would not want repeated — a retry replays it whole.
 
-`principal` is whoever the caller named — `executor.execute("ada", WalletDepositMoneyAction, params)`, first, in Java's order —
-and `None` when nobody did. It is a parameter rather than ambient state: a helper that needs it
+`principal` is whoever the caller named - the first argument of
+`executor.execute("ada", WalletDepositMoneyAction, params)` - and `None` when nobody did. It is a parameter rather than ambient state: a helper that needs it
 is passed it, like any other value.
 
 It is **not persisted**. No column of [`events`](/reference/tables/events/) holds it; it reaches
@@ -190,8 +189,7 @@ not change.
 
 The plan is the only per-invocation value that is ambient, and it lives in a `ContextVar`, which
 is per-thread *and* per-async-task. Work handed to a thread pool does **not** inherit the
-binding. That is correct rather than a limitation: fan out, join, and stage only where
-`perform()` runs.
+binding. So fan out, wait for every result, and stage only where `perform()` runs.
 
 ## Retry semantics
 
@@ -221,12 +219,12 @@ await executor.execute(None, WalletDepositMoneyAction, params, config=config)
 </ModeTabs>
 
 - **`max_retries` counts retries, not attempts.** `max_retries=1` runs the action twice.
-- **Matching looks through the cause chain**, so a driver wrapping a conflict still matches —
-  `__cause__` only, which is what `raise ... from err` sets. An error raised inside an
-  `except` block without `from` is not followed.
-- **Matching is by exact class.** A policy for `EkbatanError` does not catch a
-  `StaleRecordError` — name the class that is thrown. Order is the only precedence rule —
-  put narrow policies first.
+- **A wrapped error still matches**: if a driver wraps the conflict in an error of its own - with
+  `raise ... from err` - the retry still recognises it. An error raised inside an `except` block
+  without `from` is not followed.
+- **A policy matches its exact class only.** A policy for `EkbatanError` does not catch a
+  `StaleRecordError`: name the class that is raised. When several policies are given, the first
+  one that matches is used.
 - **A retry replays the whole action from phase one, with a fresh plan.**
 
 `ExecutionConfiguration.no_retry()` is the policy for a unit of work whose side effects are not
@@ -273,8 +271,8 @@ Three things happen that you would want to happen:
 - **A warning is logged before the first commit**, not after the last. An action that spans
   shards and then fails partway is exactly when someone needs to know it spanned shards, and a
   warning written after the final commit is never written at all in that case.
-- **A partial failure logs at `CRITICAL`**, naming which shards are committed and will not roll
-  back, and which one failed. That log line is the only notice anyone gets, and it is the
+- **A partial failure is logged at ERROR, on a line starting `CRITICAL:`**, naming which shards
+  are committed and will not roll back, and which one failed. That log line is the only notice anyone gets, and it is the
   documented consequence of opting in.
 - **The span is annotated** — `cross_shard`, and on failure `partial_commit_failure` with the
   committed and failed shards — so it is visible in tracing rather than only in logs.

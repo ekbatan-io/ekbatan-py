@@ -1,8 +1,9 @@
 # Concurrency
 
-The sync API blocks, and every place it could have run something concurrently is answered here -
-five of them - along with the one way to use it wrongly. For an asyncio service there is also a
-native async API, `ekbatan.aio`: see [Native asyncio](async.md).
+How the framework uses threads, and how to run it safely under each kind of server: threads,
+processes, asyncio and gevent. The sync API blocks while it waits on the database, and the one way
+to misuse it is to call it from async code. For asyncio services there is also a native async API,
+`ekbatan.aio`: see [Native asyncio](async.md).
 
 If you read one section, read [Blocking is not free](#blocking-is-not-free-under-asyncio).
 
@@ -13,40 +14,39 @@ If you read one section, read [Blocking is not free](#blocking-is-not-free-under
 | a thread per request (gunicorn sync, waitress, a worker loop) | yes | nothing |
 | FastAPI or Starlette with plain `def` endpoints | yes | nothing - they run in a threadpool |
 | FastAPI with `async def` endpoints calling the sync API | **no** | `await run_in_threadpool(...)` around each call - or use `ekbatan.aio` |
-| FastAPI with `async def` endpoints on `ekbatan.aio` | yes | `await` every call; see Native asyncio |
+| FastAPI with `async def` endpoints on `ekbatan.aio` | yes | `await` every call; see [Native asyncio](async.md) |
 | a process per worker (gunicorn, uvicorn `--workers`) | yes | nothing; pools are per process, so size them per process |
 | a thread pool you own | yes | see [Work forked from inside an action](#2-work-forked-from-inside-an-action) |
 
 ## Five places threads could have been used
 
-A CPython thread is an operating-system thread - about a megabyte of stack - and the GIL means
-more of them buy concurrency while waiting on I/O, but not on CPU work. Threads are not free, so
-each place where the framework could run things at the same time was decided on its own. There
-are five, and they went five different ways.
+Inside the framework there are five places where work could run at the same time. Each was
+decided on its own, because threads are not free. A CPython thread is a real operating-system
+thread, with about a megabyte of stack. And because of the GIL - CPython's global lock, which
+lets only one thread run Python code at a time - more threads help while waiting on I/O, but not
+with CPU work. The five came out five different ways.
 
 ### 1. The unit of work - no threads at all
 
 The one that matters most needs none.
 
-The open transaction is held in a **`ContextVar`**: a mapping from shard to connection. Nothing
-is started; it answers one question - *is this execution context already inside a transaction
-on this shard?*
+The open transaction is held in a **`ContextVar`**: a Python variable that holds a separate
+value for each thread and each asyncio task. It maps each shard to its connection. Nothing is
+started; it only answers one question - *is this code already inside a transaction on this
+shard?*
 
-A `ContextVar` is per-thread **and** per-async-task, so the same mechanism is correct under a
-threaded server and an asyncio one. The threading model above the framework is the host's to
-choose and the framework works under any of them, because the state is per-context rather than
-global.
+Because a `ContextVar` is per thread **and** per async task, the same mechanism is correct under
+a threaded server and an asyncio one. The host picks the threading model, and the framework works
+under any of them, because its state is per context rather than global.
 
-Pinned rather than assumed, in
-[`tests/integration/test_concurrency.py`](../../tests/integration/test_concurrency.py): eight
-concurrent units of work take eight distinct connections, cannot see each other's uncommitted
-rows, and a pool worker does not carry a transaction into its next task.
+This is tested: eight units of work running at once take eight different connections, cannot see
+each other's uncommitted rows, and a pool thread does not carry a transaction into its next task.
 
 ### 2. Work forked from inside an action
 
-Fan out, **join**, and only then touch the plan. A new thread starts with its own `ContextVar`
-values, so work handed to a pool from inside a unit of work does **not** inherit the ambient
-transaction.
+Start the parallel work, wait for all of it to finish (**join** it), and only then touch the
+plan. A new thread starts with its own `ContextVar` values, so work handed to a pool from inside
+a unit of work does **not** inherit the open transaction.
 
 **Sync**
 
@@ -66,72 +66,69 @@ async def perform(self, principal: str | None, params: Params) -> Result:
     return self.plan.update(portfolio.priced(prices))              # after the gather
 ```
 
-Read and compute in the pool; stage on the thread that owns the plan. In async mode the same
-rule reads: gather the reads, then stage, once they are all back. `current_plan()` raises
-rather than returning `None`, so getting it wrong is loud rather than subtle.
+Read and compute in the pool, then stage the changes on the thread that owns the plan. In async
+code the rule is the same: gather the reads, and stage once they are all back. Get it wrong and
+`current_plan()` raises rather than returning `None`, so the mistake is loud, not subtle.
 
-That a worker does not inherit the transaction is correct, not a limitation - a pool thread
-outliving the unit of work and holding its connection is precisely the bug the design avoids.
+That a worker does not inherit the transaction is on purpose. A pool thread holding the
+transaction's connection could outlive the unit of work, and that is exactly the bug this avoids.
 
 ### 3. The keyed-lock watchdog - one thread for all of them
 
-Each outermost hold needs a watchdog that force-releases it at `max_hold`. The obvious shape is
-a `threading.Timer` per hold, and each of those is an operating-system thread. This framework
-used one per hold until it was measured, and it was worse in every direction - not only heavier
-but **later**, because starting a thousand threads takes 70 ms before any of them can fire:
+Each outermost hold needs a watchdog that force-releases it at `max_hold`. One thread per lock
+provider does this for all of its holds. It keeps a heap of deadlines and sleeps until the
+earliest one is due, so it neither burns a core polling nor fires late.
+
+A thread per hold - a `threading.Timer` each - would be heavier, and also **later**, because
+starting a thousand threads takes 70 ms before any of them can fire:
 
 | 1,000 held locks | register | median late | threads | memory |
 | --- | --- | --- | --- | --- |
 | a thread per hold | 70 ms | 48 ms | 1000 | 40 MB |
 | one watcher and a heap | 3 ms | 6 ms | 1 | ~0 |
 
-There is now one watchdog thread per lock provider, holding a heap of deadlines and waiting
-until the earliest is due - not polling on a cycle, which would have to pick an interval that is
-either burning a core or arriving late. On the real holder: 1,000 held locks register in 2 ms,
-10,000 in 18 ms, one thread either way.
+Measured on the framework's own watchdog: 1,000 held locks register in 2 ms, 10,000 in 18 ms,
+with one thread either way.
 
-Size your lock pool for the maximum number of leases held at once, not for traffic: a lease holds
-its connection for as long as it is held, because that is what the lock *is*.
+Size your lock pool for the most leases held at once, not for traffic. A lease holds its
+connection for as long as the lock is held, because the lock lives on that connection.
 
 ### 4. Job workers - a ceiling, with a knob
 
-Job bodies run on daemon threads, and threads cost memory, so there is a ceiling - defaulting to
-one per registered job.
-That default is right: a recurring task is a single row, so it has at most one execution in
-flight.
+Job bodies run on daemon threads. Threads cost memory, so there is a ceiling on how many, set
+with `workers(n)`. It defaults to one per registered job, which is right: a recurring task is a
+single row, so it has at most one execution in flight.
 
-**A ceiling, not a reservation.** Workers start as work arrives and only when none is already
-waiting, so twenty registered jobs with nothing due hold **no** worker threads. A thread, once
-started, is kept rather than retired when idle; the standard library has no pool that retires
-idle threads.
+**A ceiling, not a reservation.** A worker thread starts only when work arrives and no idle
+worker is waiting for it, so twenty registered jobs with nothing due hold **no** worker threads.
+Once started, a thread is kept rather than retired when idle; the standard library has no pool
+that retires idle threads.
 
 ```python
 job_registry().data_source(jobs_data_source).with_jobs(jobs).workers(3).build()
 ```
 
-Two sizing rules, and the second has teeth:
+Two sizing rules:
 
-- Workers run job **bodies**. Size for how many jobs can be due at once.
-- **The jobs pool needs `workers + 3` connections**, and this page said "twice the worker
-  count" until it was checked against the code. Three is not a margin: the scheduler's poll,
-  heartbeat and dead-execution loops each take a connection when they run, on top of the
-  workers. Twice is *more* than needed above three workers and **less** than needed below -
-  at two workers it gives four where five are wanted. A job body holding the last connection
-  starves the heartbeat, and an execution whose heartbeat stops is declared dead and **run
-  again somewhere else**. db-scheduler warns at startup with the number it wants.
+- Workers run job **bodies**. Size them for how many jobs can be due at once.
+- **The jobs pool needs `workers + 3` connections.** The three are not a margin: the
+  scheduler's three loops - polling for due work, writing heartbeats, and finding dead
+  executions - each take a connection when they run, on top of the workers. A job body holding the last connection starves the heartbeat, and an
+  execution whose heartbeat stops is declared dead and **run again somewhere else**.
+  db-scheduler warns at startup when the pool is smaller, with the number it wants.
 
 Give jobs their own pool, separate from the request pool, for the same reason: a traffic burst
 must not be able to starve that heartbeat.
 
 ### 5. Fan-out and dispatch - shards and handlers side by side
 
-The two event jobs - fan-out and dispatch - could run work side by side in two places: one per
-shard in a round, and one per due notification in a batch. They do both.
+The two event jobs, fan-out and dispatch, could run work side by side in two places: one thread
+per shard in a round, and one per due notification in a batch. They do both.
 
-**Per shard.** Both jobs drain their shards through a `ThreadPoolExecutor`, one thread
-per shard. This is one of the cases where threads in CPython buy real wall-clock, because a
-batch against a shard is a round trip to a *different* database - I/O the whole way, with the
-GIL released for all of it. Measured, one 40 ms round trip per shard:
+**Per shard.** Both jobs work through their shards with a `ThreadPoolExecutor`, one thread per
+shard. Here threads give a real speed-up even in CPython: a batch against a shard is a round trip
+to a *different* database, I/O the whole way, with the GIL released for all of it. Measured with
+one 40 ms round trip per shard:
 
 | shards | sequential | concurrent | speed-up |
 | --- | --- | --- | --- |
@@ -143,77 +140,80 @@ GIL released for all of it. Measured, one 40 ms round trip per shard:
 
 Flat: a round costs one shard's time however many shards there are.
 
-**There is no setting for it.** A deployment with many shards
-already holds a connection pool per shard, so a thread per shard for the length of a round is in
-proportion to what it already has. A single shard builds no pool and runs inline.
+**There is no setting for it.** A deployment with many shards already holds a connection pool
+per shard, so one thread per shard for the length of a round is in proportion to what it has. A
+single shard builds no thread pool and runs on the job's own thread.
 
-The whole round is submitted before any failure is raised, so one
-unreachable shard does not hold back its siblings, and results come back in shard order.
+Every shard's work is started before any failure is raised, so one unreachable shard does not
+hold back the others, and results come back in shard order.
 
-**Per notification.** A batch's handlers run at once, one thread each, in a pool per shard
-bounded by the batch size. Measured at 20 ms per handler, a batch of 100 goes from 2376 ms one
-after another to 28 ms. **Your handler code therefore runs at the same time as its siblings** -
-write it so that is safe.
+**Per notification.** A batch's handlers run at once, one thread each, in a pool per shard no
+bigger than the batch. Measured at 20 ms per handler, a batch of 100 drops from 2376 ms, one
+after another, to 28 ms. **So your handler code runs at the same time as the other handlers in
+its batch** - write it so that is safe.
 
-Outcomes are written one `UPDATE` per bucket, so a batch of 100 that all succeed is 1 statement
-and a realistic mix is 4.
+Outcomes are written with one `UPDATE` per kind of outcome (and per retry delay), so a batch of
+100 that all succeed is one statement, and a typical mix is four.
 
 ## Blocking is not free under asyncio
 
 This is the one that will actually hurt you.
 
-The sync API blocks, and under a **threaded** server that is exactly right - a blocking call
-holds one worker thread and the GIL is released for the duration of the I/O.
+The sync API blocks. Under a **threaded** server that is exactly right: a blocking call holds one
+worker thread, and the GIL is released while it waits on I/O.
 
-Under an **asyncio** server it is not right, because a blocking call there stops the entire event
-loop rather than one thread.
+Under an **asyncio** server it is wrong, because there a blocking call stops the entire event
+loop, not one thread.
 
-Measured: a 0.5s framework call from inside an `async def` handler let a background heartbeat
+Measured: a 0.5 s framework call from inside an `async def` handler let a background heartbeat
 tick **5 times where a free loop manages about 55**. Every other request on that loop stalled for
-the duration.
+as long.
+
+So the sync API refuses to run there. On an event loop's thread, its transactions, connections,
+repositories, executor and migration runs raise `BlockingCallError`, whose message names the ways
+out. It refuses and does nothing else: it never moves the call to a thread for you. The ways out:
 
 ```python
 # refused in an async def: BlockingCallError
 wallet = wallet_repository.get_by_id(wallet_id)
 
 # right
-wallet = await asyncio.to_thread(wallet_repository.get, wallet_id)
+wallet = await asyncio.to_thread(wallet_repository.get_by_id, wallet_id)
 
 # right, in Starlette or FastAPI
 from starlette.concurrency import run_in_threadpool
-wallet = await run_in_threadpool(wallet_repository.get, wallet_id)
+wallet = await run_in_threadpool(wallet_repository.get_by_id, wallet_id)
 
 # right, with ekbatan.aio: an async repository, awaited
 wallet = await wallet_repository.get_by_id(wallet_id)
 ```
 
-Not inside a sync transaction, though: `asyncio.to_thread` and `run_in_threadpool` copy the
-caller's context into the new thread, transaction included, and that thread is refused it with
+One exception: do not hand work to a thread this way from inside an open sync transaction.
+`asyncio.to_thread` and `run_in_threadpool` copy the caller's context into the new thread,
+transaction included, and a transaction opened on one thread is refused to any other, with
 `TransactionThreadError` - see
 [The transaction manager](../database/transaction-manager.md#repository-writes-join-automatically).
 
 Two things make this less painful than it sounds.
 
-**A plain `def` endpoint in FastAPI is already run in a threadpool** by the framework, so the
+**A plain `def` endpoint in FastAPI is already run in a threadpool** by FastAPI itself, so the
 ordinary way of writing one is safe with none of the above.
 [`fastapi-wallet-rest-uv-pg`](../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg) is written that way
 throughout, which is why it contains no `to_thread` at all.
 
-**Or await the database natively, with `ekbatan.aio`.** The ambient transaction is a
-`ContextVar`, per task as well as per thread, and `ekbatan.aio` is the same framework with every
+**Or await the database natively, with `ekbatan.aio`.** It is the same framework with every
 database wait awaited: `async def perform`, async repositories, an executor you `await`, on
-asyncpg, aiomysql or aiosqlite. Measured on one PostgreSQL with a pool of 40, it does about one
+asyncpg, aiomysql or aiosqlite. The open transaction is a `ContextVar`, per task as well as per
+thread, so nothing else changes. Measured on one PostgreSQL with a pool of 40, it does about one
 and a half times the work of the sync API in a 40-thread pool once 50 or more requests are in
-flight, with a lone request a little slower. An `async def` handler calling the *sync* API
-straight is still a real mistake with a real cost, so the sync API refuses it: on an event
-loop's thread its transactions, connections, repositories, executor and migration runs raise
-`BlockingCallError`, which names the three ways out above. It refuses and does nothing else - it
-never moves the call to a thread for you.
+flight, with a lone request a little slower.
 
 ## gevent: cheap blocking, with nothing to change
 
-Everything above is about a framework that blocks. **gevent removes the cost of blocking** - for
-*every* blocking call, not only the ones a library knows about.
+Everything above assumes a framework that blocks. **gevent removes the cost of blocking.** It
+runs work in greenlets - lightweight threads that hand over to each other whenever one waits -
+and patches Python's standard library (monkey-patching) so that *every* blocking call waits that
+way, not only the ones a library knows about.
 
 ```python
 from gevent import monkey; monkey.patch_all()   # the very first thing, before any other import
@@ -230,84 +230,92 @@ Then run it as you would any WSGI app - `gunicorn -k gevent myapp:app`.
 patched: time, socket, select, threading, ssl
 ```
 
-A plain `time.sleep` yielded. So did DNS. That is the property that matters: a `requests.get()`
-inside an action yields, and nothing has to be rewritten to make it so.
+A plain `time.sleep` let other work run. So did a DNS lookup. That is what matters: a
+`requests.get()` inside an action lets other work run too, and nothing has to be rewritten to make
+it so.
 
-**psycopg supports it deliberately.** From psycopg 3's own source:
+**psycopg supports it on purpose.** From psycopg 3's own source:
 
 > Detect if some greenlet library has patched the select library. If this is the case, avoid to
 > use the wait_c function as it doesn't behave in a collaborative way. **Currently supported:
 > gevent.**
 
-Under gevent it switches from `wait_c`, which blocks inside C, to `wait_poll`, which yields.
+Under gevent it switches from `wait_c`, which blocks inside C, to `wait_poll`, which lets other
+greenlets run while it waits.
 
-**This framework needs no change, and has none.** There is no gevent import in `src/`, no flag
-and no mode. The two mechanisms that could have made it unsafe were checked by running them:
+**The framework needs no change for it, and has none**: no gevent import, no flag and no mode.
+The two mechanisms that could have made it unsafe were checked by running them:
 
 | | under gevent |
 | --- | --- |
 | the open transaction, held in a `ContextVar` | each greenlet keeps its own - no unit of work sees another's |
 | the keyed lock's holder key, `threading.get_ident()` | 20 greenlets, 20 distinct idents - the exclusion holds |
 
-And the whole test suite passes unchanged: **631 passed under gevent, 631 without** - container
-tests included. `make test-gevent` is a CI job, so that stays a measurement rather than becoming
-another sentence nobody rechecked.
+The whole test suite also passes under gevent unchanged, database containers included, and it
+runs that way on every change.
 
-**What it does not cover.** gevent serves **WSGI**. FastAPI, Litestar and anything else on an
-asyncio loop cannot use it - for those, `ekbatan.aio` or the `to_thread` above is the answer,
-and every example in this repository is FastAPI, so none of them demonstrates this. Nor do the
-two mix: `ekbatan.aio` does not run under gevent's monkey-patching (its async runs are skipped
-by `make test-gevent`), so a service picks one. SQLite is local file
-I/O and will not yield, which costs nothing because it is local. And `patch_all()` must run
-before any other import, which is an application discipline nothing can check for you.
+**What it does not cover:**
 
-**Sizing changes under it.** The advice on this page assumes an OS thread per worker. A greenlet
-is not one, so `workers(n)` and the pool guidance are conservative under gevent rather than
-wrong - the binding constraint becomes the database's connection limit, not the thread count.
+- gevent serves **WSGI** apps. FastAPI, Litestar and anything else on an asyncio loop cannot use
+  it; for those, `ekbatan.aio` or the `to_thread` above is the answer. Every example in this
+  repository is FastAPI, so none of them shows gevent.
+- It does not mix with `ekbatan.aio`, which does not run under gevent's monkey-patching. A
+  service picks one.
+- SQLite is local file I/O and will not yield, which costs little because it is local.
+- `patch_all()` must run before any other import. That is up to your application; nothing can
+  check it for you.
+
+**Sizing changes under it.** The advice on this page assumes an operating-system thread per
+worker. A greenlet is not one, so `workers(n)` and the pool advice are on the safe side under
+gevent rather than wrong: the limit becomes the database's connection limit, not the thread
+count.
 
 ## Processes, and where the pools live
 
-A pool belongs to a process. Under `uvicorn --workers 4` or gunicorn with four workers there are
-four of every pool, so the database sees `4 x (pool_size + job_pool_size + lock_pool_size)`
+A pool belongs to a process. Under `uvicorn --workers 4`, or gunicorn with four workers, there
+are four of every pool, so the database sees `4 x (pool_size + job_pool_size + lock_pool_size)`
 connections, not one set.
 
 Two consequences:
 
 - **Size per process, then multiply before comparing with `max_connections`.** This is the usual
   way a Python deployment runs out of connections.
-- **Every worker process runs the scheduler.** That is fine and is the point - db-scheduler is
-  cluster-exclusive, so four processes contend for the same rows and exactly one wins each
-  execution. It is the same code path as four machines.
+- **Every worker process runs the scheduler.** That is fine, and intended: db-scheduler lets only
+  one instance run each execution, so four processes contend for the same rows and exactly one
+  wins each. It is the same as four machines.
 
-**Build the pools in each process, after it starts.** A server that forks its workers -
-gunicorn, with `--preload` above all, uwsgi, Celery's prefork pool, RQ - copies the parent
-process into each one. Any of ekbatan's objects created in the parent comes along: pools whose connections
-are the parent's own sockets, and the bookkeeping of threads that did not come along. Every
-object that owns connections or threads remembers the process that built it, and in any other
-process it raises `ForkedProcessError` at first use - it is not reset or reconnected. Closing
-it there is refused too: `close()` in the copy would end the parent's database sessions. Create the
-registry, the job registry and the lock providers in the FastAPI lifespan or at the top of the
-worker's `main()`; [Startup and shutdown](../startup-and-shutdown.md) has
-the recipe for each server.
+**Build the pools in each process, after it starts.** A server that forks its workers copies the
+parent process into each one: gunicorn (above all with `--preload`), uwsgi, Celery's prefork
+pool, RQ. Any ekbatan object created in the parent comes along - with pools whose connections
+are the parent's own sockets, and the records of threads that did not come along.
+
+So every object that owns connections or threads remembers the process that built it. In any
+other process it raises `ForkedProcessError` at first use; it is not reset or reconnected.
+Closing it there is refused too, because `close()` in the copy would end the parent's database
+sessions.
+
+Create the registry, the job registry and the lock providers in the FastAPI lifespan, or at the
+top of the worker's `main()`. [Startup and shutdown](../startup-and-shutdown.md) has the recipe
+for each server.
 
 If you would rather not have every web worker also be a job worker, run the jobs in their own
 process: create the job registry there, with its jobs, and leave it out of the web app.
-[`job-worker-uv-pg`](../../ekbatan-py-examples/job-worker-uv-pg) is that shape, and
-[`job-worker-uv-async-pg`](../../ekbatan-py-examples/job-worker-uv-async-pg) the same with the jobs' work awaited on a loop.
+[`job-worker-uv-pg`](../../ekbatan-py-examples/job-worker-uv-pg) is built that way, and
+[`job-worker-uv-async-pg`](../../ekbatan-py-examples/job-worker-uv-async-pg) is the same with the jobs' work awaited on a loop.
 
 ## The GIL, briefly
 
 The framework's own work is I/O: queries, waits, commits. The GIL is released during those, so
-threads give real concurrency for this workload and the usual Python caveat does not apply here.
+threads give real concurrency for this workload, and the usual Python caveat does not apply here.
 
-Where it does apply is inside **your** action or handler bodies. A handler doing something
-genuinely CPU-bound - parsing a large payload, computing a report - holds the GIL and blocks
-every other thread in the process, job workers included. That work belongs in a process pool, or
-in a different service.
+Where it does apply is inside **your** action or handler bodies. A handler doing real CPU work -
+parsing a large payload, computing a report - holds the GIL and blocks every other thread in the
+process, job workers included. That work belongs in a process pool, or in another service.
 
-Free-threaded CPython changes this, and nothing in this framework prevents it - there is no
-global mutable state, and the ambient transaction is per-context by construction. It has not been
-tested under a free-threaded build, so that is a reasonable expectation rather than a claim.
+Free-threaded CPython - the build without the GIL - removes this limit, and nothing in the
+framework stands in its way: there is no global mutable state, and the open transaction is per
+context by design. It has not been tested on a free-threaded build, though, so that is a
+reasonable expectation rather than a promise.
 
 ## See also
 

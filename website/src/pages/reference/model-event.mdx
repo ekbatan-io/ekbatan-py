@@ -2,7 +2,7 @@
 layout: ../../layouts/DocLayout.astro
 title: ModelEvent
 activeSection: reference
-lead: "A domain event emitted by a model. Subclasses describe transitions worth recording — opened, deposited, transferred, closed — and become rows in the outbox when the action commits."
+lead: "A domain event: a record that something happened to a model. Subclasses describe the changes worth recording — opened, deposited, transferred, closed — and each one becomes a row in the outbox when the action commits."
 ---
 
 ## Type signature
@@ -14,18 +14,55 @@ class WalletMoneyDepositedEvent(ModelEvent["Wallet"]):
     new_balance: Decimal
 ```
 
-The class line names the model the event is about; the constructor takes that model's id:
+The class line names the model the event is about. The constructor takes that model's id:
 
 ```python
 WalletMoneyDepositedEvent(model_id=str(self.id), amount=amount, new_balance=new_balance)
 ```
 
-The type argument fixes `model_name` once per event class, so no call site passes it. It is a
-string because events are declared before the model that emits them, as in `ShardedId["Wallet"]`.
+The type argument, `"Wallet"`, sets `model_name` once for the whole event class, so you never
+pass it when you create an event. It is a string because events are declared before the model
+that emits them, as in `ShardedId["Wallet"]`.
 
-A missing or blank `model_id` is refused when the event is made. An event class that names no
-model is refused earlier, where it is defined - at import, so the program does not start - and
-strict mypy reports it before that, as a missing type argument.
+Two mistakes are refused:
+
+- A missing or blank `model_id` is refused when the event is created.
+- An event class that names no model is refused earlier, where the class is defined. That
+  happens at import, so the program does not start. Strict mypy reports it even before that, as
+  a missing type argument.
+
+## Writing an event
+
+Put in it what a consumer needs to act on, and nothing else:
+
+```python
+@dataclass(frozen=True, kw_only=True)
+class WalletCreatedEvent(ModelEvent["Wallet"]):
+    owner_id: UUID
+    currency: str
+    initial_balance: Decimal
+```
+
+Name events in the past tense: an event describes something that already happened.
+
+A delivery address, a request id, a feature flag: these belong to one run of the action, not to
+what happened to the wallet. Put them in the action's parameters. They are saved on the same
+outbox row, and a handler reads them from `envelope.action_params`.
+
+An event is a value. Two events are equal when they are the same class, about the same model
+(`model_id`), with the same fields. So the same deposit into two different wallets is two
+events, not one.
+
+## Attaching one
+
+Attach an event inside the model's own method, always:
+
+```python
+return self.copy().with_event(WalletMoneyDepositedEvent(...)).balance(new_balance).build()
+```
+
+That is the whole rule. The model produces the event, the action stages the model, and the
+framework saves both.
 
 ## How events become outbox rows
 
@@ -37,71 +74,88 @@ plan.update(wallet)            the event rides along with the row
 the executor commits           one INSERT into events, per event
 ```
 
-The row's columns are filled from three places: the **action** supplies `action_id`,
-`action_name`, `action_params` and the timestamps; the **event** supplies `model_id`,
-`model_type`, `event_type` and `payload`. The persister writes them as the event carries them -
-it does not look at the model the event was attached to.
+The row's columns are filled from three places:
 
-So a consumer correlates without opening the payload, and routes on `event_type` without
-parsing it.
+- the **executor** supplies `namespace`;
+- the **action** run supplies `action_id`, `action_name`, `action_params` and the timestamps;
+- the **event** supplies `model_id`, `model_type` (its `model_name`), `event_type` (its class
+  name) and `payload`.
 
-## Writing an event
+The persister writes these as the event carries them. It does not look at the model the event
+was attached to.
 
-Put in it what a consumer needs to act, and nothing else:
-
-```python
-@dataclass(frozen=True, kw_only=True)
-class WalletCreatedEvent(ModelEvent["Wallet"]):
-    owner_id: UUID
-    currency: str
-    initial_balance: Decimal
-```
-
-A delivery address, a request id, a feature flag — those belong to the invocation, not to the
-fact. They travel in the action's parameters, and a handler reads them off the envelope.
-
-Name them in the past tense: an event describes something that already happened.
-
-An event is a value: two are equal when they are the same class, about the same model
-(`model_id`), with the same fields. The same deposit into two different wallets is two events,
-not one.
+So a consumer can tell which action and which model an event belongs to without opening the
+payload, and can route on `event_type` without parsing it. Handlers subscribe by `event_type`
+too, so an event class cannot override it: to change it, rename the class.
 
 ## Serialisation
 
-The payload is JSON, read back into the same class from the dataclass's own annotations.
-Nothing extra is needed for that round trip.
+The payload is JSON. It is read back into the same class using the dataclass's own type
+annotations, so the round trip needs nothing extra.
 
 - **Keys are camelCase**, in declaration order, after `modelId` and `modelName`:
   `{"modelId": ..., "modelName": "Wallet", "amount": 10.00, "newBalance": 110.00}` for `amount`
   and `new_balance`.
 - **Decimals are JSON numbers** (`10.50`, `1E+3`), and are read back as `Decimal` with their
-  scale. MySQL's `JSON` column keeps a fraction as a double.
-- **Dates and times are ISO-8601 text**, each as its field is declared (`ekbatan.time`): an
-  `Instant` as `"2025-01-01T00:00:00.120Z"`, a `LocalDateTime` with no offset, an
-  `OffsetDateTime` with its own; a field declared plain `datetime` is refused when the action
-  runs, and nothing is saved. `bytes` as base64. See
-  [Models and entities](/learn/models-and-entities/#modelevent) for the full table, and
-  [time kinds](/reference/multi-database/#time-kinds).
+  scale. One exception: MySQL's `JSON` column stores a number with a fraction as a double, so
+  `50.00` comes back as `50.0` there.
+- **Dates and times are ISO-8601 text**, each as its field is declared (the types in
+  `ekbatan.time`): an `Instant` as `"2025-01-01T00:00:00.120Z"`, a `LocalDateTime` with no
+  offset, an `OffsetDateTime` with its own offset.
+- **A field declared as plain `datetime` is refused** when the action runs, and nothing is saved.
+- **`bytes`** are written as base64.
+
+### Every field type
+
+What each field becomes in the JSON, and what it is read back as, decided by its annotation:
+
+| Annotation | Written as | Read back as |
+|---|---|---|
+| `Decimal` | a JSON **number**: `10.50`, `1E+3` | the same `Decimal`, scale kept |
+| `float` | a number: `0.1`, `1.0E20` | `float` |
+| `Instant` (`ekbatan.time`) - no zone attached, UTC digits | ISO-8601 text ending in `Z`: `"2025-01-01T00:00:00.120Z"` | no zone attached, the same digits |
+| `LocalDateTime` - no zone attached | ISO-8601 text, no offset: `"2025-01-01T10:00:00"` | no zone attached, as written |
+| `OffsetDateTime` - zone attached | ISO-8601 text with the offset: `"...T02:00:00+02:00"` | zone attached, that offset |
+| plain `datetime` | **refused** - declare it one of the three | |
+| `date`, `time`, `timedelta` | ISO-8601 text: `"2025-01-01"`, `"10:00:00"`, `"PT1.5S"` | the same type |
+| `bytes` | base64: `"AQL/"` | `bytes` |
+| `UUID` | its text | `UUID` |
+| an `Enum` | its **member name**, never its ordinal | the member |
+| `Id`, `ShardedId` | `{"id": "...", "value": "..."}` | the typed id |
+| another `TypedValue` | `{"value": ...}` | the typed value |
+| a nested frozen dataclass | an object, keys as below | recursively, the same way |
+| `list` / `tuple` / `set` / `frozenset` / `dict` of any of the above | array / object | element by element |
+| `T \| None` | | the non-`None` arm, when there is exactly one |
+
+**Anything else is refused** with a `ValidationError` naming its class, before anything is
+written: a plain class or an `attrs` class, for example. Make it a dataclass to have it written
+and read back. A `NamedTuple` is a tuple, so it is written as an array.
+
+**Enums travel by name**, never by position: a position changes meaning the moment someone adds a
+member in the middle, and nothing about that change looks dangerous at the time.
+
+Two limits worth knowing:
+
+- **A key the dataclass does not declare is dropped**, not an error, so a producer that adds a
+  field does not break a consumer that has not caught up. **A key the JSON lacks leaves the field
+  `None`**, or its declared default.
+- **A union with more than one non-`None` type is left as raw JSON.** Nothing in the payload says
+  which type it is, so the reader does not guess. If a handler needs it typed, model it as a
+  nested dataclass with a `kind` field instead.
+
+The three kinds of time are explained under [time kinds](/reference/multi-database/#time-kinds).
 
 A Java service built on Ekbatan reads and writes this same JSON - see
 [Running beside a Java service](/reference/beside-java/#event-payloads).
-
-## Attaching one
-
-```python
-return self.copy().with_event(WalletMoneyDepositedEvent(...)).balance(new_balance).build()
-```
-
-Inside the model's own method, always — that is the whole discipline. Events are produced in the
-model, staged by the action, and persisted by the framework.
 
 ## Consumers
 
 - **In process** — the dispatch job rebuilds the typed event and calls your handler. See
   [Local event handlers](/reference/events/local-event-handler/).
-- **Through a broker** — Debezium tails the table. See [Streaming](/reference/events/streaming/).
-- **By hand** — `ActionEvent.from_row(...)` in `ekbatan.streaming` is the consumer-side view of
-  an outbox row.
+- **Through a broker** — Debezium reads new rows from the database's change log. See
+  [Streaming](/reference/events/streaming/).
+- **By hand** — `ActionEvent.from_row(...)`, in `ekbatan.streaming`, reads one outbox row the
+  way a consumer sees it.
 
 ## See also
 

@@ -2,10 +2,18 @@
 layout: ../../layouts/DocLayout.astro
 title: ActionExecutor
 activeSection: reference
-lead: "The framework's main entry point. Runs actions atomically against the configured shards — application code calls executor.execute(principal, MyAction, params) and never touches an action directly."
+lead: "The object your application calls to run an action. It runs the action, then commits everything the action staged in one transaction. Application code calls executor.execute(principal, MyAction, params) and never calls an action directly."
 ---
 
 import ModeTabs from "../../components/ModeTabs.astro";
+
+You build one executor when the service starts, and every request calls it:
+
+```python
+wallet = executor.execute(None, WalletDepositMoneyAction, params)
+```
+
+The arguments are the principal (who is acting, or `None`), the action's class, and its params.
 
 ## Type signature
 
@@ -16,10 +24,10 @@ import ModeTabs from "../../components/ModeTabs.astro";
 class ActionExecutor:
     def execute[P, R](
         self,
+        principal: str | None,
         action: type[Action[P, R]],
         params: P,
-        *,
-        principal: str | None = None,
+        /,
         config: ExecutionConfiguration | None = None,
     ) -> R: ...
 ```
@@ -31,10 +39,10 @@ class ActionExecutor:
 class AsyncActionExecutor:
     async def execute[P, R](
         self,
+        principal: str | None,
         action: type[AsyncAction[P, R]],
         params: P,
-        *,
-        principal: str | None = None,
+        /,
         config: ExecutionConfiguration | None = None,
     ) -> R: ...
 ```
@@ -42,121 +50,24 @@ class AsyncActionExecutor:
 </div>
 </ModeTabs>
 
-In async mode it is `AsyncActionExecutor` from `ekbatan.aio`, and `execute` is awaited; it runs
-`AsyncAction`s only, as the sync one runs `Action`s only. Everything else on this page - the
-transaction, the cross-shard rule, retries, tracing - is the same code in both.
+The first three arguments are positional, in this order: principal, action, params. A call in
+any other order is refused with a `TypeError` that shows the right one. An optional `config`
+changes the retries or allows cross-shard work for this one call (see [Retries](#retries) and
+[Cross-shard behaviour](#cross-shard-behaviour)).
 
-Takes the action's **type**, and runs the instance registered for it. Callers depend on a class, not on a
-constructed object with repositories hanging off it, and everything a service can do is listed in
-its `ActionRegistry`.
+In async mode it is `AsyncActionExecutor`, from `ekbatan.aio`, and `execute` is awaited. Each
+executor runs only its own kind: `ActionExecutor` runs `Action`s and `AsyncActionExecutor` runs
+`AsyncAction`s. Everything else on this page - the transaction, the cross-shard rule, retries,
+tracing - works the same in both. The sync `execute` called on an event loop's thread (inside
+`async def` code) is refused with `BlockingCallError`.
 
-An instance is refused, with a message saying so: it would run whether it was registered or not.
-To run an action you just built in a test,
+`execute` takes the action's **class**, and runs the instance registered for it. So the code that
+calls `execute` needs only the class, not an action object built with its repositories. And
+everything a service can do is listed in one place: its `ActionRegistry`.
+
+Passing an action instance instead of its class is refused with a `ValidationError`, because an
+instance would run even if it was never registered. To run an action you just built in a test,
 use `ActionSpec.of(action)` (`AsyncActionSpec` in async mode) — see [Test it without a database](/learn/your-first-action/#test-it-without-a-database).
-
-Construction:
-
-<ModeTabs>
-<div slot="sync">
-
-```python
-class ActionExecutor:
-    def __init__(
-        self,
-        *,
-        namespace: str,
-        registry: DatabaseRegistry,
-        repositories: RepositoryRegistry | Iterable[Repository],
-        actions: ActionRegistry | Iterable[Action] = (),
-        events: Table | None = None,
-        clock: Clock | None = None,
-    ) -> None: ...
-```
-
-</div>
-<div slot="async">
-
-```python
-class AsyncActionExecutor:
-    def __init__(
-        self,
-        *,
-        namespace: str,
-        registry: AsyncDatabaseRegistry,
-        repositories: RepositoryRegistry | Iterable[AsyncRepository],
-        actions: ActionRegistry | Iterable[AsyncAction] = (),
-        events: Table | None = None,
-        clock: Clock | None = None,
-    ) -> None: ...
-```
-
-</div>
-</ModeTabs>
-
-All keyword-only: an executor takes six collaborators, and positional order for six is a mistake
-waiting to be made silently.
-
-| | |
-|---|---|
-| `namespace` | written into every outbox row; required, and a naming root rather than a label |
-| `registry` | the shard layout, which is how the executor finds a database to commit to |
-| `repositories` | what persists each staged type. A type with none is refused when the executor goes to write it, with a message naming the type *and* listing what is registered |
-| `actions` | the registry that maps a class to a constructed instance; optional if you always pass instances |
-| `events` | the outbox `Table` to write to; the one from your generated `schema.py`. Left out (and no `outbox=`), the executor writes through the default persister to the framework's own `events` table |
-| `clock` | defaults to the system clock. Pass a fixed one in tests and every timestamp becomes assertable |
-
-`registry=None` and `repositories=None` are refused explicitly rather than accepted and dropped
-into an attribute, because the failure otherwise arrives at the first `execute(...)` — far from
-the wiring line that caused it.
-
-## What "atomically" means
-
-One transaction, on one shard, containing:
-
-- every staged INSERT, with its initial version and timestamps;
-- every staged UPDATE, each carrying `WHERE version = ?`;
-- one outbox row per event, plus a sentinel row when an invocation emitted none.
-
-They commit together or not at all. There is no second write to forget, and no publish step that
-can fail after the commit.
-
-## Cross-shard behaviour
-
-By default an action that touches more than one shard is **refused** with `CrossShardError`,
-naming the two shards that disagreed:
-
-```python
-if len(shards) > 1 and not config.allow_cross_shard:
-    raise CrossShardError(first, second)
-```
-
-`ExecutionConfiguration(allow_cross_shard=True)` opts in to per-shard commits. Each shard
-commits independently, **there is no two-phase commit**, and a failure rolls back only its own
-shard — the ones that already committed stay committed. The executor logs that outcome loudly,
-naming the shards, because a partial commit nobody noticed is the worst version of it.
-
-Treat it as an escape hatch. Prefer passing it on one explicit `execute(...)` call rather than
-setting it as an executor-wide default, so the risk is visible where the risk is taken. If a
-partial commit would need compensating, use a [saga](/learn/sagas/) instead of one cross-shard
-action.
-
-See [Cross-shard actions](/learn/sharding-strategies/#cross-shard-actions-one-transaction-per-shard-never-atomic-across)
-for the consistency model and the saga mitigation.
-
-## Retries
-
-`ExecutionConfiguration.retry_configs` is an ordered tuple of `RetryConfig(on=..., max_retries=..., delay=...)`,
-where `max_retries` and `delay` are required and `delay` is a `timedelta`, as Java's
-`new RetryConfig(maxRetries, Duration)`. The first whose `on` matches wins, so order is the
-precedence rule. The default is one retry on `StaleRecordError` after 100 ms.
-`ExecutionConfiguration.no_retry()` turns it off.
-
-## Tracing
-
-Every invocation opens a span, with the action name, the shard, the principal and the outcome as
-attributes, and a retry is an event on that span. The instrumentation is the OpenTelemetry **API
-only** — with no SDK registered every call is a no-op. See
-[Observability](/reference/runtime/observability/).
 
 ## Building one
 
@@ -193,15 +104,167 @@ wallet = await executor.execute(None, WalletDepositMoneyAction, params)
 </div>
 </ModeTabs>
 
-`namespace` goes on every outbox row and becomes the topic prefix downstream. It must be
-dot-separated identifiers shaped like a package — a hyphen is refused up front, because the
-namespace doubles as a protobuf package and `package my-service;` is a syntax error.
+The full constructor:
+
+<ModeTabs>
+<div slot="sync">
+
+```python
+class ActionExecutor:
+    def __init__(
+        self,
+        *,
+        namespace: str,
+        registry: DatabaseRegistry,
+        repositories: RepositoryRegistry | Iterable[Repository],
+        actions: ActionRegistry | Iterable[Action] = (),
+        outbox: EventPersister | None = None,
+        clock: Clock | None = None,
+        config: ExecutionConfiguration = ExecutionConfiguration(),
+    ) -> None: ...
+```
+
+</div>
+<div slot="async">
+
+```python
+class AsyncActionExecutor:
+    def __init__(
+        self,
+        *,
+        namespace: str,
+        registry: AsyncDatabaseRegistry,
+        repositories: RepositoryRegistry | Iterable[AsyncRepository],
+        actions: ActionRegistry | Iterable[AsyncAction] = (),
+        outbox: AsyncEventPersister | None = None,
+        clock: Clock | None = None,
+        config: ExecutionConfiguration = ExecutionConfiguration(),
+    ) -> None: ...
+```
+
+</div>
+</ModeTabs>
+
+Every argument is keyword-only, so two of them cannot be swapped by accident.
+
+| | |
+|---|---|
+| `namespace` | written into every outbox row. Required, and it has a fixed shape (see below) |
+| `registry` | the shard layout: how the executor finds the database to commit to |
+| `repositories` | what saves each staged type. A type with no repository is refused when the executor goes to write it, with a message naming the type *and* listing what is registered |
+| `actions` | the actions this executor can run: an `ActionRegistry`, or a list of action instances |
+| `outbox` | what writes the outbox rows. Left out, the default persister writes them to the framework's own `events` table. See [Custom event persister](#custom-event-persister) |
+| `clock` | defaults to the system clock. Pass a fixed one in tests, and every timestamp becomes predictable |
+| `config` | the `ExecutionConfiguration` every call uses: one retry on `StaleRecordError`, and cross-shard work refused. A `config` passed to one `execute(...)` call replaces it for that call |
+
+`registry=None` or `repositories=None` is refused straight away, with a `ValidationError`. So the
+mistake shows at the line that builds the executor, not at the first `execute(...)`.
+
+`namespace` goes on every outbox row, and becomes the start of the topic names downstream. It
+must be dot-separated identifiers, like a package name: letters, digits and `_`, each part
+starting with a letter or `_`. A hyphen is refused when the executor is built, because the
+namespace is also used as a protobuf package name, and `package my-service;` is a syntax error
+there. Write `my_service` instead.
+
+`ActionExecutor.builder()` builds the same executor one setting at a time: `namespace(...)`,
+`database_registry(...)`, `repository_registry(...)`, `action_registry(...)`,
+`event_persister(...)`, `clock(...)` and `default_execution_configuration(...)`, then `build()`.
+
+## What "atomically" means
+
+One transaction, on one shard, containing:
+
+- every staged INSERT, with its initial version and timestamps;
+- every staged UPDATE, each carrying `WHERE version = ?`;
+- one outbox row per event. An action that emitted no events still writes one row, with the
+  event columns empty, so the outbox records every action that ran.
+
+They commit together or not at all. There is no second write to forget, and no publish step that
+can fail after the commit.
+
+## Cross-shard behaviour
+
+By default, an action that touches more than one shard is **refused** with `CrossShardError`,
+before anything is written. The error names two of the shards involved.
+
+To allow it, pass `allow_cross_shard=True` on the one call that needs it:
+
+<ModeTabs>
+<div slot="sync">
+
+```python
+executor.execute(
+    None,
+    TransferAction,
+    params,
+    config=ExecutionConfiguration(allow_cross_shard=True),
+)
+```
+
+</div>
+<div slot="async">
+
+```python
+await executor.execute(
+    None,
+    TransferAction,
+    params,
+    config=ExecutionConfiguration(allow_cross_shard=True),
+)
+```
+
+</div>
+</ModeTabs>
+
+Each shard then commits on its own, and **there is no two-phase commit**. If one shard fails,
+only that shard rolls back: the shards that already committed stay committed. The executor logs
+that outcome loudly, naming the shards, because a partial commit nobody notices is the worst
+kind.
+
+Treat it as an escape hatch. Pass it on the one `execute(...)` call that needs it, not as the
+executor-wide default, so the risk is visible where it is taken. If a partial commit would need
+undoing, use a [saga](/learn/sagas/) instead of one cross-shard action.
+
+[Cross-shard actions](/learn/sharding-strategies/#cross-shard-actions-one-transaction-per-shard-never-atomic-across)
+explains what is and is not promised, and how a saga helps.
+
+## Retries
+
+By default, a call that fails with `StaleRecordError` (it lost a race with another write to the
+same row) is tried once more, after 100 ms. To change that, pass your own `retry_configs`:
+
+```python
+config = ExecutionConfiguration(
+    retry_configs=(
+        RetryConfig(on=StaleRecordError, max_retries=3, delay=timedelta(milliseconds=50)),
+    ),
+)
+wallet = executor.execute(None, WalletDepositMoneyAction, params, config=config)
+```
+
+- `retry_configs` is an ordered tuple of `RetryConfig(on=..., max_retries=..., delay=...)`.
+- `max_retries` and `delay` are required. `max_retries` counts the tries after the first one.
+  `delay` is a `timedelta`; a plain number is refused.
+- The first `RetryConfig` whose `on` matches the error wins, so put a narrow rule before a broad
+  one.
+- `on` must name the exact class that is raised: a subclass of it does not match. An error raised
+  `from` a matching one (`raise ... from error`) matches too.
+- `ExecutionConfiguration.no_retry()` turns retries off.
+
+## Tracing
+
+Every call opens an OpenTelemetry span. It records the action name, the principal and the
+outcome, and each retry is an event on it. Inside it, each shard's transaction gets a span of
+its own, naming the shard. Ekbatan uses the OpenTelemetry **API only**: if your service registers no
+OpenTelemetry SDK, every one of these calls does nothing. See
+[Observability](/reference/runtime/observability/).
 
 ## Custom event persister
 
-The default, `SingleTableJsonEventPersister` (`AsyncSingleTableJsonEventPersister` in async
-mode), writes one JSON row per event into the outbox table. Supply your own to write a different shape — a second table, a different column layout,
-encrypted payloads — while keeping the same transaction.
+The default persister, `SingleTableJsonEventPersister` (`AsyncSingleTableJsonEventPersister` in
+async mode), writes one JSON row per event into the outbox table. You can pass your own as the
+executor's `outbox=` argument, to write a different shape: a second table, a different column
+layout, encrypted payloads. It still writes in the same transaction.
 
 The protocol is one method, awaited in async mode:
 
@@ -244,14 +307,13 @@ class AsyncEventPersister(Protocol):
 </div>
 </ModeTabs>
 
-It is called inside the transaction the domain rows are being written in, and a write through
-the registry joins it: `registry.manager(shard).connection()` hands back the open transaction
-rather than a new one. So whatever a replacement writes, it writes where the domain rows are
-being written, or not at all. The default writes through `EventEntityRepository`, which does
-exactly that.
+It is called inside the transaction that writes the domain rows. A write through the registry
+joins that transaction: `registry.manager(shard).connection()` hands back the open transaction,
+not a new connection. So whatever your persister writes commits with the domain rows, or not at
+all. The default persister writes this way too.
 
-The same persister is reachable from outside an action — a backfill job replaying historical
-state can reuse the configured one rather than assembling events by hand.
+The executor's persister is also there for code outside an action, as `executor.outbox`. A
+backfill job replaying old state can call it, instead of building outbox rows by hand.
 
 ## See also
 

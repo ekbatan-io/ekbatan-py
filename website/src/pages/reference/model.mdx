@@ -74,7 +74,7 @@ clock and equals the value read back from any database.
 write. Move it on the changes where it means something:
 
 ```python
-def deposit(self, amount: Decimal, at: datetime) -> Wallet:
+def deposit(self, amount: Decimal, at: Instant) -> Wallet:
     return (
         self.copy()
         .with_event(WalletMoneyDepositedEvent(model_id=str(self.id), amount=amount, new_balance=self.balance + amount))

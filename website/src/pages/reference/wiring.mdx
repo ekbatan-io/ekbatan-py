@@ -2,32 +2,38 @@
 layout: ../../layouts/DocLayout.astro
 title: Wiring
 activeSection: reference
-lead: "Everything a service is made of, assembled in one function: the databases, the repositories, the actions, the event handlers and the jobs. Nothing scans, nothing is discovered - the list is the wiring, and it is the one place that knows what this service is."
+lead: "How to build a whole service in one function: the databases, the repositories, the actions, the event handlers and the jobs. Nothing is found automatically. You list every piece, so this one function shows everything the service contains."
 ---
 
 import ModeTabs from "../../components/ModeTabs.astro";
 
-That is the whole of it. There is no container to configure, no annotation to remember and no
-startup order to reason about beyond the order the lines are in.
+There is no dependency-injection container to configure and no decorator to remember. Things are
+built in the order the lines are written, and that is the only startup order there is.
 
-> Everything below is taken from
+> The code below is adapted from
 > [`ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/app.py`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/app.py),
 > which runs and is tested. The HTTP half is in [Wiring with FastAPI](/reference/wiring-fastapi/); this
 > page is the part that has nothing to do with HTTP.
 
-**`build()` and `WalletService` are the example's own code**, not something ekbatan provides:
-one function that creates ekbatan's objects, and one class that holds them, with a `start()`
-that calls `jobs.start()` and a `close()` that stops the jobs and closes the registry and the
-data sources. The objects that hold connections or threads - the `DatabaseRegistry`, the lock
-provider and its data source, the `JobRegistry` and its data source - are created in your app's
-startup code (the FastAPI lifespan, or the top of a worker's `main()`) and closed in its shutdown code;
-never at import time. Normal code uses the sync API, `async def` code `ekbatan.aio`.
-[Startup and shutdown](/learn/startup-and-shutdown/) has each object's startup and shutdown call, without the example's class.
+**`build()` and `WalletService` are the example's own code**, not part of Ekbatan. `build()` is
+one function that creates Ekbatan's objects, and `WalletService` is one class that holds them.
+Its `start()` calls `jobs.start()`, and its `close()` stops the jobs and closes the registry and
+the data sources.
+
+Some of these objects hold connections or threads: the `DatabaseRegistry`, the lock provider and
+its data source, the `JobRegistry` and its data source. Create them in your app's startup code
+(the FastAPI lifespan, or the top of a worker's `main()`), and close them in its shutdown code.
+Never create them at import time. [Startup and shutdown](/learn/startup-and-shutdown/) lists each object's startup
+and shutdown call, without the example's class.
+
+Ordinary code uses the sync API, and `async def` code uses `ekbatan.aio`; the code below shows
+both.
 
 ## What we're wiring
 
-One function that returns one object. Nothing above it knows which database, which handlers or
-which jobs; nothing below it does either.
+`build()` returns one object, a `WalletService`. The code that uses the service does not need to
+know which database, handlers or jobs are behind it, and neither do the domain classes it is
+built from.
 
 <ModeTabs>
 <div slot="sync">
@@ -85,13 +91,13 @@ class WalletService:
 </div>
 </ModeTabs>
 
-Frozen and slotted because it is a value, not a service locator - it is built once and handed
-around. `start` and `close` (`aclose`, awaited, in async mode) are the only lifecycle there is.
+It is a frozen dataclass: built once, then passed around and never changed. `start` and `close`
+(`aclose`, awaited, in async mode) are its only lifecycle methods.
 
 ## The domain (unchanged whether you wire it by hand or not)
 
-Nothing here changes because of how you wire it. These are the classes the rest of the page
-assembles, and they are the same ones you would write with a container doing the assembling:
+These are the classes the rest of the page puts together, shortened. Nothing in them depends on
+how they are wired:
 
 <ModeTabs>
 <div slot="sync">
@@ -159,11 +165,11 @@ class WalletDepositMoneyAction(AsyncAction["WalletDepositMoneyAction.Params", Wa
 </div>
 </ModeTabs>
 
-Four kinds of thing, and each takes what it needs through `__init__`. The model is the same in
-both modes; in async mode the repository and the action are the `ekbatan.aio` kinds, and the
-repository's `to_record` and `from_record` stay plain `def`s. That is the only contract
-the wiring below has to satisfy: **construct them in dependency order and hand each one its
-collaborators.** There is nothing else a container would have been doing for you.
+Each class takes what it needs through `__init__`. The model is the same in both modes. In async
+mode the repository and the action are the `ekbatan.aio` kinds, and the repository's `to_record`
+and `from_record` stay plain `def`s. All the wiring below has to do is **create each object after
+the objects it needs, and pass those in.** That is all a dependency-injection container would
+have done for you.
 
 ## 1. Settings
 
@@ -237,9 +243,10 @@ ekbatan:
 </div>
 </ModeTabs>
 
-The url and login are placeholders with defaults, so one file runs everywhere and running the
-module works against a local server with no setup. What is this service's own, rather than
-Ekbatan's, stays in a small `Settings`:
+The url and the login are `${NAME:default}` placeholders. Each is read from an environment
+variable, and the value after the colon is used when the variable is not set. So one file works
+everywhere, and the example runs against a local database with no setup. Settings that belong to
+this service, not to Ekbatan, go in a small `Settings` class:
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -249,8 +256,9 @@ class Settings:
     run_migrations: bool = os.environ.get("WALLET_MIGRATE", "1") != "0"
 ```
 
-`job_workers` is how many threads run job bodies. They are real OS threads, so the number is a
-decision, not a default to forget. See [Concurrency](/reference/runtime/concurrency/).
+In the code below, `config` is an instance of this `Settings`.
+
+`job_workers` is how many threads run jobs. They are real OS threads, so choose the number on purpose. See [Concurrency](/reference/runtime/concurrency/).
 
 ## 2. The layout: which databases, and which is the default
 
@@ -261,20 +269,20 @@ ekbatan = load_ekbatan_config(config.config_file)
 layout = ekbatan.sharding
 ```
 
-`Settings` holds no copy of the environment: the login is read once, by name, while the file is
+`Settings` holds no copy of the environment. The login is read once, by name, while the file is
 loaded, so no `repr` of the settings or the service can show a password. A test points the
-service at its own database by setting those variables - with pytest's `monkeypatch.setenv`,
+service at its own database by setting those variables, with pytest's `monkeypatch.setenv`,
 which puts them back afterwards.
 
-Groups of shards, each shard a member with named connection settings. The same
-`ShardingConfig` can be built in code instead, with `ShardingConfig.builder()`; the file is what
-the examples use. One group with one member
-is the ordinary case and costs nothing. Add members or groups to shard; see
-[Sharding](/reference/sharding/).
+The layout is a list of groups of shards. Each shard is a *member* of a group, with named
+connection settings. One group with one member is the ordinary case, and costs nothing. To shard,
+add members or groups; see [Sharding](/reference/sharding/). The same `ShardingConfig` can also be built
+in code, with `ShardingConfig.builder()`; the examples use the file.
 
-`"primaryConfig"` is required. Add `"secondaryConfig"` for a read replica, or leave it out and both
-go to the primary. The registry builds those two; `"jobsConfig"` and `"lockConfig"` are for the
-scheduler and the locks, and this file builds them:
+`"primaryConfig"` is required. Add `"secondaryConfig"` for a read replica; leave it out, and
+reads go to the primary too. The registry builds the pools for those two. `"jobsConfig"` and
+`"lockConfig"` are for the job scheduler and the keyed locks, and `build()` makes those pools
+itself:
 
 <ModeTabs>
 <div slot="sync">
@@ -301,8 +309,8 @@ handler_data_source = AsyncDataSource.from_config(member.config_for("handlersCon
 </div>
 </ModeTabs>
 
-Each is a data source built from that member's settings - the async ones with
-`AsyncDataSource.from_config`. They are yours, so close them at shutdown, after the scheduler and
+Each is a data source built from that member's settings (the async ones with
+`AsyncDataSource.from_config`). They are yours, so close them at shutdown, after the scheduler and
 the locks have stopped: `close()`, or `await aclose()` for an async one. A manager closes the data
 sources it was given, so on the async side `events_registry.close()` closes the jobs pool.
 
@@ -313,16 +321,18 @@ if config.run_migrations:
     migrate(layout, MIGRATIONS)
 ```
 
-Every shard, one at a time, fail-fast. `migrate` runs plain SQL files through yoyo as a
-**library** - there is no config file and no binary, because a config file that has to be found is
-a config file that is missing in the one environment you did not test.
+`migrate` migrates every shard, one at a time, and stops at the first failure. It runs plain SQL
+files through yoyo, used as a **library**: there is no yoyo config file and no command to run. A
+config file that has to be found is one that goes missing in the one environment you did not
+test.
 
 It refuses to run if an applied migration has since been edited, renamed or deleted, or if a new
-one is older than one already applied. Several replicas starting at once is
-safe: each database is locked while it is migrated, one process migrates and the rest wait. See [Migrations](/reference/migrations/).
+one is older than one already applied. It is safe to start several copies of the service at
+once: each database is locked while it is migrated, so one process migrates and the rest wait. See [Migrations](/reference/migrations/).
 
-Ordering matters: run this before anything opens a pool against a schema that may not exist yet.
-Migrations are sync in both modes; an async service runs them here too, before its first await.
+Order matters: run this before anything opens a pool against a schema that may not exist yet.
+Migrations are sync in both modes, so an async service runs them here too, before its first
+await.
 
 ## 4. The registry
 
@@ -350,16 +360,20 @@ events_registry = (
 </div>
 </ModeTabs>
 
-One `TransactionManager` per shard, indexed by `ShardIdentifier`. Everything that touches a
-database goes through it, sharded or not. In async mode it is an `AsyncDatabaseRegistry` of
-`AsyncTransactionManager`s, from the same layout - the async side reads the url as naming the
-database and connects through its async driver.
+The registry holds one `TransactionManager` per shard, looked up by `ShardIdentifier`.
+Everything that touches a database goes through it, sharded or not. In async mode it is an
+`AsyncDatabaseRegistry` of `AsyncTransactionManager`s, built from the same layout. The async side
+reads the url only to know which database to reach, and connects through its async driver.
+
+The async tab also builds `events_registry`, a small sync registry on the jobs pool. The parts
+that poll the database (the job scheduler, fan-out and dispatch) are sync in both modes, so they
+use it.
 
 ## 5. Repositories
 
 ```python
-wallet_repository = WalletRepository(registry, clock=running)
-notification_repository = NotificationRepository(registry, clock=running)
+wallet_repository = WalletRepository(registry, clock=clock)
+notification_repository = NotificationRepository(registry, clock=clock)
 
 repositories = (
     RepositoryRegistry.builder()
@@ -369,10 +383,13 @@ repositories = (
 )
 ```
 
-The same lines in both modes; only the repository classes differ. One instance per persistable
-type. `with_model_repository` and `with_entity_repository` are
-separate calls because the two are different things - a model's changes are events and an
-entity's are not - and the registry checks that the table can hold what the type carries.
+`clock` is the service's one clock: `SystemClock()`, unless a test passes a fixed one to
+`build()`.
+
+The same lines in both modes; only the repository classes differ. Make one repository for each
+model or entity type. `with_model_repository` and `with_entity_repository` are separate calls
+because models and entities differ: a model emits events and an entity does not. The registry also
+checks that the table can hold what the type carries.
 
 ## 6. The executor
 
@@ -392,7 +409,7 @@ executor = ActionExecutor(
         .with_action(CreateNotificationAction(clock))
         .build()
     ),
-    clock=running,
+    clock=clock,
 )
 ```
 
@@ -411,24 +428,21 @@ executor = AsyncActionExecutor(
         .with_action(WalletCloseAction(clock, wallet_repository))
         .build()
     ),
-    clock=running,
+    clock=clock,
 )
 ```
 
 </div>
 </ModeTabs>
 
-The thing application code calls. Actions are singletons - per-call state lives on the plan, not
-on the action - so one instance each, constructed with whatever they read from.
+The executor is what application code calls. Each action is created once and shared by every
+call (state for one call lives on the plan, not on the action), so register one instance of each,
+built with whatever it reads from.
 
-`namespace` is stamped on every outbox row and is how a consumer tells one service's events from
-another's. Pick it once; changing it later splits your own stream.
+`namespace` is written on every outbox row, and is how a consumer tells one service's events from
+another's. Pick it once: changing it later splits your own stream of events in two.
 
-`events` is the outbox table. Passing it explicitly rather than reaching for a global is what
-lets a test point two services at two tables in one process - which is exactly what the saga
-example does.
-
-## 7. Event handlers, if you want the listen-to-yourself path
+## 7. Event handlers, if the service handles its own events
 
 <ModeTabs>
 <div slot="sync">
@@ -451,13 +465,13 @@ handler_registry = (
     .with_default_database(AsyncTransactionManager(layout.default_shard, handler_data_source))
     .build()
 )
-handler_wallet_repository = WalletRepository(handler_registry, clock=running)
+handler_wallet_repository = WalletRepository(handler_registry, clock=clock)
 handler_executor = AsyncActionExecutor(
     namespace=ekbatan.namespace,
     registry=handler_registry,
-    repositories=[handler_wallet_repository, NotificationRepository(handler_registry, clock=running)],
+    repositories=[handler_wallet_repository, NotificationRepository(handler_registry, clock=clock)],
     actions=[WalletDepositMoneyAction(clock, handler_wallet_repository), CreateNotificationAction(clock)],
-    clock=running,
+    clock=clock,
 )
 handlers = EventHandlerRegistry([WalletMoneyDepositedEventHandler(handler_executor)])
 events_config = ekbatan.local_event_handler  # `local-event-handler` in the file
@@ -466,14 +480,17 @@ events_config = ekbatan.local_event_handler  # `local-event-handler` in the file
 </div>
 </ModeTabs>
 
-Optional. Without it the executor still writes every event with `delivered=false`, which is
-exactly the right state for a deployment that consumes the outbox externally through Debezium.
-The handlers here are the *in-process* path, and the two can both be on.
+This block is optional. Without it, the executor still writes every event, with
+`delivered=false`. That is the right state when something outside the service, such as Debezium,
+reads the outbox. The handlers here run *in the same process*, and you can use both.
 
-Note the handler is constructed with the `executor`: a handler reacting to an event does its own
-work as its own unit of work, with its own transaction and its own outbox row. It does not get
-handed the transaction that produced the event, and it must not - that transaction is committed
-and gone by the time a handler runs.
+The handler is given the `executor`, because a handler does its work by running an action of its
+own, with its own transaction and its own outbox row. It is not given the transaction that
+produced the event: that transaction has committed and is gone by the time the handler runs.
+
+In async mode the handler also gets its own registry and executor, on the `handlersConfig` pool.
+An async connection pool belongs to the event loop it is used on, and handlers run on a loop of
+their own, the `HandlerLoop`.
 
 ## 8. Locks and jobs
 
@@ -487,9 +504,9 @@ jobs = (
     job_registry()
     .data_source(jobs_data_source)
     .with_jobs([
-        EventFanoutJob(registry, handlers, config=events_config, clock=running),
+        EventFanoutJob(registry, handlers, config=events_config, clock=clock),
         EventHandlingJob(registry, handlers,
-                         config=events_config, clock=running,
+                         config=events_config, clock=clock,
                          # Registered either way; scheduled only when the switch is on.
                          enabled=events_config.handling.enabled),
         WalletStipendJob(executor, wallet_repository),
@@ -510,9 +527,9 @@ jobs = (
     job_registry()
     .data_source(jobs_data_source)
     .with_jobs([
-        EventFanoutJob(events_registry, handlers, config=events_config, clock=running),
+        EventFanoutJob(events_registry, handlers, config=events_config, clock=clock),
         EventHandlingJob(events_registry, handlers,
-                         config=events_config, clock=running,
+                         config=events_config, clock=clock,
                          # Registered either way; scheduled only when the switch is on.
                          enabled=events_config.handling.enabled,
                          handler_loop=handler_loop),
@@ -527,42 +544,43 @@ jobs = (
 </div>
 </ModeTabs>
 
-Fan-out and dispatch are themselves jobs. That is not an implementation detail leaking - it is
-the design: the event pipeline is cluster-exclusive scheduled work like any other, so it gets
-the same leader election, the same heartbeat and the same dead-execution recovery. Register them
-and `jobs.start()` runs the pipeline. Leave them out and events accumulate unread.
+Fan-out and dispatch are themselves jobs, by design. Like any other job, the event pipeline is
+scheduled work that runs on one node of the cluster at a time. So it gets the same leader
+election, the same heartbeat, and the same recovery when a node dies mid-run. Register them, and
+`jobs.start()` runs the pipeline. Leave them out, and events pile up unread.
 
 Jobs are sync in both modes: `DistributedJob.execute` is a plain `def`, run on a worker thread.
 An async service registers them on a sync registry, as above. A job's *work* can still be
-awaited: in the async tab, `WalletStipendJob.execute` hands a coroutine to the handler loop with
-`handler_loop.run(...)` and waits for it, so the work awaits the handler's executor and
-repositories; a failure and its retry stay db-scheduler's.
+awaited. In the async tab, `WalletStipendJob.execute` hands a coroutine to the handler loop
+with `handler_loop.run(...)` and waits for it, so the work can await the handler's executor and
+repositories. If the work fails, db-scheduler still handles the retry.
 
 ### Three pools, and why
 
-This is the part worth copying into a real deployment: three pools, each a named config on the
-member (`primaryConfig`, `jobsConfig`, `lockConfig`).
+This is the part worth copying into a real deployment: three connection pools, each a named
+config on the member (`primaryConfig`, `jobsConfig`, `lockConfig`).
 
 | pool | sized for | why it is separate |
 | --- | --- | --- |
 | **requests** | concurrent requests | the ordinary one |
-| **jobs** | at least twice `job_workers` | db-scheduler polls continuously and writes a heartbeat from a housekeeping thread. Share the request pool and a traffic burst can starve that heartbeat - and an execution whose heartbeat stops is **declared dead and run again somewhere else** |
+| **jobs** | `job_workers + 3` | one connection per worker, and one each for db-scheduler's three loops: finding due jobs, the heartbeat, and spotting dead ones. Share the request pool and a traffic burst can starve that heartbeat - and an execution whose heartbeat stops is **declared dead and run again somewhere else** |
 | **locks** | maximum leases held at once | a keyed lock holds its connection for the life of the lease. That *is* the lock. A lease taken during a request would otherwise pin a request connection for its duration |
 
-The jobs pool default is 8, not 3, for a reason worth repeating: a job body holding the last
-connection starves the heartbeat. db-scheduler warns at startup when the pool is too small for
-the worker count - and did, while the example was being written.
+The example sizes the jobs pool at 8 for its 3 workers, because a job holding the last
+connection starves the heartbeat. db-scheduler warns at startup when the pool is too small for the
+number of workers.
 
-The request pool is also the cap on requests waiting for the database, in both modes: past
-`poolSize` they queue, for at most `poolTimeout`, then fail - a 503 once mapped
-([Wiring with FastAPI](/reference/wiring-fastapi/#cap-the-load-in-both-modes)). An async service has a
-fourth pool, `handlersConfig`: the async handler's own, used only on the loop the handler runs on.
+The request pool also limits how many requests can use the database at once, in both modes. Past
+`poolSize`, requests queue for at most `poolTimeout`, then fail; mapped once, that failure becomes
+a 503 ([Wiring with FastAPI](/reference/wiring-fastapi/#cap-the-load-in-both-modes)). An async service has a fourth pool,
+`handlersConfig`: the async handler's own, used only on the loop the handler runs on.
 
 ## What changes if you skip a feature
 
 Each block above is removable on its own:
 
-- **No replica?** Leave `"secondaryConfig"` out of the member's `configs`. Both go to the primary.
+- **No replica?** Leave `"secondaryConfig"` out of the member's `configs`. Reads go to the
+  primary too.
 - **No in-process handlers?** Drop block 7 and the two event jobs in block 8. Events still land
   in the outbox for an external consumer.
 - **No background jobs at all?** Drop block 8. Drop block 7 with it - without the jobs there is
@@ -572,18 +590,18 @@ Each block above is removable on its own:
 - **Sharding?** Add members or groups to the layout and give repositories an
   `EmbeddedBitsShardingStrategy`. See [Sharding](/reference/sharding/).
 
-## No annotations, and nothing is discovered
+## No decorators, and nothing is discovered
 
-There is no decorator to mark an action and nothing scanning your package for one. The
-framework knows about exactly what you put in a registry. That is a real trade:
+There is no decorator to mark an action, and nothing scans your package for one. The framework
+knows exactly what you put in a registry, and nothing else. That is a trade-off:
 
-- An action you forget to register fails at `execute` with a clear error, at runtime, not at
-  startup.
-- Against that: you can read this file and know what the program contains, which you cannot do
+- An action you forget to register fails at `execute`, with a clear error, at run time rather
+  than at startup.
+- In return, you can read this one file and know what the program contains, which you cannot do
   when a scan decides.
 
-The registries are builders rather than plain lists so a duplicate registration is refused
-rather than silently overwriting - which is the one class of mistake a list would let through.
+A registry refuses two different instances for the same type, instead of silently keeping one of
+them. That is the one mistake a plain list would let through.
 
 ## See also
 

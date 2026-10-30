@@ -2,7 +2,7 @@
 layout: ../../layouts/DocLayout.astro
 title: Running beside a Java service
 activeSection: reference
-lead: "Ekbatan also exists for Java. A Python service built with this framework and a Java service built with Ekbatan for Java can work together through one stream of events and one Redis. They never share a database: each service owns its own. Everything that has to line up for working together is on this page."
+lead: "Ekbatan also exists for Java. A Python service built with this framework and a Java service built with Ekbatan for Java can work together, through one stream of events and one Redis. They never share a database: each service owns its own. This page lists everything that has to line up for them to work together."
 ---
 
 **If every service you run is written in Python, you can skip this page.** Nothing here changes
@@ -23,18 +23,19 @@ each can read what the other publishes:
 
 ## What to set
 
-Two things.
+Only two things.
 
-1. **One database per service.** A Java service and a Python service never share a database -
-   not its tables, not its outbox, not its `scheduled_tasks`. Each writes its own `events`
-   table, and each table is streamed to the broker on its own; the services meet there.
+1. **One database per service.** A Java service and a Python service never share a database:
+   not its tables, not its outbox, not its `scheduled_tasks`. Each writes its own `events` table,
+   and each table is streamed to the broker on its own. The services meet on the broker. On
+   MySQL and MariaDB that means a server each, because `eventlog` is shared by every database on
+   a server.
 2. **The namespace.** Each service has its own, so a consumer can tell whose event it is reading.
 
 ## The `events` table
 
 The Java transforms read the Python service's own `events` table, so its columns must be the ones
-they expect. They are: both versions of the table were created and diffed, not compared by
-reading.
+they expect. They are - the two tables were created side by side and compared:
 
 | | the same in both? |
 | --- | --- |
@@ -56,21 +57,22 @@ jobs read their own service's rows only, so nothing in them has to line up.
 
 ## Ids
 
-**A uuid is stored as hyphenated text** - `CHAR(36)` on MySQL and MariaDB, the native type on
-PostgreSQL - which is what the Java framework writes too. Left to itself, SQLAlchemy writes a uuid
-on MySQL as `CHAR(32)`, the hex with the hyphens taken out. A Java service writing
-`d5143465-787a-...` and a Python service writing `d5143465787a...` could not join on `model_id`,
-**and neither would notice**: both queries succeed and return nothing. `uuid_column()` avoids
-that.
+**A uuid is stored as hyphenated text**: `CHAR(36)` on MySQL and MariaDB, the native type on
+PostgreSQL. That is what the Java framework writes too. Left to itself, SQLAlchemy would write a
+uuid on MySQL as `CHAR(32)`, the hex digits with the hyphens taken out. Then a Java service
+writing `d5143465-787a-...` and a Python service writing `d5143465787a...` could not be matched
+on `model_id`, **and neither would notice**: every query succeeds and finds nothing.
+`uuid_column()` avoids that.
 
 **A sharded id carries its shard in the same bits** on both sides (the layout is on
 [Sharding](/reference/sharding/#self-describing-ids-shardedid)), so a consumer in either language
 reads the shard out of an id in the other's event.
 
 **Ids sort the same way.** Comparing two ids in Python (`<`, `sorted`) gives the order the Java
-framework gives: each half of the uuid is read as a signed number. Version 7 ids sort by time
-either way. A random `Id[...]` whose first digit is `8` to `f` sorts before one starting `0` to
-`7` - in both languages, though not in a database, which compares them unsigned.
+framework gives, because each half of the uuid is read as a signed number. Version 7 ids sort by
+time either way. One surprise: a random `Id[...]` whose first digit is `8` to `f` sorts before
+one starting `0` to `7`. That holds in both languages, but not in a database, which compares them
+unsigned.
 
 ## Event payloads
 
@@ -98,13 +100,16 @@ and the other way round.
 | an `Enum` | an enum | the member's name |
 | `Id`, `ShardedId` | `Id`, `ShardedId` | `{"id": "...", "value": "..."}` |
 
-**A time field says which Java type it is.** Python has one `datetime` class for Java's three,
-so the field's declared label decides: declare it `Instant`, `LocalDateTime` or `OffsetDateTime`
-from `ekbatan.time`, as the Java event declares it. A time from the clock is an `Instant` - UTC
-digits with no zone attached - and is written with Java's `Z`, the text Jackson writes for an
-`Instant`; nothing else is needed. A field declared plain `datetime` is refused when the action
-runs, and nothing is saved, rather than written in a form the Java side may refuse. Java's text
-reads back the same way: `"...Z"` into an `Instant` field gives the UTC digits, no zone attached.
+**A time field says which Java type it is.** Python has one `datetime` class where Java has
+three, so the type you declare the field with decides. Declare it `Instant`, `LocalDateTime` or
+`OffsetDateTime` from `ekbatan.time`, matching the Java event's field.
+
+- A time from the clock is an `Instant`: UTC digits with no zone attached. It is written with
+  Java's trailing `Z`, the text Jackson writes for an `Instant`. Nothing else is needed.
+- A field declared as plain `datetime` is refused when the action runs, and nothing is saved,
+  rather than written in a form the Java side may refuse.
+- Java's text reads back the same way: `"...Z"` read into an `Instant` field gives the UTC
+  digits, with no zone attached.
 
 One database bends numbers: MySQL's `JSON` column keeps a number with a fraction as a double, so
 `50.00` is streamed as `50.0` from a MySQL `events` table, whichever language wrote it.
@@ -114,11 +119,15 @@ The full rules for writing and reading a payload are on
 
 ## Keyed locks
 
-**On Redis**, the lock is stored the way Redisson - the Redis client the Java framework's lock is
-built on - stores it: a hash at `ekbatan-lock:<key>` with one field per holder, the expiry set to
-`max_hold`, and a `0` published on `redisson_lock__channel:{ekbatan-lock:<key>}` on release. So a
-Java service and a Python service on one Redis keep each other out, and a release on one side
-wakes a waiter on the other at once.
+**On Redis**, the lock is stored the way Redisson stores it - Redisson being the Redis client the
+Java framework's lock is built on:
+
+- a hash at `ekbatan-lock:<key>`, with one field per holder;
+- its expiry set to `max_hold`;
+- on release, a `0` published on `redisson_lock__channel:{ekbatan-lock:<key>}`.
+
+So a Java service and a Python service on one Redis keep each other out, and a release on one
+side wakes a waiter on the other at once.
 
 The PostgreSQL, MySQL and MariaDB providers lock inside one database. The two services never share
 one, so to hold a lock across them, use Redis.
@@ -126,9 +135,10 @@ one, so to hold a lock across them, use Redis.
 ## Streaming the events
 
 Debezium and Kafka Connect are Java programs, whatever language wrote the rows. The two
-transforms, `OutboxToAvroTransform` and `OutboxToProtobufTransform`, are JARs from the Java
-project. A Python service uses the same JARs, pointed at its own `events` table, and gets the same
-messages as a Java service gets from its own. Nothing in your own service runs Java.
+transforms - the plug-ins that turn each outbox row into a message - are `OutboxToAvroTransform`
+and `OutboxToProtobufTransform`, JARs from the Java project. A Python service uses the same JARs,
+pointed at its own `events` table, and gets the same messages a Java service gets from its own.
+Nothing in your own service runs Java.
 
 The JARs are not on a package index. Every release of the Java project attaches both, each with a
 signature and SHA-256 checksums, on its
@@ -140,9 +150,12 @@ signature and SHA-256 checksums, on its
 | `OutboxToProtobufTransform` | `ekbatan-debezium-smt-protobuf-<version>.jar` |
 
 Put each in its own directory under the Connect worker's `plugin.path`. The transform's envelope
-schema goes on the worker as a file too: `ActionEvent.avsc` sits at the root of the Java project's
-`ekbatan-action-event-avro` jar on Maven Central, and the compiled `ActionEvent.desc` at the root
-of `ekbatan-action-event-protobuf`, both in the group `io.github.ekbatan-io`. Their full settings
+schema goes on the worker as a file too:
+
+- `ActionEvent.avsc` sits at the root of the Java project's `ekbatan-action-event-avro` jar;
+- the compiled `ActionEvent.desc` sits at the root of `ekbatan-action-event-protobuf`.
+
+Both jars are on Maven Central, in the group `io.github.ekbatan-io`. The transforms' full settings
 are documented on
 [the Java project's streaming page](https://ekbatan-io.github.io/ekbatan/reference/events/streaming/).
 
@@ -158,9 +171,9 @@ dashboard or an alert written for one service covers the other. The instrumentat
 `io.ekbatan.events.localeventhandler`.
 
 **Logger names are the Java class names** that log the same lines, such as
-`io.ekbatan.core.action.ActionExecutor`. That is why they do not look like Python module paths: a
-logging setting written for the Java service - `io.ekbatan.core.action: DEBUG`, or
-`io.ekbatan: WARN` - applies here unchanged. The full list is on
+`io.ekbatan.core.action.ActionExecutor` - which is why they do not look like Python module paths.
+A logging setting written for the Java service, like `io.ekbatan.core.action: DEBUG` or
+`io.ekbatan: WARN`, applies here unchanged. The full list is on
 [Observability](/reference/runtime/observability/#loggers).
 
 While a migration runs, its log lines carry `ekbatanShard` and `ekbatanTarget`, the same keys the

@@ -5,15 +5,21 @@ activeSection: reference
 lead: "How the schema gets into every database, including the shards, before anything opens a pool."
 ---
 
-Migrations are **plain SQL files** with a version in their name, `V0001__create_wallets.sql`, run
-in version order. They are run by **[yoyo](https://ollycope.com/software/yoyo/)**, used as a
-library, so an application migrates itself at startup with no external binary and no
-config file to find. What this framework adds on top is everything yoyo alone does not do, or
-gets wrong for a service that runs in more than one process: a real lock, checks that the files
-match what each database has applied, a history written in the same transaction as the
-migration, repeatable migrations, and a way back from a migration that failed half-way.
+Migrations are **plain SQL files** with a version in their name, such as
+`V0001__create_wallets.sql`. They run in version order, on every database - every shard - before
+the application opens a pool.
 
-Migrations are sync in both modes: an async service runs them at startup the same way, before it
+They are run by **[yoyo](https://ollycope.com/software/yoyo/)**, used as a library: an application
+migrates itself at startup, with no separate tool to install and no config file to find. On top of
+yoyo, this framework adds what a service that runs in more than one process needs:
+
+- a real lock, so two processes never migrate the same database at once
+- checks that the files still match what each database has applied
+- a history row written in the same transaction as its migration, where the database allows it
+- repeatable migrations, for views and functions
+- a way back from a migration that failed half-way
+
+Migrations are sync in both modes. An async service runs them at startup the same way, before it
 opens its async pools.
 
 ```
@@ -23,42 +29,53 @@ uv add "ekbatan[migrations]"
 ## One call, every shard
 
 ```python
+from pathlib import Path
+
 from ekbatan.migrations import migrate
 
-migrate(layout, "migrations")                     # every shard, in order, one at a time
-migrate(layout, MIGRATIONS, shards=[MEXICO_SHARD])      # some
+MIGRATIONS = Path(__file__).resolve().parent / "migrations"   # your directory of .sql files
+
+migrate(layout, MIGRATIONS)                          # every shard, in order, one at a time
+migrate(layout, MIGRATIONS, shards=[MEXICO_SHARD])   # only some
 ```
 
-Each shard's `primaryConfig` is migrated - the replica follows it, and any other named config on
-the member is a pool onto the same schema. Shards go **one at a time, in configuration order**,
-and the run stops at the first failure, naming the shard **and what had already been migrated** -
-half a migrated cluster is a state an operator has to reason about, and the database's own error
-only names a connection. It is logged as well, at ERROR on the migrator's logger
-`io.ekbatan.flyway.FlywayMigrator`: `Migrating mexico/member-0 (1:0) failed`, then `Stopped at mexico/member-0 (1:0);
-already migrated: [global/member-0]`. A shard in `shards=` that the configuration does not have is **refused**,
-not skipped: a typo in a shard list should not quietly migrate nothing.
+`layout` is your `ShardingConfig`: `ShardingConfig.single(url, ...)` for one database, or the
+groups and members described on [Sharding](/reference/sharding/#declarative-configuration). A
+location can be a `Path` or a string.
 
-It returns a `Result` per shard: the target, and what migrating it did - the version before, the
-version after, the files applied and any warnings.
+Each shard's `primaryConfig` is migrated. Its replica follows it, and any other named config on
+the member is another pool onto the same schema.
 
-The migrator can also be reached one database at a time, or through a builder, and three more
-calls look after the history - `info`, `repair` and `baseline`:
+Shards go **one at a time, in configuration order**. The run stops at the first failure, and the
+error names the shard **and what had already been migrated**. Half a migrated cluster is a state
+an operator has to reason about, and the database's own error names only a connection. The same
+is logged at `ERROR` on the migrator's logger, `io.ekbatan.flyway.FlywayMigrator`:
+
+```
+Migrating mexico/member-0 (1:0) failed
+Stopped at mexico/member-0 (1:0); already migrated: [global/member-0]
+```
+
+A shard in `shards=` that the configuration does not have is **refused**, not skipped: a typo in a
+shard list should not quietly migrate nothing.
+
+`migrate` returns a `Result` per shard: the target, and what migrating it did - the version
+before, the version after, the files applied and any warnings.
+
+The migrator can also be reached one database at a time, or through a builder. Three more calls
+look after the history - `info`, `repair` and `baseline`:
 
 ```python
 from ekbatan.migrations import YoyoMigrator, baseline, info, repair
 
 YoyoMigrator.targets(layout)                              # a Target per member
-YoyoMigrator.migrate_data_source(config, "migrations")    # one database, outside a layout
-YoyoMigrator.builder().with_sharding_config(layout).locations("migrations").migrate()
+YoyoMigrator.migrate_data_source(data_source, MIGRATIONS) # one DataSourceConfig, outside a layout
+YoyoMigrator.builder().with_sharding_config(layout).locations(MIGRATIONS).migrate()
 
-info(layout, "migrations")        # where each migration stands, on each shard
-repair(layout, "migrations")      # after a migration failed half-way - see below
+info(layout, MIGRATIONS)          # where each migration stands, on each shard
+repair(layout, MIGRATIONS)        # after a migration failed half-way - see below
 baseline(layout, version="3")     # a database that existed before its migrations - see below
 ```
-
-**Timestamp columns: `TIMESTAMP` on PostgreSQL, `DATETIME(6)` on MySQL and MariaDB, holding UTC** -
-never `TIMESTAMPTZ`, never bare `DATETIME`. That is the framework's strong recommendation, with the
-reasons and the database setting in [Always UTC](/reference/multi-database/#always-utc).
 
 ## The files
 
@@ -78,18 +95,19 @@ migrations/
   and `V1.0` are one version.
 - **`R__<description>.sql`** - a **repeatable** migration: applied after every versioned one, and
   applied again whenever the file changes. See [below](#repeatable-migrations).
-- **`post-apply.sql`**, or any name starting `post-apply` - yoyo's hook: run at the end of **every** migrate, whether or not anything was pending, and
-  recorded nowhere. Write it so it can run again - grants, refreshing a view.
-- **Subdirectories are read**, at any depth; hidden ones (`.git/`) are not.
-  The history records the path inside the directory, `2026/V0003__backfill_currency.sql`.
+- **`post-apply.sql`**, or any name starting `post-apply` - yoyo's hook. It runs at the end of
+  **every** migrate, whether or not anything was pending, and is recorded nowhere. Write it so it
+  can run again - grants, refreshing a view.
+- **Subdirectories are read**, at any depth; hidden ones (`.git/`) are not. The history records the
+  path inside the directory, `2026/V0003__backfill_currency.sql`.
 - **`.SQL`** works as `.sql` does.
 - **Several statements per file** are fine: yoyo splits the file into statements itself, on every
   database. A body with `;` inside stays one statement - a PostgreSQL function in `$$`, a MySQL
   procedure or trigger in `BEGIN ... END`, a SQLite trigger. MySQL's `DELIMITER` is a command of
   the mysql client, not SQL: leave it out.
 - **`-- transactional: false`** as the first line runs the file outside a transaction, for a
-  statement that refuses to run inside one - PostgreSQL's `CREATE INDEX CONCURRENTLY`. The marker
-  is yoyo's own:
+  statement that refuses to run inside one, such as PostgreSQL's `CREATE INDEX CONCURRENTLY`. The
+  marker is yoyo's own:
 
   ```sql
   -- transactional: false
@@ -117,7 +135,7 @@ Other files - an `__init__.py` that makes the directory a package, a `README` - 
 
 ### Checking them in CI
 
-None of that needs a database, so a test can do it:
+None of those checks needs a database, so a test can run them:
 
 ```python
 from ekbatan.migrations import validate_scripts
@@ -129,6 +147,90 @@ def test_the_migration_files_pass_the_checks_a_deploy_runs():
 
 Two files with one version, a file whose name would be skipped, a rollback file: each fails the
 build instead of the deploy. Every example has this test.
+
+## Writing the first migration
+
+The framework's own tables have to exist. You do not write their DDL by hand; the framework
+prints it:
+
+```python
+from sqlalchemy import MetaData
+from ekbatan.migrations import emit_ddl
+from ekbatan.schema import notifications_table, outbox_table, scheduled_tasks_table
+
+metadata = MetaData()
+outbox_table(metadata)
+notifications_table(metadata)
+scheduled_tasks_table(metadata)
+
+print(emit_ddl(metadata, "postgresql"))
+```
+
+Run it, read the output, save it as `V0001__schema.sql`, and **commit it**. It is generated once
+and then yours, rather than regenerated behind your back on every deploy. That is the difference
+between a migration and a `create_all`. The output is the same every time it is generated, so a
+diff of it means something.
+
+The output puts the event tables where the framework reads them:
+
+- **PostgreSQL:** it starts with `CREATE SCHEMA IF NOT EXISTS eventlog;` and puts the two event
+  tables in that schema.
+- **MySQL and MariaDB:** it starts with `CREATE DATABASE IF NOT EXISTS eventlog;`. Save that line
+  as a file of its own, `V0000`, before the tables. The tables go in that database.
+- **SQLite:** it writes them into the database file itself.
+
+It declares no indexes on the two event tables: add the ones you need, as the examples do - see
+[the `events` table](/reference/tables/events/#indexes).
+
+`create_all` has no answer for a column that changed. That is why the examples migrate from
+files, even though they could create their schema in one line.
+
+### Or, for a test
+
+```python
+from ekbatan.migrations import migrate_registry
+
+migrate_registry(registry, metadata)     # create_all, every shard
+```
+
+For a throwaway database in a test, and not for anything you will have to change later. It puts
+the event tables where the framework reads them, creating `eventlog` first: the schema on
+PostgreSQL, the database on MySQL and MariaDB.
+
+## Writing migrations by hand
+
+Plain SQL. Write the column types from the
+[cheatsheet](/reference/multi-database/#column-type-cheatsheet). Where you declare tables in Python
+instead - metadata for `emit_ddl`, or a `schema.py` of your own - **use `ekbatan.schema`'s column
+helpers rather than raw types**: `uuid_column()`, `timestamp_column()`, `json_column()`. They are
+what make DDL portable, and they are what `schemagen` turns columns back into when it reads your
+database.
+
+**Timestamp columns: `TIMESTAMP` on PostgreSQL, `DATETIME(6)` on MySQL and MariaDB, holding UTC** -
+never `TIMESTAMPTZ`, never bare `DATETIME`. That is the framework's strong recommendation. The
+reasons, and the database setting, are in [Always UTC](/reference/multi-database/#always-utc).
+`timestamp_column()` builds exactly that, with microsecond precision, because MySQL's bare
+`DATETIME` silently cuts to whole seconds. It converts nothing: a time is stored and read exactly
+as given.
+
+## Order at startup
+
+Migrate **before** anything opens a pool against a schema that may not be there yet:
+
+```python
+if config.run_migrations:
+    migrate(layout, MIGRATIONS)
+
+registry = DatabaseRegistry.from_config(layout)
+```
+
+Several replicas starting at once is safe: one migrates, and the rest wait and find nothing to do.
+
+Whether the application migrates itself at startup, or a deploy step does it first, is your call.
+The examples do it at startup, because that makes them runnable on their own. A large deployment
+often runs it as a step of its own - a release phase, a job before the pods start. That is why
+`run_migrations` above is a setting: it is the application's own, as in the examples, so a
+deployment can turn it off.
 
 ## One run, start to end
 
@@ -148,7 +250,8 @@ A failure at any step stops the run there. What was applied before it stays appl
 
 ## Repeatable migrations
 
-For what is replaced whole each time it changes: a view, a function, a procedure, a trigger.
+For something that is replaced whole each time it changes: a view, a function, a procedure, a
+trigger.
 
 ```sql
 -- R__wallet_totals.sql
@@ -157,51 +260,56 @@ SELECT owner_id, SUM(balance) AS total FROM wallets GROUP BY owner_id;
 ```
 
 - **They run after every versioned migration**, so they see the newest tables.
-- **They run again whenever the file changes** - its checksum differs from the one recorded when
-  it last ran. A changed line ending is not a change. Each run adds a row to the history; the
-  older rows stay.
-- **In order of description**, compared one character at a time by character code: capitals
-  before lower case, and `a` before `a b` before `a-b` before `ab`. When one needs another - a view over
-  a view - name them so they sort in that order.
+- **They run again whenever the file changes**, which means its checksum differs from the one
+  recorded when it last ran. A changed line ending is not a change. Each run adds a row to the
+  history; the older rows stay.
+- **They run in order of description**, compared one character at a time by character code:
+  capitals before lower case, and `a` before `a b` before `a-b` before `ab`. When one needs
+  another - a view over a view - name them so they sort in that order.
 - **Write them to replace**: `CREATE OR REPLACE`, or `DROP ... IF EXISTS` and then `CREATE`, so
   running one again over what the last run made works. SQLite has no `CREATE OR REPLACE VIEW`.
-- **A repeatable migration whose file is gone is refused.** If it was removed
-  on purpose, `repair()` records that - and drop the view or function it made in a versioned
-  migration, since nothing else will.
+- **A repeatable migration whose file is gone is refused.** If you removed it on purpose,
+  `repair()` records that. Then drop the view or function it made in a versioned migration, since
+  nothing else will.
 
-Two things about them worth knowing before a rolling deploy:
+Two things to know about them before a rolling deploy:
 
 - **An older release started after a newer one applies its own, older content again**, over the
-  newer. Whichever release migrates last decides what the view looks like - so during a rolling
-  deploy that changes one, old instances that restart put the old view back until the last new
+  newer. Whichever release migrates last decides what the view looks like. So during a rolling
+  deploy that changes one, old instances that restart put the old view back, until the last new
   instance starts.
-- **An older release does not start against a database a newer one added a repeatable migration
-  to**: the newer file is missing from the older release's files. A versioned migration a newer
-  release applied is left alone with a warning; a repeatable one is not. Rolling back past one
-  means running `repair()`, or keeping the file.
+- **An older release does not start on a database where a newer release added a repeatable
+  migration**, because that file is missing from the older release's files. A versioned migration
+  a newer release applied is let through with a warning; a repeatable one is not. To roll back
+  past one, run `repair()`, or keep the file.
 
 ## What each database has applied
 
-Each database keeps a history in **`ekbatan_schema_history`**, one row per run: the order it
-was applied in (`installed_rank`), its version (none for a repeatable migration), description,
-type, file, a SHA-256 checksum of what the file contained, who applied it, when, how long it took, and
-whether it succeeded. Before anything runs, the files are compared with it, and each of these is
-**refused, with nothing applied**:
+Each database keeps a history in **`ekbatan_schema_history`**, one row per run: the order it was
+applied in (`installed_rank`), its version (none for a repeatable migration), description, type,
+file, a SHA-256 checksum of what the file contained, who applied it, when, how long it took, and
+whether it succeeded.
+
+Before anything runs, the files are compared with the history, and each of these is **refused,
+with nothing applied**:
 
 - **an applied migration that was edited.** The database was built by a different version of the
   file, and nothing can know which of the two its rows match. A different line ending or a
   byte-order mark is not an edit - a checkout that turns `\n` into `\r\n` changed nothing.
 - **an applied migration whose description changed.** Changing only how its version is written
-  (`V2` to `V0002`) or which directory it is in is not a change.
+  (`V2` to `V0002`), or which directory it is in, is not a change.
 - **an applied migration whose file is gone.**
 - **a new migration older than one already applied.** It would never run in the place its number
   says; give it a version after the newest applied one.
-- **a migration that failed half-way on an earlier run** - see [repair](#a-migration-that-failed-half-way-repair).
+- **a migration that failed half-way on an earlier run** - see
+  [repair](#a-migration-that-failed-half-way-repair).
 
-All of them are reported at once. Two cases are let through, with a warning: **a migration applied by a newer release** - newer than every file here - and one that
-**failed when a newer release applied it**. That is an older release starting against a database
-a newer one migrated, and refusing it would stop a rollback of the application from starting at
-all.
+All of them are reported at once.
+
+Two cases are let through, with a warning: **a migration applied by a newer release** - newer than
+every file here - and one that **failed when a newer release applied it**. Both mean an older
+release is starting against a database a newer one migrated. Refusing would stop a rollback of the
+application from starting at all.
 
 If you *meant* to edit or rename a migration - it has only ever run on your laptop - `repair()`
 records what the file says now.
@@ -214,18 +322,19 @@ from the start.
 
 **On MySQL and MariaDB every schema change commits on its own**, the moment it runs, whatever
 transaction it is in. No migration tool can change that. So a migration that fails *after* a
-schema change leaves that change behind. It is **recorded as failed**, and the next run stops there until someone has looked - running it again over what
-it half did could apply half of it twice. The advice for those two databases is **one schema
-change per migration file**. A migration that only changes data is recorded atomically there too.
+schema change leaves that change behind. It is **recorded as failed**, and the next run stops
+there until someone has looked: running it again over what it half did could apply half of it
+twice. The advice for those two databases is **one schema change per migration file**. A
+migration that only changes data is recorded atomically there too.
 
 A file marked `-- transactional: false` runs outside a transaction on every database, and is
 recorded once it has finished. If it fails, it is recorded as failed, on every database. A crash
-between it finishing and it being recorded runs it again next time, so write such
-a file to be safe to run twice: `CREATE INDEX CONCURRENTLY IF NOT EXISTS`.
+between it finishing and it being recorded runs it again next time. So write such a file to be
+safe to run twice: `CREATE INDEX CONCURRENTLY IF NOT EXISTS`.
 
 ## A migration that failed half-way: repair
 
-The error says which migration, and the next run says it again, until:
+The error says which migration failed, and the next run says it again, until you:
 
 1. **Look at the database**, and put it right by hand: finish what the migration started, or undo
    it. The history cannot know which statements ran.
@@ -246,8 +355,8 @@ schema:
 ## A database these migrations did not build: baseline
 
 A database that already has tables - built by hand, by `create_all`, by another tool - and no
-history is **refused**: running every migration from the first against it is
-either an error on the first `CREATE TABLE` or, worse, a partial success.
+history is **refused**. Running every migration from the first against it would be either an
+error on the first `CREATE TABLE` or, worse, a partial success.
 
 If the database is what your migrations up to some version make, record that:
 
@@ -256,13 +365,13 @@ baseline(layout, version="3")
 ```
 
 Migrations up to and including version 3 never run there; the ones after do. `baseline` is
-refused where the history already has anything in it, and on an empty database, where it would
-only skip the migrations that build it.
+refused where the history already has anything in it. It is also refused on an empty database,
+where it would only skip the migrations that build it.
 
 ## Where each migration stands: info
 
 ```python
-(shard,) = info(single_database, "migrations")
+(shard,) = info(layout, MIGRATIONS)      # one database in the layout, so one result
 for m in shard.migrations:
     print(m.category, m.version, m.description, m.state.value)
 ```
@@ -276,10 +385,10 @@ Versioned  3     backfill         Pending
 Repeatable None  wallet totals    Pending
 ```
 
-The states are Pending, Success, Failed, Outdated (a repeatable migration whose file
-has changed since), Superseded (an earlier run of one), Missing, Future (applied by a newer
-release), Ignored (not applied, and older than one that was), Deleted, Baseline, Below Baseline.
-`info` changes nothing and takes no lock; its `problems` are what `migrate` would refuse.
+The states are Pending, Success, Failed, Outdated (a repeatable migration whose file has changed
+since), Superseded (an earlier run of one), Missing, Future (applied by a newer release), Ignored
+(not applied, and older than one that was), Deleted, Baseline, Below Baseline. `info` changes
+nothing and takes no lock. Its `problems` are what `migrate` would refuse.
 
 ## Several processes at once
 
@@ -289,30 +398,31 @@ find nothing left to do.
 
 - **PostgreSQL:** an advisory lock (`pg_try_advisory_lock`). Advisory locks are per database, so
   two shards that are two databases on one server do not wait on each other.
-- **MySQL and MariaDB:** `GET_LOCK`, named with the database - their lock names are server-wide,
-  and without the database in the name two shards on one server would queue behind each other.
+- **MySQL and MariaDB:** `GET_LOCK`, named with the database. Their lock names are server-wide, and
+  without the database in the name, two shards on one server would queue behind each other.
 - **SQLite:** an operating-system lock on a file beside the database,
   `<database>-ekbatan-migrate.lock`. Not on Windows, where SQLite migrations are not protected
   against each other.
 
-The lock is held for the whole run, and the checks run under it: **the history is always read
-under the lock**, so every migration is applied once, in order. A changed repeatable migration is applied by one process, not by each; a failure
-is recorded once, and the processes behind it refuse rather than try again.
+The lock is held for the whole run, and the checks run under it. **The history is always read
+under the lock**, so every migration is applied once, in order. A changed repeatable migration is
+applied by one process, not by each. A failure is recorded once, and the processes behind it
+refuse rather than try again.
 
-A waiting process **waits as long as it takes** and says so in the log every thirty seconds.
+A waiting process **waits as long as it takes**, and says so in the log every thirty seconds.
 There is no timeout to outlast: a migration that takes five minutes does not crash every replica
 waiting behind it.
 
-A migrator that dies holding the lock - killed, out of memory, its container stopped - **does
-not leave it behind**: the database drops a lock when its connection ends. On PostgreSQL 14 and
-later the server also notices within a second that the process behind a long statement has gone,
+A migrator that dies holding the lock - killed, out of memory, its container stopped - **does not
+leave it behind**: the database drops a lock when its connection ends. On PostgreSQL 14 and later
+the server also notices within a second that the process behind a long statement has gone. It
 cancels the statement and lets go of the lock, rather than finishing it first.
 
-**The lock, the migration and its history row all go through one connection**, so if that
-connection dies - a network blip, an idle-connection killer, a proxy - all three die together, and
-nothing can run a migration a second time while the first is still running. That is the failure
-this design exists to rule out; it happened, every time, when the lock was on a connection of its
-own.
+**The lock, the migration and its history row all go through one connection.** If that connection
+dies - a network blip, an idle-connection killer, a proxy - all three die together. So nothing can
+run a migration a second time while the first is still running. That is the failure this design
+rules out. With the lock on a connection of its own, losing that connection would free the lock
+while the migration kept running, and a second process could start the same migration.
 
 **Migrate over a direct connection to each shard's primary.** Session locks do not survive
 PgBouncer in transaction mode, and a proxy that sends plain `SELECT`s to replicas could send the
@@ -323,80 +433,15 @@ and MariaDB - and a replica is refused rather than migrated.
 ## What a migration's queries return
 
 A `SELECT` in a migration has its result **logged, at `INFO`, on the
-`io.ekbatan.flyway.FlywayMigrator` logger** rather than printed. Turn it off with
-`migrate(..., output_query_results=False)`, or `.output_query_results(False)` on the builder: a
-migration that selects real rows logs them.
+`io.ekbatan.flyway.FlywayMigrator` logger**, rather than printed. A migration that selects real
+rows logs them, so turn this off with `migrate(..., output_query_results=False)`, or
+`.output_query_results(False)` on the builder.
 
 What the database says beside a statement - PostgreSQL's notices, MySQL's and MariaDB's warnings,
 such as a table that did not exist to be dropped - is logged at `WARNING`.
 
-The logger's name looks like a Java class because it is shared with Ekbatan for Java, so one
-logging setting covers both - see [Running beside a Java service](/reference/beside-java/#traces-and-logs).
-
-## Writing the first migration
-
-The framework's own tables have to exist. You do not hand-write their DDL:
-
-```python
-from sqlalchemy import MetaData
-from ekbatan.migrations import emit_ddl
-from ekbatan.schema import notifications_table, outbox_table, scheduled_tasks_table
-
-metadata = MetaData()
-outbox_table(metadata)
-notifications_table(metadata)
-scheduled_tasks_table(metadata)
-
-print(emit_ddl(metadata, "postgresql"))
-```
-
-Run it, read it, save it as `V0001__schema.sql`, **commit it**. Generated once and then owned by
-you, rather than regenerated behind your back on every deploy - which is the difference between a
-migration and a `create_all`. On PostgreSQL it starts with `CREATE SCHEMA IF NOT EXISTS eventlog;`
-and puts the two event tables in that schema; on MySQL and MariaDB it starts with
-`CREATE DATABASE IF NOT EXISTS eventlog;` - save that line as a file of its own, `V0000`, before
-the tables - and puts them in that database; on SQLite it writes them into the file itself - where
-the framework reads them on each. The output is the same every time it is generated, so a diff of it
-means something.
-
-`create_all` has no answer for a column that changed, which is why the examples migrate from
-files even though they could create their schema in one line.
-
-### Or, for a test
-
-```python
-from ekbatan.migrations import migrate_registry
-
-migrate_registry(registry, metadata)     # create_all, every shard
-```
-
-For a throwaway database in a test. Not for anything you will have to change later. It puts the
-event tables where the framework reads them: it creates the `eventlog` schema first on PostgreSQL.
-
-## Writing migrations by hand
-
-Plain SQL. When you generate DDL, **use `ekbatan.schema`'s column helpers rather than raw types**
-- `uuid_column()`, `timestamp_column()`, `json_column()`. They are what make DDL portable, and they
-are what `schemagen` forces back when it reflects. `timestamp_column()` in particular pins
-microsecond precision, because MySQL's bare `DATETIME` truncates to whole seconds silently. It
-converts nothing: a time is stored and read exactly as given.
-
-## Order at startup
-
-Migrate **before** anything opens a pool against a schema that may not be there yet:
-
-```python
-if config.run_migrations:
-    migrate(layout, MIGRATIONS)
-
-registry = DatabaseRegistry.from_config(layout)
-```
-
-Several replicas starting at once is safe - one migrates, the rest wait and find nothing to do.
-Whether an application migrates itself at startup or a deploy step does it first is still your
-call: the examples do it at startup because it makes them runnable, and a large deployment often
-runs it as its own step - a release phase, a job before the pods start - which is what
-`run_migrations` being a setting is for.
+The logger is named like a Java class because Ekbatan for Java uses the same name, so one logging
+setting covers both - see [Running beside a Java service](/reference/beside-java/#traces-and-logs).
 
 ## Not supported
 
@@ -405,6 +450,7 @@ chosen version, and migrations written in code.
 
 ## See also
 
-- [schemagen](/reference/schemagen/) - which runs your migrations into a container and reflects the result
+- [schemagen](/reference/schemagen/) - which runs your migrations into a container and reads the
+  result back
 - [Framework tables](/reference/tables/) - what has to exist
 - [Sharding](/reference/sharding/) - the configuration this reads

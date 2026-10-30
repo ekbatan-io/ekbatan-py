@@ -1,14 +1,28 @@
 # Keyed locks
 
-Optimistic locking is the framework's default and is in every write. A keyed lock is the other
-tool: **pessimistic**, named by a string you choose, and held across whatever work you wrap in
-it.
+A keyed lock lets one caller at a time run the work you wrap in it, for a key you choose, such as
+one wallet. A second caller waits, then goes ahead.
 
-The difference is what happens when two callers race. Optimistic locking is correct by
-*failing* - the loser's version check misses and it raises. A keyed lock makes the second caller
-*wait and then succeed*, which is what anyone depositing into a busy wallet actually wants.
+Every write already has optimistic locking: each row carries a version, and when two callers
+race, the loser's version check misses and it raises. That is correct, but it is correct by
+*failing*. A keyed lock is pessimistic: it makes the second caller *wait and then succeed*, which
+is what anyone depositing into a busy wallet actually wants.
+
+## Optimistic vs pessimistic — picking one
+
+| | |
+| --- | --- |
+| **optimistic** (the default, always on) | no lock, no waiting, no connection held. The loser raises and the action retries. Right when conflicts are rare |
+| **pessimistic** (a keyed lock) | the second caller waits and succeeds. Right when conflicts are expected and failing is the wrong answer |
+
+The two work together. A keyed lock does not turn optimistic locking off: a write inside a lock
+still carries its version check. That is a second safety net you get for free, and it catches a
+writer that did not take the lock.
 
 ## The contract
+
+`locks` below is a lock provider: one object you build at startup, over a database or Redis.
+[Wiring up a backend](#wiring-up-a-backend) shows how.
 
 **Sync**
 
@@ -28,13 +42,11 @@ async with lease:
     ...
 ```
 
-**`max_hold` is not a timeout on your code.** Nothing interrupts the block. It is the promise
-that the lock is released even if this process dies holding it - so set it above the worst case
-for the work inside.
+Both calls return a *lease*. You hold the lock until the `with` block ends. `acquire` waits until
+it gets the lock; `try_acquire` waits at most `max_wait`, then gives up and returns `None`.
 
-**`try_acquire` returning `None` is contention, not failure.** The two are kept distinguishable
-on purpose: contention is a "come back shortly", a failure is a bug or an outage. In an HTTP
-handler that distinction is a 503 with a `Retry-After` rather than a 500.
+A typical use of `try_acquire` is an HTTP handler that answers "busy, try again" rather than
+wait. `LOCK_WAIT` and `LOCK_HOLD` are `timedelta`s you choose:
 
 **Sync**
 
@@ -56,21 +68,21 @@ async with lease:
     ...
 ```
 
+Four rules come with the contract:
 
-Four things that contract fixes, and each of them is a decision somebody would otherwise make
-wrongly under pressure:
-
-- **A lease always expires.** `max_hold` is mandatory, not optional. It is not a timeout on your
-  code — it is the promise that the lock is released even if this process dies holding it. Set
-  it above the worst case for the work inside.
-- **Contention is not failure.** `try_acquire` returns `None` when the lease cannot be had
-  inside `max_wait`, and `acquire` simply waits longer. A broken backend - an unreachable
-  database included - raises `LockAcquisitionError`. Keeping those distinguishable is
-  what lets an HTTP handler answer 503 with a `Retry-After` instead of 500.
-- **The key is a string you choose**, and its granularity is the whole design. `wallet:{id}`
-  serialises one wallet; `wallets` serialises every wallet, which is a different product.
-- **Releasing is not your job.** The lease is a context manager (`async with` in async mode), so the release happens on the
-  way out of the block whichever way you leave it — including an exception, which is the path
+- **A lease always expires.** `max_hold` is required. It is not a timeout on your code: nothing
+  interrupts the block. It is the promise that the lock is released even if this process dies
+  holding it. Set it above the worst case for the work inside.
+- **Busy is not broken.** `try_acquire` returns `None` when the key stays taken for all of
+  `max_wait`, and `acquire` simply keeps waiting. A broken backend, an unreachable database
+  included, raises `LockAcquisitionError`. Busy means "come back shortly"; broken means a bug or
+  an outage. Keeping the two apart is what lets the handler above answer 503 with a
+  `Retry-After` instead of 500.
+- **The key is a string you choose**, and how much it covers is the whole design. `wallet:{id}`
+  makes callers take turns on one wallet. `wallets` makes them take turns on every wallet, which
+  is a different product.
+- **Releasing is not your job.** The lease is a context manager (`async with` in async mode), so
+  the lock is released when the block ends, however it ends. That includes an exception, the path
   that gets forgotten when release is a method call.
 
 ## Where to acquire the lock
@@ -101,21 +113,20 @@ async with service.locks.acquire(f"wallet:{wallet_id}", LOCK_HOLD):
     await service.executor.execute(None, WalletDepositMoneyAction, params)
 ```
 
-The lease wraps **both** `perform()` and the executor's commit. A concurrent acquirer cannot
-enter until the previous commit is fully visible — so there is no race window, and no
-optimistic-locking conflict caused by writes that were supposed to be coordinated.
+The lease covers **both** `perform()` and the executor's commit. The next caller cannot get in
+until the previous commit is visible. So there is no race, and no version conflict between writes
+the lock was meant to keep apart.
 
-**This is what most applications want.** Whenever the goal is "concurrent writes on the same key
-must produce a consistent result", the lock has to span the commit phase, and only the caller
-holds a scope that contains it.
+**This is what most applications want.** If concurrent writes to the same key must add up
+correctly, the lock has to cover the commit, and only the caller's code contains the commit.
 
-Size `LOCK_HOLD` as an honest upper bound on `perform()` plus the commit, not as a guess: it is
-the watchdog's deadline, and a lease that expires mid-commit hands the key to someone else while
+Set `LOCK_HOLD` to an honest upper bound on `perform()` plus the commit, not a guess. When it
+runs out, a watchdog releases the lock, even mid-commit, and the next caller gets the key while
 you are still writing.
 
 ### ⚠️ Inside `Action.perform()` — narrower use case only
 
-Defensible only for serialising a read-and-compute that has no write of its own.
+Only worth it when what you are protecting is not the write itself.
 
 ```
 └─ executor.execute()
@@ -127,64 +138,59 @@ Defensible only for serialising a read-and-compute that has no write of its own.
     └─ commit                  ← race window: another acquirer reads pre-commit state
 ```
 
-The lease closes *before* the framework's commit runs. Another acquirer takes the lock
-immediately, reads the still-pre-commit state, computes a stale-version update, and collides at
-its own commit. Optimistic locking catches it — `StaleRecordError`, and the executor re-runs
-phase one — so **no data is lost**. But calls fail and retry under contention that a
-caller-side lease would have prevented entirely.
+The lease closes *before* the commit runs. The next caller takes the lock at once and reads the
+old state, because the commit has not happened yet. Its update is built on a stale version, so
+its own commit fails the version check with `StaleRecordError`, and the executor re-runs phase
+one. **No data is lost.** But calls fail and retry where a lock at the caller would have made
+them wait their turn.
 
-This placement is for **side-effect coordination, not commit serialisation**:
+This placement is for coordinating **side effects**, not commits:
 
-- An outbound webhook where you want at-most-one in flight per resource. The lock is held across
-  the external call; the database write is thin record-keeping.
-- A long external compute — PDF generation, an inference call — where you want to deduplicate
-  in-flight work per key.
-- Anywhere the write is idempotent (an upsert) and serialising it was never the goal.
+- An outgoing webhook, with at most one in flight per resource. The lock is held across the
+  external call; the database write is only record-keeping.
+- A long external job, such as generating a PDF or calling a model, where only one should run
+  per key at a time.
+- A write that is safe to repeat (an upsert), where making writers take turns was never the goal.
 
-For **write-path serialisation**, which is the common case, acquire at the caller.
+To make **writes** take turns, which is the common case, take the lock at the caller.
 
 ### Why not just always lock inside `perform()`?
 
 Because `perform()` is the body of the action, not the transaction. The change plan is built
-there, but nothing is open yet: the executor opens the transaction *after* `perform()` returns
-the plan, and commits it before `execute(...)` returns to the caller. The transaction lifecycle
-belongs to the executor.
+there, but no transaction is open yet. The executor opens it *after* `perform()` returns the
+plan, and commits it before `execute(...)` returns to the caller. The executor owns the
+transaction.
 
-So the action body has no way to "hold the lock until the executor commits" — the lease closes
-when the `with` block exits, and that is before the transaction it was meant to protect even
-begins. A lease taken and released inside `perform()` is gone exactly when it was needed.
+So the action body cannot hold the lock until the commit. The lease closes when the `with` block
+ends, and that is before the transaction it was meant to protect has even begun.
 
-The caller-side pattern works for the mirror-image reason: the caller owns a boundary that
-*contains* the executor's whole lifecycle. Its lease closes after `execute(...)` returns, which
-is after the commit.
+The caller's code works for the opposite reason: it *contains* the whole `execute(...)` call, so
+its lease closes after the commit.
 
-## Reentrancy
+## Re-entry: taking a key you already hold
 
-**The same key, taken again in the same context, re-enters.** It does not deadlock and it does
-not take a second connection. The backend lock is released only when the **outermost** lease
-closes — or when its watchdog fires.
+**A holder that takes a key it already holds gets in at once.** It does not deadlock, and it does
+not take a second connection. The lock is released only when the **outermost** lease closes, or
+when its watchdog fires.
 
-**The first acquire's `max_hold` governs the watchdog; a re-entry's `max_hold` is ignored.** That
-is stricter than the last-call-wins convention some lock libraries use, and it is the only rule
-under which the outer region's reasoning stays true: it committed to a worst case, and an inner
-call cannot pull that commitment out from under it.
+**The first acquire's `max_hold` is the one that counts; an inner one's is ignored.** Some lock
+libraries let the latest call win instead. Here the outer code chose its worst case, and an inner
+call cannot change it underneath.
 
-Re-entry is **per thread, not per call stack**: the holder is the thread (in async mode, the
-task - see below). A thread you hand
-work to is a different identity and will block on a key you hold. That is not a
-bug to work around: if the child could inherit the hold, "this key is held by one holder" would
-stop being true.
+**The holder is the thread** (in async code, the task; see below). A thread you hand work to is a
+different holder, so it waits for a key you hold. That is on purpose: if it could share your
+hold, the key would no longer have one holder.
 
 ### Not on an event loop - use the async providers there
 
-**Taking a sync lock on an asyncio event loop's own thread is refused** with a `ValidationError`.
-There, every request shares the one thread, so a second request would count as the same holder
-and walk straight into the first one's lock - and a request that did have to wait would freeze
-the loop, the holder included. Threaded servers and gevent are unaffected.
+**A sync lock taken on an asyncio event loop's thread is refused** with a `ValidationError`. On a
+loop, every request shares that one thread. A second request would count as the same holder and
+walk straight into the first one's lock. And a request that did have to wait would freeze the
+loop, the holder included. Threaded servers and gevent are not affected.
 
 On an event loop, use the async providers in `ekbatan.aio.locks`. Their holder is the **task**,
-and waiting for a lease does not block the loop. Taken the same way - by the caller, around the
-unit of work:
+and waiting for a lease does not block the loop. You take them the same way, at the caller,
+around the unit of work:
 
 ```python
 from ekbatan.aio.locks import AsyncPostgresKeyedLockProvider
@@ -202,60 +208,66 @@ async with locks.acquire(f"wallet:{wallet_id}", timedelta(seconds=30)):
 | `MariaDBKeyedLockProvider` | `AsyncMariaDBKeyedLockProvider` |
 | `RedisKeyedLockProvider` (`ekbatan.locks.redis`) | `AsyncRedisKeyedLockProvider` (`ekbatan.aio.locks.redis`), over `redis.asyncio.Redis` |
 
-The same contract, rule for rule: `acquire` waits as long as it takes (awaited, or entered with
-`async with`), `try_acquire` returns `None` on contention, `max_hold` bounds every hold, the
-outermost hold's `max_hold` governs, a lease may be released twice, and both sides take the same
-keys - an async holder and a sync one contend for one lock, and on Redis a Java one too. A task that takes a key it
-holds re-enters; any other task waits, one it started inside the held region included. A wait
-that is cancelled or times out closes its connection rather than return it, so a lock granted in
-that instant cannot be left on a pooled connection; on Redis the release is sent for that owner
-instead. The hold limit runs on the event loop rather than on a watchdog thread.
+They keep the sync rules:
+
+- `acquire` waits as long as it takes. Await it, or enter it with `async with`.
+- `try_acquire` returns `None` when the key stays taken.
+- `max_hold` bounds every hold, and the outermost hold's `max_hold` is the one that counts.
+- Closing a lease twice is harmless.
+- They take the same keys. An async holder and a sync one contend for one lock, and on Redis a
+  Java service does too.
+
+What differs:
+
+- A task that takes a key it holds re-enters. Any other task waits, including one it started
+  inside the held region: tasks started with `asyncio.gather` there do not share the lock.
+- A wait that is cancelled or times out closes its connection instead of returning it to the
+  pool. The server may have granted the lock in that instant, and it must not be left behind on
+  a pooled connection. On Redis, the release is sent for that owner instead.
+- The hold limit runs on the event loop rather than on a watchdog thread.
 
 From sync code on an async server, the sync providers still work from a worker thread: a plain
 `def` endpoint, which FastAPI and Starlette already run on one, or `await asyncio.to_thread(...)`.
-
-One shared helper owns the per-`(thread, key)` counter, the watchdog timer and the
-release arbitration, so each backend implements only a low-level acquire and release. That is
-what makes "the same on all four" checkable rather than aspirational.
 
 ## Four backends
 
 | Provider | Scope | Mechanism | Hold | Notes |
 |---|---|---|---|---|
-| `PostgresKeyedLockProvider` | cross-process | `pg_advisory_lock` (session-scoped) | session + watchdog | Auto-released if the session ends — a crashed process or a dropped network connection releases the key without anyone intervening. One connection per lease |
+| `PostgresKeyedLockProvider` | cross-process | `pg_advisory_lock` (session-scoped) | session + watchdog | Released automatically if the session ends: a crashed process or a dropped connection frees the key without anyone stepping in. One connection per lease |
 | `MySQLKeyedLockProvider` | the server | `GET_LOCK(...)` | session + watchdog | `max_wait` is **rounded to whole seconds** — see [below](#mysql-rounds-the-wait-to-whole-seconds) |
 | `MariaDBKeyedLockProvider` | the server | `GET_LOCK(...)` | session + watchdog | Same statements as the MySQL one, separate because MariaDB honours sub-second timeouts |
-| `RedisKeyedLockProvider` | the Redis deployment | a hash, Lua scripts, an unlock message | **TTL** + watchdog | Can share a lock with a [Java service](../beside-java.md#keyed-locks). Waiters are woken, not polling. Single-master only — **not** Redlock |
+| `RedisKeyedLockProvider` | the Redis deployment | a hash, Lua scripts, an unlock message | **TTL** + watchdog | Can share a lock with a [Java service](../beside-java.md#keyed-locks). Waiters are woken, not polling. Single primary only — **not** Redlock |
 
-There is **no in-process provider**. A lock held in one process's
-memory excludes nothing in another, and a Python service in production is several worker
-processes - so it would go on working and stop excluding anything, without saying so. Every
-backend above excludes across processes and machines alike.
+There is **no in-process provider**. A lock in one process's memory does not stop another
+process, and a Python service in production runs as several worker processes. Such a lock would
+seem to work while letting callers from the other processes straight in, and nothing would tell
+you. Every backend above works across processes and machines alike.
 
-The "Hold" column is the difference that matters operationally. The SQL backends hold a *session*
-— the lock exists because a connection is open, so losing the connection releases it. Redis holds
-a **TTL** — the key expires whether or not the holder is alive, so `max_hold` there has to be an
-honest upper bound on the work rather than a generous guess. A holder that dies releases nothing;
-the key simply expires and the next caller takes it.
+The "Hold" column is the difference that matters in production. The SQL backends hold a
+*session*: the lock exists because a connection is open, so losing the connection releases it.
+Redis holds a **TTL** (time to live): the key expires whether or not the holder is alive. So on
+Redis `max_hold` has to be an honest upper bound on the work, not a generous guess. A holder that
+dies releases nothing; the key simply expires and the next caller takes it.
 
-The Redis provider deliberately drives the expiry itself rather than letting a client library's
-own watchdog extend the lease, so the framework's first-acquire-wins rule holds there too.
+Nothing extends a Redis lease behind your back: it expires at the first acquire's `max_hold`, as
+on the SQL backends.
 
-On Redis the lock is a hash at `ekbatan-lock:<key>` with one field per holder, set to expire at
+**Redis needs a single primary.** One managed by Sentinel, with reads and writes going to the
+primary, is fine. The provider is not Redlock, so it is not safe on multi-master Redis, and a
+failover that loses the key loses the lock with it.
+
+On Redis the lock is a hash at `ekbatan-lock:<key>`, with one field per holder, set to expire at
 `max_hold`. Releasing it publishes a message that wakes the next waiter at once, so nobody polls.
-A Java service built on Ekbatan stores its lock the same way, so the two can share it on one
-Redis - see [Running beside a Java service](../beside-java.md#keyed-locks).
-The SQL providers lock inside one database, and a Java service never shares one with this
-service, so only Redis holds a lock across the two.
 
-The three SQL providers come from `ekbatan.locks`. The Redis one is imported from
-`ekbatan.locks.redis` and needs the `redis` extra - it is deliberately *not* re-exported from the
-package, because importing it eagerly would make `ekbatan.locks` fail for everyone who has not
-installed redis-py.
+A Java service built on Ekbatan stores its lock the same way, so the two can share a lock on one
+Redis - see [Running beside a Java service](../beside-java.md#keyed-locks). Only Redis does
+this. The SQL providers lock inside one database, and a Java service never shares a database
+with this service.
 
-On the SQL servers each key is hashed to a 64-bit number, and that number is what gets locked.
-On MySQL and MariaDB the lock's name is the hash as bare unsigned hex, with no prefix
-(`813e4046e5b48a46` for `wallet:abc`) - the name the server shows for a held lock.
+**What a held lock looks like on the server.** On the SQL servers each key is hashed to a 64-bit
+number, and that number is what gets locked. On MySQL and MariaDB the lock's name is that hash in
+hex, with no prefix (`813e4046e5b48a46` for `wallet:abc`). That is the name the server shows for
+a held lock.
 
 ### Wiring up a backend
 
@@ -273,15 +285,17 @@ lock_data_source = AsyncDataSource.from_config(DataSourceConfig(url=url, pool_si
 locks = AsyncPostgresKeyedLockProvider(lock_data_source)
 ```
 
-A provider is a plain object you construct and hand to whatever needs it — there is no registry
-to declare it in and nothing discovers it. `locks.close()` does nothing: a lease still
-open stays held until it is released or its `max_hold` passes. The data source is yours — you
-created it, so you close it (`await lock_data_source.aclose()` for an async one) — and the order
-matters: let the leases end before closing the pool they are holding connections from. A
-provider takes only a data source of its own mode: an `Engine`, or an async data source given to a
-sync provider, is refused with a message that says what to pass.
+A provider is a plain object: you build it and hand it to whatever needs it. Nothing discovers
+it, and there is no registry to declare it in. The builder form, as in the async example above,
+builds the same thing: `PostgresKeyedLockProvider.builder().data_source(lock_data_source).build()`.
 
-Redis takes a client rather than a data source:
+A provider takes only a data source of its own mode: a `DataSource` for a sync provider, an
+`AsyncDataSource` for an async one. Anything else, a SQLAlchemy `Engine` included, is refused
+with a message that says what to pass.
+
+The three SQL providers come from `ekbatan.locks`. The Redis one comes from `ekbatan.locks.redis`
+and needs the `redis` extra. It is kept out of `ekbatan.locks` on purpose, so that package still
+imports when redis-py is not installed. Redis takes a client rather than a data source:
 
 **Sync**
 
@@ -299,64 +313,59 @@ from ekbatan.aio.locks.redis import AsyncRedisKeyedLockProvider
 locks = AsyncRedisKeyedLockProvider(redis.asyncio.Redis(host="localhost"))
 ```
 
-Size the SQL pool by **concurrent leases**, not by request rate: a lease is a connection for as
-long as it is held. If twelve requests can hold twelve different keys at once, the pool needs
-twelve, and `max_overflow` left at its default, 0, so the thirteenth waits rather than opening
-a connection the database has not budgeted for.
+**Closing.** `locks.close()` does nothing: a lease still open stays held until it is released or
+its `max_hold` passes. The data source is yours, so you close it
+(`await lock_data_source.aclose()` for an async one). Let the leases end first, because they hold
+connections from that pool.
 
 ### Dedicated pool via its own data source
 
-**Give it its own pool.** A SQL keyed lock is *session*-scoped: each hold keeps a connection for
-as long as the lease lasts, because that is what the lock physically is. A lease taken during a
-request would otherwise pin a request connection for its duration.
+**Give the SQL locks a pool of their own**, as `lock_data_source` above. A SQL keyed lock lives
+in a database session, so each lease keeps a connection for as long as it is held. On the request
+pool, a lease taken during a request would tie up one more request connection for that long.
 
-Size that pool for the **maximum number of leases held at once**, not for traffic. See
+Size that pool by **how many leases are held at the same moment**, not by request rate. The
+number is usually much smaller than people expect. A hundred requests a second, each holding a
+lease for 20 ms, need two or three connections. Ten long imports, each holding one for a minute,
+need ten. If twelve requests can hold twelve different keys at once, the pool needs twelve. See
 [Wiring](../wiring.md).
 
-That is also why `max_hold` is mandatory rather than optional: a connection held forever is a
-pool exhausted forever.
+Leave `max_overflow` at its default, 0, so the thirteenth caller waits rather than opening a
+connection the database has not budgeted for. Overflow exists to absorb bursts, and a burst of
+lock holders is exactly what you want to refuse. A refused `try_acquire` is a 503 the caller can
+retry; an absorbed burst is any number of connections, each held for the length of a lease.
 
-
-Sizing it is a different exercise from sizing a request pool, and the number is usually much
-smaller than people expect. It is bounded by **how many leases are held at the same instant**,
-not by request rate: a hundred requests a second each holding a lease for 20 ms need two or
-three connections, while ten long imports holding one for a minute each need ten.
-
-`max_overflow=0` is deliberate on that pool. Overflow exists to absorb bursts, and a burst of
-lock holders is exactly the thing you want to refuse rather than absorb — a refused
-`try_acquire` is a 503 the caller can retry, while an absorbed one is an unbounded number of
-connections held for the length of a lease.
+This is also why `max_hold` is required: a connection held forever is a pool used up forever.
 
 ### How the SQL backends wait
 
-Not in one unbounded call. An unbounded `pg_advisory_lock` or `GET_LOCK` parks inside a socket
-read that nothing can interrupt, so a shutdown would hang on it. The SQL providers wait in
-**5-second segments** instead.
+The SQL providers wait in **5-second segments**, not in one endless call. An endless
+`pg_advisory_lock` or `GET_LOCK` would sit inside a socket read that nothing can interrupt, and a
+shutdown would hang on it.
 
-Three consequences:
+What that means for you:
 
-- **Nothing can stop a waiting `acquire`.** Python has no way to interrupt another thread, so
-  a waiting `acquire` runs until it gets the lock - on any backend. Code that must be
-  able to stop waiting should call `try_acquire` with a bounded `max_wait`, in a loop that checks
-  its own stop flag. This is a limit of the language, not a choice. An async wait is
-  different: it can be cancelled, or bounded with `asyncio.timeout(...)`.
-- **Fairness is best-effort.** Within a segment the waiter is genuinely queued inside the
-  database, so hand-off from a releasing holder is immediate - this is not client-side spinning.
-  But each new segment re-enters that queue at the *back*, so a long waiter yields position to
-  newer arrivals. If that matters, you are contending hard enough that you want optimistic
-  locking rather than a bigger lock.
+- **First come is not always first served.** Within a segment the waiter really is queued inside
+  the database, so it gets the lock the moment the holder lets go; there is no polling. But each
+  new segment joins the queue at the *back*, so a long waiter can lose its place to newer
+  arrivals. If that matters, the key is so busy that you want optimistic locking rather than a
+  lock.
 - **A useful side effect:** the connection sends traffic every five seconds, so NAT gateways,
-  load balancers and connection poolers stop reaping a long wait as idle.
+  load balancers and connection poolers do not close a long wait as idle.
+- **A network failure during a segment** still leaves the caller stuck in a socket read, and no
+  loop on the client side can limit that. If you need a hard limit, set a socket timeout on the
+  lock pool. That is not special to locks: any long query has the same exposure.
 
-A network partition landing *inside* a segment still parks the caller in a blocking socket read,
-and no client-side loop can bound that. Set a socket timeout on the lock pool if you need a hard
-one; it is not lock-specific, any long-running query has the same exposure.
+**Nothing can stop a waiting sync `acquire`**, on any backend, because Python cannot interrupt
+another thread. Code that must be able to stop waiting should call `try_acquire` with a bounded
+`max_wait`, in a loop that checks its own stop flag. An async wait is different: it can be
+cancelled, or bounded with `asyncio.timeout(...)`.
 
-## MySQL rounds the wait to whole seconds
+### MySQL rounds the wait to whole seconds
 
-`GET_LOCK` takes its timeout in seconds, and the two servers differ on the fraction: MySQL
-rounds it to the nearest whole second, MariaDB keeps it. Holding the lock and timing a second
-session (MySQL 26.7, MariaDB 12.2):
+`GET_LOCK` takes its timeout in seconds, and the two servers differ on the fraction: MySQL rounds
+it to the nearest whole second, MariaDB keeps it. Measured by holding the lock and timing a
+second session (MySQL 26.7, MariaDB 12.2):
 
 | timeout asked | MySQL | MariaDB |
 | --- | --- | --- |
@@ -366,53 +375,38 @@ session (MySQL 26.7, MariaDB 12.2):
 | 1.5s | **2.01s** | 1.50s |
 
 So `try_acquire(key, timedelta(milliseconds=250), ...)` on MySQL is a single try, and a 500 ms
-wait lasts a second. The framework sends the wait as a decimal number of seconds (`0.5`).
+wait lasts a second.
 
-The type matters. Sent as a float (`0.5e0`), MySQL rounds half to even, and the 500 ms wait
-becomes no wait at all - a mistake this framework once made.
+The framework sends the wait as a decimal number of seconds (`0.5`), which MySQL rounds half up.
+Sent as a float (`0.5e0`), it would be rounded half to even, and the 500 ms wait would become no
+wait at all.
 
-## The watchdog is one thread, not one per hold
+### The watchdog is one thread, not one per hold
 
-Each outermost hold gets a watchdog that force-releases at `max_hold`. A timer per hold would be
-the simple way, but a `threading.Timer` is a real operating-system thread, so this framework
-keeps **one** watchdog thread holding a heap of deadlines, waiting until the earliest is due.
+Each outermost hold gets a deadline at `max_hold`, when the watchdog force-releases it. All the
+deadlines share **one** watchdog thread, which sleeps until the earliest is due. So holding many
+locks costs almost nothing: 1,000 held locks register in 2 ms and 10,000 in 18 ms, on that one
+thread, and with 1,000 held the watchdog fires a median 6 ms after the deadline.
 
-| 1,000 held locks | register | median late | threads | memory |
-| --- | --- | --- | --- | --- |
-| a thread per hold | 70 ms | 48 ms | 1000 | 40 MB |
-| one watcher and a heap | 3 ms | 6 ms | 1 | ~0 |
+The thread is not started until the first hold is registered, so a process that never takes a
+lock never pays for it. The async providers use the event loop instead, as described above.
 
-Measured on the holder itself: 1,000 held locks register in 2 ms, 10,000 in 18 ms, one thread
-either way. The thread is not started until the first hold is registered, so a process that
-never takes a lock never pays for it.
+## Caveat: not the right tool at very high concurrency
 
-## Optimistic vs pessimistic - picking one
+A keyed lock makes everyone who wants one key take turns, and a SQL one costs a connection per
+hold while it does. Both are fine at the scale it is meant for: a busy wallet, a tenant-wide
+import, a job that must not overlap itself. Neither scales to thousands of callers wanting the
+same key at once.
 
-| | |
-| --- | --- |
-| **optimistic** (the default, always on) | no lock, no waiting, no connection held. The loser raises and the action retries. Right when conflicts are rare |
-| **pessimistic** (a keyed lock) | the second caller waits and succeeds. Right when conflicts are expected and failing is the wrong answer |
+Two signs tell you that you are past it. Waiters pile up faster than holders finish, so
+`try_acquire` returns `None` under normal traffic, not just during incidents. Or the lock pool
+runs out, and a request that could have gone ahead waits for a connection whose only job is to
+hold a lock.
 
-They compose: a keyed lock does not turn optimistic locking off, and a write inside a lease still
-carries its version check. That is a belt-and-braces you get for free, and it is what catches a
-writer that did not take the lock.
-
-## Caveat: not the right primitive at very high concurrency
-
-A keyed lock serialises everything contending for one key, and a SQL one costs a connection per
-hold while it does. Both of those are fine at the scale this is meant for — a busy wallet, a
-tenant-wide import, a job that must not overlap itself — and neither scales to thousands of
-simultaneous holders of the same key.
-
-Two symptoms tell you that you are past it. Waiters pile up faster than holders drain, so
-`try_acquire` starts returning `None` under normal traffic rather than under incidents. Or the
-lock pool saturates, and a request that could have proceeded blocks waiting for a connection
-whose only job is to hold a lock.
-
-At that point the answer is not a bigger pool. It is to stop serialising: shard the key so the
-contention spreads, batch the work so one holder does what many were queueing to do, or move to
-optimistic concurrency and let the version check reject the losers — which is what the framework
-does by default, and the reason a keyed lock is the exception rather than the tool.
+At that point the answer is not a bigger pool. It is to stop making callers take turns: split the
+key so callers spread across several, batch the work so one holder does what many were queueing
+for, or go back to optimistic locking and let the version check reject the losers. That is the
+framework's default, and the reason a keyed lock is the exception rather than the rule.
 
 ## See also
 

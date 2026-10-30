@@ -80,7 +80,7 @@ already described by the event that caused them.
 | `version`, optimistic locking | yes | yes |
 | `state`, soft deletion | yes | yes |
 | staged on the plan | yes | yes |
-| appears in the outbox | one row per event | only inside the action's sentinel row |
+| appears in the outbox | one row per event | only as the action's own row, with `event_type` null |
 
 An entity has no timestamps because it is state, not history — the repository refuses a table
 that carries the wrong shape for the kind you declared, at construction rather than at the first
@@ -92,8 +92,8 @@ audit trail is of units of work even where there are no events.
 ## Construction and mutation
 
 Subclasses are **immutable** frozen dataclasses. A change produces a new instance through
-`copy()...build()`, and the builder threads the version forward, so what the repository writes
-carries the successor version its optimistic-locked update needs.
+`copy()...build()`, and the builder carries the version along, so the repository can check it when
+it writes the change.
 
 Where a model's mutators attach an event as they go, an entity's simply return the new value -
 there is nothing to emit, so there is nothing to attach:
@@ -143,8 +143,8 @@ A model compares its two timestamps as well; an entity has none. See
 ## Builder API
 
 `id`, `state`, `version`, `with_initial_version()`, `increase_version()`, `copy_base(other)`
-and `set(**changes)`. `with_event` and the timestamp setters are **not** on it — so attaching an
-event to something that does not emit them is not expressible.
+and `set(**changes)`. `with_event` and the timestamp setters are **not** on it — so there is no way
+to attach an event to an entity.
 
 Name the builder on the class line, the same as on a
 [model](/reference/model/#builder-api) and for the same reason — an untyped builder is invisible

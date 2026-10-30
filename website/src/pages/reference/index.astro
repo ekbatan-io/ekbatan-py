@@ -20,23 +20,23 @@ const groups = [
     {
         title: "Core primitives",
         entries: [
-            { href: "/reference/action/", title: "Action", blurb: "Two-phase lifecycle, perform() signature, plan, retry semantics." },
-            { href: "/reference/action-plan/", title: "ActionPlan", blurb: "Staging API - add(), update(), changes()." },
-            { href: "/reference/action-executor/", title: "ActionExecutor", blurb: "Construction, namespace, registry wiring, execute() variants." },
-            { href: "/reference/model/", title: "Model[ID, S]", blurb: "Immutable domain object, copy().with_event(), version + id." },
-            { href: "/reference/entity/", title: "Entity[ID]", blurb: "Persisted, version-tracked, no events." },
-            { href: "/reference/model-event/", title: "ModelEvent", blurb: "Frozen dataclass, namespace and event-type resolution." },
+            { href: "/reference/action/", title: "Action", blurb: "The two phases, the perform() signature, the plan, and retries." },
+            { href: "/reference/action-plan/", title: "ActionPlan", blurb: "Where perform() stages its changes: add(), update(), changes()." },
+            { href: "/reference/action-executor/", title: "ActionExecutor", blurb: "Building one, what atomic means here, retries, and a custom event persister." },
+            { href: "/reference/model/", title: "Model[ID, S]", blurb: "The immutable domain object that emits events: id, version, copy().with_event()." },
+            { href: "/reference/entity/", title: "Entity[ID]", blurb: "Saved and versioned like a model, but emits no events." },
+            { href: "/reference/model-event/", title: "ModelEvent", blurb: "The event a model emits: how to write one, and how it becomes an outbox row." },
         ],
     },
     {
         title: "Persistence",
         entries: [
-            { href: "/reference/repository/", title: "Repository", blurb: "Inherited reads and writes, the row mapping you write, shard routing." },
-            { href: "/reference/transaction-manager/", title: "TransactionManager", blurb: "tm.transaction(), why not to nest, isolation." },
-            { href: "/reference/sharding/", title: "Sharding", blurb: "ShardedId, EmbeddedBitsShardingStrategy, policy axes." },
-            { href: "/reference/keyed-locks/", title: "Keyed locks", blurb: "PostgreSQL / MySQL / MariaDB / Redis providers, lease semantics." },
-            { href: "/reference/multi-database/", title: "Multi-database", blurb: "Routing actions across several databases, and the column-type cheatsheet." },
-            { href: "/reference/migrations/", title: "Migrations", blurb: "SQL files on yoyo, with the lock, checks and history it lacks." },
+            { href: "/reference/repository/", title: "Repository", blurb: "The reads and writes you get, the row mapping you write, and shard routing." },
+            { href: "/reference/transaction-manager/", title: "TransactionManager", blurb: "Transactions outside an action: tm.transaction(), why not to nest it, isolation." },
+            { href: "/reference/sharding/", title: "Sharding", blurb: "ShardedId, EmbeddedBitsShardingStrategy, and the group and member of a shard." },
+            { href: "/reference/keyed-locks/", title: "Keyed locks", blurb: "A lock named by a string, on PostgreSQL, MySQL, MariaDB or Redis, and how a lease behaves." },
+            { href: "/reference/multi-database/", title: "Multi-database", blurb: "The databases supported, the column-type cheatsheet, and the UTC rule." },
+            { href: "/reference/migrations/", title: "Migrations", blurb: "Plain SQL files run by yoyo, with a lock, checks and a history added on top." },
             { href: "/reference/config-files/", title: "Config files", blurb: "The layout read from a YAML, TOML, JSON or INI file." },
             { href: "/reference/schemagen/", title: "schemagen", blurb: "Table definitions generated from a migrated database." },
         ],
@@ -44,38 +44,38 @@ const groups = [
     {
         title: "Tables",
         entries: [
-            { href: "/reference/tables/", title: "Framework tables", blurb: "Table map, optionality matrix, and links to each table's full DDL." },
-            { href: "/reference/tables/events/", title: "events", blurb: "Durable event rows written with each action transaction." },
-            { href: "/reference/tables/event-notifications/", title: "event_notifications", blurb: "Optional in-process delivery rows, states, retries, and handler names." },
-            { href: "/reference/tables/scheduled-tasks/", title: "scheduled_tasks", blurb: "Optional db-scheduler table used by distributed jobs and in-process handlers." },
+            { href: "/reference/tables/", title: "Framework tables", blurb: "Which framework tables you need, where they live, and how they get into your database." },
+            { href: "/reference/tables/events/", title: "events", blurb: "The outbox: event rows written in the same transaction as each action." },
+            { href: "/reference/tables/event-notifications/", title: "event_notifications", blurb: "Optional. One delivery row per event and handler: states, retries, handler names." },
+            { href: "/reference/tables/scheduled-tasks/", title: "scheduled_tasks", blurb: "Optional. db-scheduler's table, for distributed jobs and in-process handlers." },
         ],
     },
     {
         title: "Wiring",
         entries: [
             { href: "/reference/wiring/", title: "Wiring a service", blurb: "Databases, repositories, actions, handlers and jobs, in one function." },
-            { href: "/reference/wiring-fastapi/", title: "FastAPI", blurb: "The lifespan, the dependency, and the two sharp mistakes." },
+            { href: "/reference/wiring-fastapi/", title: "FastAPI", blurb: "The lifespan, the dependency, and the two common mistakes." },
         ],
     },
     {
         title: "Runtime",
         entries: [
-            { href: "/reference/runtime/concurrency/", title: "Concurrency", blurb: "Threads, asyncio, gevent, the GIL, and the one way to use this wrongly." },
+            { href: "/reference/runtime/concurrency/", title: "Concurrency", blurb: "Threads, processes, asyncio, gevent and the GIL, and the one way to misuse the sync API." },
             { href: "/learn/sync-or-async/", title: "Sync or async?", blurb: "Two APIs, one framework: how to pick, what is the same, what differs, what runs on threads." },
-            { href: "/reference/runtime/async/", title: "Native asyncio", blurb: "ekbatan.aio: async drivers, the pool as the cap, shards read at once, what stays sync." },
-            { href: "/reference/runtime/observability/", title: "Observability", blurb: "Spans, metrics, tracing through the action lifecycle." },
-            { href: "/reference/jobs/distributed-jobs/", title: "Distributed jobs", blurb: "DistributedJob, the db-scheduler facade, cluster-exclusive runs." },
-            { href: "/reference/events/local-event-handler/", title: "Local event handler", blurb: "Fan-out and dispatch jobs, in-process delivery." },
-            { href: "/reference/events/streaming/", title: "Streaming (Debezium)", blurb: "OutboxToAvro / OutboxToProtobuf SMTs, topic routing, and reading each format." },
+            { href: "/reference/runtime/async/", title: "Native asyncio", blurb: "ekbatan.aio: the async drivers, the pool as the limit, locks, handlers, and what stays sync." },
+            { href: "/reference/runtime/observability/", title: "Observability", blurb: "OpenTelemetry spans and metrics, and the logger names." },
+            { href: "/reference/jobs/distributed-jobs/", title: "Distributed jobs", blurb: "DistributedJob, on db-scheduler: background work that runs on exactly one instance." },
+            { href: "/reference/events/local-event-handler/", title: "Local event handler", blurb: "Handling events inside your own service: the fan-out and dispatch jobs." },
+            { href: "/reference/events/streaming/", title: "Streaming (Debezium)", blurb: "The outbox to Kafka through Debezium: the Avro and Protobuf transforms, topics, and reading each format." },
         ],
     },
     {
         title: "Dialects",
         entries: [
             { href: "/reference/dialects/postgresql/", title: "PostgreSQL", blurb: "Native UUID, JSONB, partial indexes, SKIP LOCKED and RETURNING." },
-            { href: "/reference/dialects/mysql/", title: "MySQL", blurb: "No UUID type, no partial indexes, and what GET_LOCK does with sub-second waits." },
+            { href: "/reference/dialects/mysql/", title: "MySQL", blurb: "No UUID type, no partial indexes, and lock waits rounded to whole seconds." },
             { href: "/reference/dialects/mariadb/", title: "MariaDB", blurb: "Close enough to MySQL to share a driver, and four ways it is not." },
-            { href: "/reference/dialects/sqlite/", title: "SQLite", blurb: "What the suite runs on, and exactly why it is not a production dialect." },
+            { href: "/reference/dialects/sqlite/", title: "SQLite", blurb: "No server needed: good for tests and tools, and why it is not for production." },
         ],
     },
     {
@@ -102,9 +102,9 @@ const groups = [
                 <span class="bg-yellow px-2">Every config.</span>
             </h1>
             <p class="mt-6 max-w-2xl text-lg leading-relaxed">
-                Lookup-oriented. Each page is one class or one subsystem, with signatures,
-                semantics, dialect specifics, and pointers to the source. If you already know
-                what you are looking for, start here.
+                For looking things up. Each page covers one class or one part of the framework:
+                what it does, its methods and settings, and what differs between databases. If
+                you already know what you are looking for, start here.
             </p>
 
             {

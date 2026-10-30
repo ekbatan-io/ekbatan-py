@@ -2,7 +2,7 @@
 layout: ../../../layouts/DocLayout.astro
 title: Distributed background jobs
 activeSection: reference
-lead: "Background work that should run on exactly one instance across a cluster. A thin facade over db-scheduler, whose Python port this repository also publishes."
+lead: "Background work that runs on a schedule, on one instance of your service rather than on all of them. Built on db-scheduler, which keeps the schedule in a database table."
 ---
 
 import ModeTabs from "../../../components/ModeTabs.astro";
@@ -58,52 +58,80 @@ class WalletStipendJob(DistributedJob):
 </div>
 </ModeTabs>
 
+A job is a class with three methods:
+
+- `name()` is the job's id across the cluster: the key of its row in the `scheduled_tasks`
+  table. Keep it the same on every instance and across restarts.
+- `schedule()` says when it runs. `FixedDelay.of_seconds(2)` runs it again two seconds after the
+  previous run finished.
+- `execute(context)` is the work.
+
+`DistributedJob` is ekbatan's; the schedule types and the context are db-scheduler's, which is
+installed with ekbatan:
+
+```python
+from db_scheduler.task import ExecutionContext
+from db_scheduler.task.schedule import FixedDelay, Schedule
+from ekbatan.distributedjobs import DistributedJob
+```
+
 Nothing about being a job makes the work special. It goes through an ordinary action, so the
-outbox row it writes is indistinguishable from one a request produced - `action_name` says
+outbox row it writes looks exactly like one written during a request: `action_name` says
 `WalletDepositMoneyAction` either way, and nothing downstream can tell or needs to.
 
 **In an async service the job is still sync.** `execute` is a plain `def`, run on the
-scheduler's threads, in both modes. A job can take a sync executor and sync repositories, built
-from the same config file as the async ones - the simplest choice. Or its *work* can be async:
-`execute` hands a coroutine to a `HandlerLoop` (an event loop on a thread of its own, the kind
-dispatch runs async handlers on) with `loop.run(...)` and waits for it, so the claim, the
-heartbeat and a retry behave exactly as for a sync job. What the work awaits is built for that
-loop and closed on it after the jobs stop. See
-[a job whose work is async](/reference/runtime/async/#a-job-whose-work-is-async) and `job-worker-uv-async-pg`.
+scheduler's threads, in both modes. That leaves two choices:
 
-## Coordination semantics (inherited from db-scheduler)
+- The simplest: give the job a sync executor and sync repositories, built from the same config
+  file as the async ones.
+- Or make its *work* async, as in the Async tab. `execute` hands a coroutine to a `HandlerLoop`
+  with `loop.run(...)` and waits for it. A `HandlerLoop` is an event loop on a thread of its own,
+  the same kind that runs async event handlers. The claim, the heartbeat and a retry then behave
+  exactly as for a sync job. What the work awaits must be built for that loop, and closed on it
+  after the jobs stop.
 
-- Every instance polls the shared `scheduled_tasks` table.
-- When a slot comes due, **exactly one instance wins the atomic claim** and runs it.
-- The running instance heartbeats. If the heartbeat goes stale, another instance reclaims the row
-  **and runs the job again** - while the first may still be part-way through `execute()`.
-- A job that raises is retried per its schedule, and `consecutive_failures` increments.
+See [a job whose work is async](/reference/runtime/async/#a-job-whose-work-is-async) and the
+[`job-worker-uv-async-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/job-worker-uv-async-pg)
+example.
 
-**This is at-most-one per scheduled slot, not at-most-one ever.** A daily-at-02:00 job runs once
-at 02:00 across the cluster; if 02:00 passes with every node down, the missed slot is taken by
-the next live node when it polls.
+## How instances share the work
+
+db-scheduler does the coordination, through the shared `scheduled_tasks` table:
+
+- Every instance polls the table.
+- When a scheduled run (a *slot*) comes due, **exactly one instance wins the claim** and runs it.
+- The running instance heartbeats: it stamps the row regularly to show it is alive. If the
+  heartbeat goes stale, another instance reclaims the row **and runs the job again**, while the
+  first may still be part-way through `execute()`.
+- A job that raises is retried per its schedule, and the row's `consecutive_failures` goes up.
+  That is the column to alert on.
+
+**The claim is per slot.** A job due daily at 02:00 is claimed by one instance at 02:00, across
+the whole cluster. If 02:00 passes while every instance is down, the missed slot is run by the
+next instance that polls.
 
 ### The rule every job body has to obey
 
 **A slot can run twice.** The claim protects the row, not your method. db-scheduler stops a stale
 instance from recording a *result*; it cannot undo the side effects that instance already caused.
 
-Write `execute()` so that running the same slot twice is harmless. The same techniques as for
-[event handlers](/reference/events/local-event-handler/#handlers-must-be-idempotent): insert with a
-conflict clause, update with an expected-state predicate, an idempotency key on an external call.
+Write `execute()` so that running the same slot twice is harmless, with the same techniques as
+for [event handlers](/reference/events/local-event-handler/#handlers-must-be-idempotent): an
+insert with a conflict clause, an update whose `WHERE` checks the state it expects, an
+idempotency key on an external call.
 
 ### Bailing out before you are taken over
 
-An execution is declared dead after **60 seconds** of failed heartbeats - `heartbeat_interval x
-missed_heartbeats_limit`, 10s x 6. The instance being replaced is **not told and not
-interrupted**: heartbeats are written by a housekeeping thread, so a job whose work does not touch
-the scheduler's database carries on without noticing.
+An execution is declared dead after **60 seconds** without a successful heartbeat
+(`heartbeat_interval x missed_heartbeats_limit`, 10s x 6). The instance being replaced is **not
+told and not interrupted**. Heartbeats are written by a separate housekeeping thread, so a job
+whose work does not touch the scheduler's database carries on without noticing.
 
-That is how a slot ends up running twice - not because the original died, but because it briefly
-could not say that it hadn't.
+That is the usual way a slot runs twice. The first instance did not die; it just could not reach
+the database for a while to say that it was alive.
 
-A job that must not overlap itself can watch its own standing. The `ExecutionContext` already
-handed to `execute` carries it:
+A job that must not overlap itself can check its own heartbeat health, which the
+`ExecutionContext` passed to `execute` carries:
 
 ```python
 def execute(self, context: ExecutionContext) -> None:
@@ -117,17 +145,19 @@ def execute(self, context: ExecutionContext) -> None:
         send(invoice)
 ```
 
-Returning early is a normal successful completion, so the row is rescheduled and the rest is
-picked up next run - or immediately by whichever instance reclaims it, since the reclaim happens
-regardless.
+Returning early counts as a normal, successful run. The row is rescheduled, and the rest of the
+work is picked up on the next run, or straight away by whichever instance reclaims the row, since
+the reclaim happens anyway.
 
-This is **cooperative and only as good as where you put the check.** It suits a job looping over
-work items and cannot help one sitting inside a single long call. It narrows the overlap window
-rather than closing it; an idempotent `execute()` is the only complete answer.
+This **only works if the job checks often.** It suits a job looping over work items, and cannot
+help one stuck inside a single long call. It makes the overlap shorter rather than impossible: an
+`execute()` that is safe to run twice is the only complete answer.
 
 ## Wiring
 
 ```python
+from ekbatan.distributedjobs import job_registry
+
 jobs_data_source = DataSource.from_config(DataSourceConfig(url=url, pool_size=8))
 jobs = (
     job_registry()
@@ -142,32 +172,39 @@ jobs.stop()
 jobs_data_source.close()  # the registry never closes the pool it polls
 ```
 
-The event pipeline's two jobs are registered here too - they *are* distributed jobs. See
+If you use in-process event handlers, their two jobs (fan-out and dispatch) are registered here
+too: they *are* distributed jobs. See
 [In-process event handlers](/reference/events/local-event-handler/#wiring-manual).
 
 ### `workers(n)`, and sizing the pool
 
-Job bodies run on **real OS threads**, so `workers(n)` is a ceiling on how many run at once -
-defaulting to one per registered job.
+**Give the jobs a pool of their own**, as `jobs_data_source` above. db-scheduler polls all the
+time and heartbeats from its own thread. On the request pool, a burst of traffic could starve the
+heartbeat, and a starved heartbeat means an execution runs twice.
 
-That default is right: a recurring job is a single row, so it has at most one execution in flight.
-Raise it when several jobs can be due at once.
+`workers(n)` is the most job bodies that run at once, each on a **real OS thread**. It defaults
+to one per registered job.
 
-**A ceiling, not a reservation.** Threads start as work arrives and only when no worker is
-already waiting, so twenty registered jobs with nothing due hold no worker threads at all. They
-are not retired once started: an idle worker stays until the registry stops.
+That default is right: a recurring job is a single row, so it has at most one execution in
+flight. Raise it if you schedule the same job to overlap itself, or use
+`enable_immediate_execution` through `customize_scheduler`. Below the job count, a slow job
+delays the others rather than only itself.
 
-**On connections - a running job holds none by itself.** Measured: db-scheduler takes a
-connection to claim the row, releases it, runs your body with none open, then takes another to
-write the result. What holds one is your body's own database work, for as long as that takes. So
-a job that waits on an HTTP call needs no connection while it waits.
+**A ceiling, not a reservation.** Threads start as work arrives, and only when no worker is
+already waiting, so twenty registered jobs with nothing due hold no worker threads at all. Once
+started, a worker is not retired: an idle one stays until the registry stops.
 
-**The jobs pool needs `workers + 3` connections** *when your job bodies use the database*,
-which most do. The three are the scheduler's own loops - poll, heartbeat, dead-execution
-detection - each of which takes a connection when it runs. A body holding the last connection
-starves the heartbeat, and an execution whose heartbeat stops is declared dead and run again
-somewhere else. db-scheduler warns at startup with the number it wants - and did, while these
-examples were being written, which is why the example default is 8 and not 3.
+**A running job holds no connection by itself.** db-scheduler takes a connection to claim the
+row, gives it back, runs your body with none open, then takes another to write the result. Only
+your body's own database work holds one, for as long as that work takes. So a job waiting on an
+HTTP call needs no connection while it waits.
+
+**The jobs pool needs `workers + 3` connections** when your job bodies use the database, which
+most do. The three are for the scheduler's own loops (poll, heartbeat, and spotting dead
+executions), each of which takes a connection when it runs. If a job body holds the last
+connection, the heartbeat cannot write, and an execution whose heartbeat stops is declared dead
+and run again somewhere else. If the pool is no bigger than `workers`, db-scheduler logs a
+warning at startup with the number it wants.
 
 ### What the three knobs do
 
@@ -177,8 +214,8 @@ examples were being written, which is why the example default is 8 and not 3.
 | `heartbeat_interval` | **10s** | how often a running execution stamps `last_heartbeat` |
 | `shutdown_max_wait` | 30 min | how long `stop()` lets in-flight executions finish |
 
-`heartbeat_interval` is **this framework's own default, not db-scheduler's**, which would be five
-minutes. The heartbeat is not only a heartbeat - an execution is declared dead after
+The `heartbeat_interval` default is **this framework's own**; db-scheduler's would be five
+minutes. It matters beyond the heartbeat, because an execution is declared dead after
 `heartbeat_interval x missed_heartbeats_limit`, and that limit defaults to 6:
 
 ```
@@ -186,13 +223,14 @@ this framework   10s   x 6 = 60 seconds    before another instance revives the j
 db-scheduler     5 min x 6 = 30 minutes
 ```
 
-The short window is deliberate. Fan-out and dispatch are themselves jobs, so the scheduler carries
-the whole in-process event pipeline - and a recurring task is a **single row**, so a crashed
-instance freezes that entire schedule until the row is revived. Half an hour of stalled fan-out is
-worse than an occasional early revival.
+The short window is on purpose. In-process event handlers run on two jobs of their own (fan-out
+and dispatch), so the scheduler carries all in-process event delivery. And a recurring job is a
+**single row**, so a crashed instance freezes that job until the row is revived. Half an hour of
+stalled event delivery is worse than an occasional early revival.
 
-Lengthen it if your jobs run long and a duplicate costs more than a delay. The miss count is not a
-first-class setting, but the escape hatch reaches it:
+Lengthen it if your jobs run long and a duplicate run costs more than a delay. The miss count has
+no builder method of its own. Set it through `customize_scheduler`, which hands you db-scheduler's
+own builder:
 
 ```python
 jobs = (
@@ -203,41 +241,40 @@ jobs = (
 )
 ```
 
-The heartbeat is written by the housekeeping thread rather than by the thread running your job, so
-a long `execute()` is not itself at risk. What puts it at risk is the housekeeper stalling - a
-saturated pool, or a database that will not accept the write.
+Because the heartbeat is written by the housekeeping thread, not by the thread running your job,
+a long `execute()` is not at risk by itself. What puts it at risk is that thread stalling: a pool
+with no free connection, or a database that will not take the write.
 
-**`stop()` waits `shutdown_max_wait` once, then returns.** Python cannot interrupt a thread, so
-there is no way to end a job stuck in a `sleep` or a blocking call: `stop()` logs that it cannot
-interrupt, names the executions still running, and returns. Such an execution runs on to its end on a daemon thread, or is cut off when the process exits; if cut off, its row stays
-picked with a frozen heartbeat and is recovered later by the same path as a crash. A job that must
-stop cleanly checks `ctx.scheduler_state.is_shutting_down`. The 30-minute default is usually worth
-lowering in tests.
+**`stop()` waits up to `shutdown_max_wait`, once, then returns.** Python cannot interrupt a
+thread, so nothing can end a job stuck in a `sleep` or a blocking call. `stop()` logs that it
+cannot interrupt, names the executions still running, and returns. Such an execution runs on to
+its end on a daemon thread, or is cut off when the process exits. If it is cut off, its row stays
+claimed with a frozen heartbeat, and is recovered later the same way as after a crash.
+
+A job that must stop cleanly checks `context.scheduler_state.is_shutting_down`. In tests, the
+30-minute default is usually worth lowering.
 
 ### Database dialect
 
-The scheduler's poll query differs by database: the generic form,
-`OFFSET 0 ROWS FETCH FIRST n ROWS ONLY`, is one MySQL and MariaDB cannot parse. The scheduler
-takes the dialect from the data source's engine, and **SQLAlchemy resolves it from the url when
-that engine is created, with no I/O**. So a scheduler started before its database is reachable - which pools are
-built to allow - still sends the right query once the database is up. There is no detection step
-to fail and nothing to set by hand.
+**There is nothing to set.** The scheduler's poll query differs by database: MySQL and MariaDB
+cannot parse the generic form, `OFFSET 0 ROWS FETCH FIRST n ROWS ONLY`. The scheduler picks the
+right one from the data source's URL, without connecting. So a scheduler started before its
+database is reachable still sends the right query once the database is up.
 
 ## Letting running jobs finish when the process stops: on by default
 
-A process that stops while a job is running should let the job finish first rather than cut it
-off. Java's `registerShutdownHook` does that, and is on by default; so is `register_shutdown_hook`
-here.
+A process that stops while a job is running should let the job finish first, rather than cut it
+off. `register_shutdown_hook` does that, and it is on by default.
 
-Java needs one mechanism for it, because a JVM shutdown hook runs however the process ends.
-Python has a separate one for each way, and the registry uses both, from `start()`:
+A process can end in two ways, and Python has a separate mechanism for each. The registry uses
+both, from `start()`:
 
-- **The program ends by itself** - it returns, raises, or gets Ctrl-C. The registry is on
-  `atexit`, which adds to whatever else is registered and displaces nothing. `stop()` takes it
+- **The program ends by itself**: it returns, raises, or gets Ctrl-C. The registry is on
+  `atexit`, which adds to whatever else is registered and replaces nothing. `stop()` takes it
   off.
-- **It gets SIGTERM** - `docker stop`, a Kubernetes rollout. `atexit` does not run then: CPython
-  kills the process on the spot. So if nothing else in the process handles SIGTERM, the registry
-  does, and says so in one line:
+- **It gets SIGTERM**, from `docker stop` or a Kubernetes rollout. `atexit` does not run then:
+  CPython kills the process on the spot. So if nothing else in the process handles SIGTERM, the
+  registry does, and says so in one line:
 
 ```text
 INFO io.ekbatan.distributedjobs.JobRegistry Nothing else in this process handles SIGTERM, so the
@@ -245,10 +282,11 @@ JobRegistry does: on SIGTERM, running jobs finish, then the process stops. A SIG
 after this replaces it; register_shutdown_hook(False) turns it off.
 ```
 
-On SIGTERM it stops every registry that asked for this - their running jobs finish, each bounded
-by `shutdown_max_wait` - and then the process dies of the signal, as it would have: `finally`
-blocks and `atexit` do not run. A second SIGTERM stops it at once. Measured, with a job two
-seconds into its body when the process was stopped:
+On SIGTERM it stops every registry that asked for this, and their running jobs finish, each
+within `shutdown_max_wait`. Then the process dies of the signal, as it would have anyway:
+`finally` blocks and `atexit` do not run. A second SIGTERM stops it at once.
+
+Measured, with a job two seconds into its body when the process was stopped:
 
 | how the process stops | default | `.register_shutdown_hook(False)` |
 | --- | --- | --- |
@@ -259,18 +297,18 @@ seconds into its body when the process was stopped:
 
 **It leaves SIGTERM to whoever already has it.** CPython has **one handler per signal**, so
 taking it would silently drop theirs. uvicorn and gunicorn set their handler before your
-application starts (measured on uvicorn 0.28, 0.29, 0.32, 0.52 and 0.54, and with several
-workers), and then they own shutdown: the end of the FastAPI lifespan calls `jobs.stop()`, as the
-REST examples do. The same goes for an asyncio `loop.add_signal_handler`, a SIGTERM ignored on
-purpose, and a handler of your own set before `start()`. One set after `start()` replaces the
-registry's.
+application starts, with one worker or several, and then they own shutdown: the end of the
+FastAPI lifespan calls `jobs.stop()`, as the REST examples do. The same goes for an asyncio
+`loop.add_signal_handler`, a SIGTERM ignored on purpose, and a handler of your own set before
+`start()`. A handler set after `start()` replaces the registry's.
 
-**It needs the main thread** to take SIGTERM: CPython lets no other thread set a signal handler.
-A registry started elsewhere - a lifespan run in a thread pool - is on `atexit` alone.
+**It needs the main thread** to take SIGTERM, because CPython lets no other thread set a signal
+handler. A registry started elsewhere, such as in a lifespan run in a thread pool, is on
+`atexit` alone.
 
-**It tells you when nothing catches SIGTERM.** If nothing handles SIGTERM once `start()` is done -
-the hook is off, or it could not take the signal off the main thread - `start()` logs one warning,
-once per process:
+**It tells you when nothing catches SIGTERM.** If nothing handles SIGTERM once `start()` is done,
+because the hook is off or could not take the signal off the main thread, `start()` logs one
+warning, once per process:
 
 ```text
 WARNING io.ekbatan.distributedjobs.JobRegistry Nothing in this process handles SIGTERM, and the
@@ -281,10 +319,11 @@ To let them finish first, start the JobRegistry on the main thread, or call its 
 SIGTERM handler of your own.
 ```
 
-With the hook off, the warning says that instead, and to turn it back on. It reads the same
-answer from any thread. A `build_manual()` registry never warns and never takes SIGTERM.
+With the hook off, the warning says that instead, and tells you how to turn the hook back on. The
+check works from any thread. A `build_manual()` registry, the one for tests, never warns and
+never takes SIGTERM.
 
-**Turned off**, the registry is neither on `atexit` nor on SIGTERM - you stop it yourself:
+**Turned off**, the registry is neither on `atexit` nor on SIGTERM, and you stop it yourself:
 
 ```python
 jobs = (
@@ -296,9 +335,9 @@ jobs = (
 )
 ```
 
-A job still running when the process ends is then cut off; its row waits out the dead-execution
-window, 60 seconds on these defaults, before another instance runs it again. Nothing is lost -
-every job body already has to tolerate running twice - but the stop is abrupt.
+A job still running when the process ends is then cut off. Its row waits out the dead-execution
+window (60 seconds on these defaults) before another instance runs it again. Nothing is lost,
+since every job body already has to cope with running twice, but the stop is abrupt.
 
 **If you write a SIGTERM handler yourself, keep what you find:**
 
@@ -318,56 +357,35 @@ installed anything. Inside a gunicorn or uvicorn worker it silently discards the
 
 ## Build it in the process that runs the jobs
 
-A `JobRegistry` owns threads and a database pool, and neither survives `fork()`. A registry built
-in one process and started in a copy of it - built at import time under gunicorn `--preload`,
-uwsgi, Celery's prefork pool or RQ - raises `ForkedProcessError` from `start()`, and
-db-scheduler's own worker pool refuses work in a forked copy too. Build and start it in the
-FastAPI lifespan, or at the top of the worker's `main()`; [Startup and shutdown](/learn/startup-and-shutdown/) has the recipe per
-server.
+A `JobRegistry` owns threads and a database pool, and neither survives `fork()`. Under gunicorn
+`--preload`, uwsgi, Celery's prefork pool or RQ, a registry built at import time is built in one
+process and started in a copy of it. `start()` then raises `ForkedProcessError`, and
+db-scheduler's own worker pool refuses work in a forked copy too.
 
-From `async def` code - a lifespan - start and stop it with `await asyncio.to_thread(...)`:
-starting registers the jobs in the database, and stopping waits for the jobs in flight, and
-either would hold up the event loop meanwhile.
+Build and start it in the FastAPI lifespan, or at the top of the worker's `main()`.
+[Startup and shutdown](/learn/startup-and-shutdown/) has the recipe for each server.
+
+From `async def` code, such as a lifespan, start and stop it with `await asyncio.to_thread(...)`.
+Starting registers the jobs in the database and stopping waits for the running jobs, and either
+would hold up the event loop meanwhile.
 
 ## The `scheduled_tasks` table
 
-One row per registered job, and it is the coordination itself rather than a log of it: the row
-carries the next execution time, the identity of whichever instance currently holds the task,
-and its heartbeat. Whichever instance claims the row runs; the rest do not.
+One row per registered job. The row *is* the coordination, not a log of it: it carries the next
+execution time, which instance currently holds the job, and its heartbeat. Whichever instance
+claims the row runs the job; the rest do not.
 
-The table is db-scheduler's, unchanged - see
-[`scheduled_tasks`](/reference/tables/scheduled-tasks/) for every column and the DDL on each
-dialect, generated rather than transcribed:
+The table is db-scheduler's, unchanged. [`scheduled_tasks`](/reference/tables/scheduled-tasks/)
+lists every column and the DDL for each database. `scheduled_tasks_table(metadata)` builds it as
+a SQLAlchemy table:
 
 ```python
 from ekbatan.schema import scheduled_tasks_table
 ```
 
-Its times are `TIMESTAMP` with no zone, as in every framework table; [the table's page](/reference/tables/scheduled-tasks/#if-the-time-columns-are-timestamptz) covers a table whose times are
-`timestamptz`.
-
-**What exclusivity does and does not mean.** When a task's `execution_time` arrives, exactly one
-instance wins the atomic claim *for that slot*, and that instance runs it. Each running instance
-heartbeats. If a heartbeat goes stale — the process crashed, the network partitioned, the
-interpreter stalled — another instance reclaims the row **and runs the job again**, while the
-original may still be part-way through `run()`.
-
-The claim protects the row, not your method. The scheduler stops the stale instance recording a
-result; it cannot undo side effects that instance has already caused. **Write `run()` so that
-running the same slot twice is harmless.**
-
-And it is at-most-one *per scheduled slot*, not at-most-one ever. A daily 02:00 job runs once at
-02:00 across the cluster; if 02:00 passes while every node is down, the missed slot is picked up
-by the next live node when it polls.
-
-A task that raises is retried according to its `Schedule`, and the row's `consecutive_failures`
-increments — which is the column to alert on.
-
-## Use a dedicated connection pool
-
-Always. db-scheduler polls continuously and heartbeats from its own thread; sharing the request
-pool means a traffic burst can starve the heartbeat, and the consequence of a starved heartbeat is
-an execution running twice.
+Its times are `TIMESTAMP` with no time zone, as in every framework table. If yours are
+`timestamptz`, see
+[the table's page](/reference/tables/scheduled-tasks/#if-the-time-columns-are-timestamptz).
 
 ## See also
 

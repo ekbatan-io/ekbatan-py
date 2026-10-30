@@ -1,7 +1,7 @@
 # MySQL
 
-Fully supported, with three things to know: there is no UUID type, there are no partial indexes,
-and `GET_LOCK` does something surprising with sub-second timeouts.
+Running the framework on MySQL. It is fully supported, with three things to know: there is no
+UUID type, there are no partial indexes, and `GET_LOCK` rounds a lock wait to whole seconds.
 
 ## Quick reference
 
@@ -38,24 +38,24 @@ migrations/
 ```
 
 The migrations run on your database's connection, so the login needs the right to create
-`eventlog` and to use it. Root has it. A login of its own needs one grant, given once by root -
-it works before the database exists:
+`eventlog` and to use it. Root has it. Any other login needs one grant, given once by root, and
+the grant works even before the database exists:
 
 ```sql
 GRANT ALL PRIVILEGES ON eventlog.* TO 'wallet'@'%';
 ```
 
 There is one `eventlog` per server, shared by every database on it. Two shards, or two
-applications, on one server write into the same two tables - and the fan-out job picks
-undelivered rows by event type alone, so where two applications use one event name, each one's
-handlers get the other's events. A shard or an application on a server of its own has an
-`eventlog` of its own.
+applications, on one server write into the same two tables. That has a catch: the fan-out job
+picks undelivered rows by event type alone, so if two applications on one server use the same
+event name, each one's handlers also get the other's events. A shard or an application on a
+server of its own has its own `eventlog`.
 
 ## Framework tables
 
-Three, and only the first is always required. The DDL is generated rather than transcribed -
-[Framework tables](tables.md) has it per dialect, and `emit_ddl(metadata, "mysql")` prints it
-for your own migration.
+Three, and only the first is always required. Each table's page has its full DDL, the map is on
+[Framework tables](tables.md), and `emit_ddl(metadata, "mysql")` prints the DDL for
+your own migration.
 
 | Table | Needed when | Page |
 |---|---|---|
@@ -63,7 +63,7 @@ for your own migration.
 | `event_notifications` | you handle events in-process | [`event_notifications`](tables/event-notifications.md) |
 | `scheduled_tasks` | you run distributed jobs, or in-process handlers | [`scheduled_tasks`](tables/scheduled-tasks.md) |
 
-What the column helpers render here:
+What the column helpers in `ekbatan.schema` become on this database:
 
 | helper | this dialect |
 |---|---|
@@ -71,44 +71,49 @@ What the column helpers render here:
 | `json_column()` | `JSON` |
 | `timestamp_column()` | `DATETIME(6)` |
 
-`DATETIME(6)`, never a bare `DATETIME`: the bare form truncates to whole seconds,
-and `event_date` is the outbox's only ordering key.
+`DATETIME(6)`, never a bare `DATETIME`: the bare form cuts times to whole seconds, and
+`event_date` is the outbox's only ordering key.
 
 ## Domain tables
 
-Your tables are yours. The repository requires two columns on every one of them and refuses at
-construction if either is missing: **`version`**, the optimistic-locking counter, and
-**`state`**, the soft-delete discriminator. A `ModelRepository` additionally wants
-`created_date` and `updated_date`; an entity's table needs neither, because an entity is state
-rather than history. Neither is written by the framework: `created_date` is required when you
-build the row, and `updated_date` is yours to move on the changes where it means something.
+Your own tables are yours to design, with two required columns. A repository checks for them
+when it is created, and refuses a table that lacks either:
 
-Reads filter `state != DELETED` for you. Updates carry `WHERE version = ?` and increment it.
+- **`version`**, the counter behind optimistic locking;
+- **`state`**, which marks a soft-deleted row as `DELETED`.
+
+A model's table (a `ModelRepository`'s) also needs `created_date` and `updated_date`; an
+entity's table needs neither. The framework fills in neither date: you give `created_date` when
+you build the row, and you move `updated_date` on the changes where it means something.
+
+Reads skip rows whose `state` is `DELETED`, without being asked. Updates carry
+`WHERE version = ?` and increment it.
 
 | column | type | role |
 |---|---|---|
 | `id` | `CHAR(36)` | primary key |
 | `version` | `BIGINT NOT NULL` | optimistic locking - required, no default |
-| `state` | `VARCHAR(24) NOT NULL` | soft-delete discriminator; `DELETED` rather than a `deleted_at` column |
+| `state` | `VARCHAR(24) NOT NULL` | marks soft-deleted rows: `DELETED`, rather than a `deleted_at` column |
 | `created_date` | `DATETIME(6) NOT NULL` | **required** when you build the row |
 | `updated_date` | `DATETIME(6) NOT NULL` | falls back to `created_date`; yours to move |
 
 ## MySQL-specific gotchas
 
-**No native UUID.** `uuid_column()` renders `CHAR(36)` - the hyphenated text form, chosen so ids
-stay grep-able in query logs and dumps, and so they match what PostgreSQL and MariaDB store as
-text. `BINARY(16)` is more compact and harder to debug, so it is not the default.
+**No native UUID.** `uuid_column()` renders `CHAR(36)`, the hyphenated text form. It was chosen
+so ids stay searchable in query logs and dumps, and read the same as on PostgreSQL and MariaDB.
+`BINARY(16)` is more compact but harder to debug, so it is not the default.
 
-**Add `CHARACTER SET ascii` to those columns in your migration.** `uuid_column()` does not pin
-the charset. A uuid is pure 7-bit ASCII, so pinning it keeps each character at one byte rather
-than up to four under `utf8mb4`, which makes the index smaller. The stored text is the same
-either way.
+**Add `CHARACTER SET ascii` to those columns in your migration.** `uuid_column()` does not set
+the character set. A uuid is plain ASCII, so setting it keeps each character at one byte instead
+of up to four under `utf8mb4`, which makes the index smaller. The stored text is the same either
+way.
 
-**`DATETIME(6)`, not `TIMESTAMP`.** `TIMESTAMP` has a smaller range, implicit
-`ON UPDATE CURRENT_TIMESTAMP` behaviour and awkward `NULL` semantics. Reserve it for
-db-scheduler's own table. And never bare `DATETIME` - it truncates to whole seconds, silently.
+**`DATETIME(6)`, not `TIMESTAMP`.** `TIMESTAMP` has a smaller range, an implicit
+`ON UPDATE CURRENT_TIMESTAMP` and awkward `NULL` handling, so every table here uses
+`DATETIME(6)`, db-scheduler's included. And never a bare `DATETIME`: it silently cuts times to
+whole seconds.
 
-**No partial indexes.** Put the predicate column into the index instead:
+**No partial indexes.** Instead, put the column you would filter on first in a composite index:
 `(delivered, event_type, event_date)`, as the MySQL examples' migrations do.
 
 **No `RETURNING`.** A write cannot read its own result back in one statement, so the framework
@@ -124,17 +129,17 @@ second: a 250 ms wait is a single try, 500 ms waits one second, 1.5 s waits two.
 [Migration order](#migration-order)). Hand-written SQL names them `eventlog.events` and
 `eventlog.event_notifications`.
 
-**One schema change per migration file.** MySQL commits every schema change on its own, the
-moment it runs, so a migration that fails after one leaves it behind. The migrator records the
-failure and will not run that migration again until the database has been put
-right by hand and `repair()` called. One per file keeps a failure from leaving anything half-done.
-Several statements in one file are otherwise fine: the migrator splits a file itself - a
-procedure's `BEGIN ... END` body included, written without `DELIMITER`.
+**One schema change per migration file.** MySQL commits every schema change the moment it runs,
+so if a migration fails after one, that change stays. The migrator records the failure and will
+not run that migration again until you have put the database right by hand and called
+`repair()`. One change per file means a failure never leaves a file half-done. Several statements
+in one file are otherwise fine: the migrator splits a file itself, including a procedure's
+`BEGIN ... END` body, written without `DELIMITER`.
 
-**Run the server in UTC**, `TZ=UTC` on the container, or put each session on UTC with
-`data_source_properties={"init_command": "SET time_zone = '+00:00'"}`. Ekbatan's own values do not
-shift either way, but `NOW()`, `CURRENT_TIMESTAMP` and column defaults follow the server's zone. See
-[Always UTC](multi-database.md#always-utc).
+**Run the server in UTC** - `TZ=UTC` on the container - or put each session on UTC with
+`data_source_properties={"init_command": "SET time_zone = '+00:00'"}`. The values Ekbatan writes
+do not shift either way, but `NOW()`, `CURRENT_TIMESTAMP` and column defaults follow the server's
+zone. See [Always UTC](multi-database.md#always-utc).
 
 ## See also
 
