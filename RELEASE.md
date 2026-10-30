@@ -80,7 +80,7 @@ That is the whole of Phase 0. No keys, no tokens, no keyserver, no namespace ver
 ### Bump both versions, together
 
 The two distributions are cut as one, exactly as Gradle gives all 16 Java modules one version
-from `gradle.properties`. Five places, and they must agree:
+from `gradle.properties`. Six places, and they must agree:
 
 ```
 pyproject.toml                    version = "0.X.Y"
@@ -88,14 +88,15 @@ db-scheduler/pyproject.toml       version = "0.X.Y"
 pyproject.toml                    dependencies = [..., "ekbatan-py-db-scheduler~=0.X.Y"]
 src/ekbatan/__init__.py           __version__ = "0.X.Y"
 website/src/components/Nav.astro  >v0.X.Y</span>
+website/src/pages/index.astro     >v0.X.Y · Apache 2.0 · Python 3.13+<
 ```
 
 The third is the pin, and it is the one that is forgotten. The release workflow checks the first
 three against the tag before it builds anything, which is the counterpart to Java's "Verify
-gradle.properties version matches tag" step. The last two are outside it - `__version__` is what a
-user reads, the nav what every page of the site shows - so `tests/unit/test_release_version.py`
-holds both to the installed version, and CI fails on the push before the tag if either was left
-behind (0.1.1 found both missing from this list).
+gradle.properties version matches tag" step. The last three are outside it - `__version__` is what a
+user reads, the nav and the home page what the site shows - so `tests/unit/test_release_version.py`
+holds them to the installed version, and CI fails on the push before the tag if one was left
+behind (0.1.1 found all three missing from this list, and shipped with the home page at 0.1.0).
 
 **While the version carries a pre-release suffix the pin must carry it too.** `~=0.1.0` excludes
 pre-releases, so against a `0.1.0.dev0` db-scheduler it resolves to nothing - *"your requirements
@@ -109,7 +110,7 @@ resolve fails the release instead of the user.
 ```bash
 uv lock
 git add pyproject.toml db-scheduler/pyproject.toml uv.lock src/ekbatan/__init__.py \
-    website/src/components/Nav.astro
+    website/src/components/Nav.astro website/src/pages/index.astro
 git commit -m "EKB-XXXX release 0.X.Y"
 git push origin main
 ```
