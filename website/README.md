@@ -100,5 +100,10 @@ matters and is set in `astro.config.mjs`.
 ## Astro 7
 
 `@astrojs/markdown-remark` is an explicit dependency. Astro 7 made a different Markdown
-processor the default, and `markdown.remarkPlugins` needs the unified processor installed — which
-the two plugins above require.
+processor the default, and it runs no remark or rehype plugins; `astro.config.mjs` passes ours to
+`unified()` from `@astrojs/markdown-remark` - the remark/rehype pipeline - as
+`markdown.processor`, and MDX pages take it from there. `unist-util-visit`, which the plugins
+import, is declared rather than left to arrive with something else.
+
+Astro 7 needs Node 22.22 or later; the deploy workflow builds with Node 26. The lock file is
+refreshed only from releases at least 14 days old: `npm install --before=<a date 14 days ago>`.
