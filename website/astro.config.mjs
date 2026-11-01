@@ -1,6 +1,7 @@
 // @ts-check
 import { defineConfig } from "astro/config";
 import mdx from "@astrojs/mdx";
+import { unified } from "@astrojs/markdown-remark";
 import remarkBasePath from "./src/plugins/remark-base-path.mjs";
 import remarkStripLead from "./src/plugins/remark-strip-lead.mjs";
 import rehypeTableScroll from "./src/plugins/rehype-table-scroll.mjs";
@@ -29,8 +30,13 @@ export default defineConfig({
     integrations: [mdx()],
     markdown: {
         shikiConfig: { theme: "github-light" },
-        remarkPlugins: [remarkStripLead, [remarkBasePath, { base: BASE }]],
-        rehypePlugins: [rehypeTableScroll],
+        // Astro 7's default Markdown processor (Satteri) runs no remark or rehype plugins.
+        // `unified()` is the remark/rehype pipeline, which runs ours; MDX pages take the
+        // processor from here too.
+        processor: unified({
+            remarkPlugins: [remarkStripLead, [remarkBasePath, { base: BASE }]],
+            rehypePlugins: [rehypeTableScroll],
+        }),
     },
     site: "https://ekbatan-io.github.io",
 });
