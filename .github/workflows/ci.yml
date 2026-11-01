@@ -43,8 +43,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
         with: { enable-cache: true }
       - run: uv sync --all-extras --group examples
       # Generated modules are gitignored, as Java's `build/generated-jooq` is, and mypy
@@ -56,8 +56,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
         with: { enable-cache: true }
       # The `examples` group too: the tests that drive FastAPI, Starlette, anyio and uvicorn
       # skip without it, and this is the job that runs them.
@@ -72,8 +72,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
         with: { enable-cache: true }
       - run: uv sync --all-extras
       # The framework is synchronous and imports no gevent, so under monkey-patching it becomes
@@ -90,8 +90,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
         with: { enable-cache: true }
       - run: uv sync --all-extras --group tracing
       - run: uv run pytest --dialects=sqlite
@@ -107,8 +107,8 @@ jobs:
       matrix:
         dialect: [postgres, mysql, mariadb]
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
         with: { enable-cache: true }
       - run: uv sync --all-extras
       - run: uv run pytest --dialects=${{ matrix.dialect }}
@@ -125,8 +125,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
         with: { enable-cache: true }
       - run: uv sync --all-extras
       - run: make test-psycopg-async
@@ -140,8 +140,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
         with: { enable-cache: true }
       - run: uv sync --all-extras
       - run: uv run pytest --dialects=postgres

@@ -44,10 +44,11 @@ jobs:
       UV_PYTHON: "3.14"
       UV_PYTHON_PREFERENCE: only-managed
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          # The current Node LTS. Astro 7 needs Node 22.22 or later.
+          node-version: 26
           cache: npm
           cache-dependency-path: website/package-lock.json
       # `npm ci` rather than `npm install`: it installs exactly the lock file and fails if
@@ -64,13 +65,13 @@ jobs:
         working-directory: website
       # The Python half, which `make lint` runs in CI: the docs' own links, the API every
       # snippet on both trees claims, and that no page was written into one tree only.
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v10
         with: { enable-cache: true }
       - run: uv sync --all-extras
       - run: uv run python scripts/links.py
       - run: uv run python scripts/check-api.py
       - run: uv run python scripts/docs-website-sync.py
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: website/dist
 
@@ -88,4 +89,4 @@ jobs:
       id-token: write
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

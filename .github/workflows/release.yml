@@ -30,7 +30,7 @@ jobs:
     outputs:
       version: ${{ steps.check.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: check
         run: |
           set -euo pipefail
@@ -58,8 +58,8 @@ jobs:
     needs: verify
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
         with: { enable-cache: true }
 
       # Both into one directory, which is what `uv publish` and the GitHub Release both want.
@@ -78,7 +78,7 @@ jobs:
           uv run --no-project --isolated --with-requirements /tmp/req.txt --find-links dist \
             python -c "from ekbatan import ActionExecutor, Entity, Model; import db_scheduler; print('ok')"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with: { name: dist, path: dist/ }
 
   # Two jobs, in dependency order: ekbatan pins ekbatan-py-db-scheduler, so an installer that
@@ -99,8 +99,8 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: astral-sh/setup-uv@v5
-      - uses: actions/download-artifact@v4
+      - uses: astral-sh/setup-uv@v10
+      - uses: actions/download-artifact@v8
         with: { name: dist, path: dist }
       - run: uv publish --trusted-publishing always --check-url https://pypi.org/simple/ekbatan-py-db-scheduler/ dist/ekbatan_py_db_scheduler-*
 
@@ -113,8 +113,8 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: astral-sh/setup-uv@v5
-      - uses: actions/download-artifact@v4
+      - uses: astral-sh/setup-uv@v10
+      - uses: actions/download-artifact@v8
         with: { name: dist, path: dist }
       - run: uv publish --trusted-publishing always --check-url https://pypi.org/simple/ekbatan/ dist/ekbatan-*
 
@@ -126,8 +126,8 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with: { name: dist, path: dist }
       - run: gh release create "$GITHUB_REF_NAME" --generate-notes dist/*
         env:

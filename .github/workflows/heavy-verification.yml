@@ -45,7 +45,7 @@ jobs:
       reason: ${{ steps.activity.outputs.reason }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -93,7 +93,7 @@ jobs:
       examples: ${{ steps.list.outputs.examples }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: List The Examples
         id: list
@@ -124,8 +124,8 @@ jobs:
         example: ${{ fromJSON(needs.example-list.outputs.examples) }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+        uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
         with: { enable-cache: true }
       # The pip ones need a Python of 3.13 or later, which uv provides; the Poetry ones need
       # `poetry`.
@@ -155,8 +155,8 @@ jobs:
       UV_PYTHON_PREFERENCE: only-managed
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+        uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
         with: { enable-cache: true }
       - run: uv python install
       - run: uv tool install poetry

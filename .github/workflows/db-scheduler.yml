@@ -33,8 +33,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
         with: { enable-cache: true }
       - run: uv sync --all-extras
       - run: uv run ruff check .
@@ -45,8 +45,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
         with: { enable-cache: true }
       - run: uv sync --all-extras
       - run: uv run pytest
@@ -72,8 +72,8 @@ jobs:
           - { name: mysql 26.7, dialect: mysql, image: "mysql:26.7" }
           - { name: mariadb 11.4, dialect: mariadb, image: "mariadb:11.4" }
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
         with: { enable-cache: true }
       - run: uv sync --all-extras
       - run: uv run pytest tests/integration --dialects=${{ matrix.dialect }}
