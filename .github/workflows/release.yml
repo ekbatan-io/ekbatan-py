@@ -59,7 +59,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.3.0
         with: { enable-cache: true }
 
       # Both into one directory, which is what `uv publish` and the GitHub Release both want.
@@ -99,7 +99,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.3.0
       - uses: actions/download-artifact@v8
         with: { name: dist, path: dist }
       - run: uv publish --trusted-publishing always --check-url https://pypi.org/simple/ekbatan-py-db-scheduler/ dist/ekbatan_py_db_scheduler-*
@@ -113,7 +113,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.3.0
       - uses: actions/download-artifact@v8
         with: { name: dist, path: dist }
       - run: uv publish --trusted-publishing always --check-url https://pypi.org/simple/ekbatan/ dist/ekbatan-*
