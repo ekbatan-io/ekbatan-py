@@ -956,7 +956,8 @@ class TestGivingTheSchedulerItsOwnConnections:
 
     WORKERS = 3
     #: How long the shared case may take for the hunter to take every execution over. It is
-    #: waited for, not slept: on a slow runner the last one was taken after a fixed 3 seconds.
+    #: waited for, not slept, and the task bodies hold their connections for longer still: a
+    #: body that let go first would end its execution before it could be taken over.
     TAKEOVER_LIMIT = 20.0
 
     def _run(self, engine_url: str, *, share: bool) -> tuple[int, str]:
@@ -977,7 +978,7 @@ class TestGivingTheSchedulerItsOwnConnections:
                 runs[instance.id] = runs.get(instance.id, 0) + 1
             with app_pool.connect():  # a task body doing its own work, holding a connection
                 started.release()
-                release.wait(PATIENCE)
+                release.wait(self.TAKEOVER_LIMIT + PATIENCE)
 
         def a_scheduler(engine: Any, name: str) -> Scheduler:
             return (
@@ -1000,9 +1001,14 @@ class TestGivingTheSchedulerItsOwnConnections:
         )
         try:
             worker.start()
-            hunter.start()
             for _ in range(self.WORKERS):
                 assert started.acquire(timeout=PATIENCE), "the workers never all started"
+            # Only now, with the worker running all three: started beside it, the hunter could
+            # pick one itself, and an execution the hunter runs heartbeats through the hunter's
+            # own engine, so it is never dead and never taken over. On a slow runner the worker,
+            # its threads queueing for the pool its bodies are draining, lost one pick in that
+            # race now and then - "2 == 3", with the third execution run once.
+            hunter.start()
             # Far past the 800ms dead-threshold, with the hunter looking the whole time. Sharing,
             # this ends as soon as every execution has been taken over; on its own engine nothing
             # is taken over, so the whole 3 seconds is the proof.
@@ -1042,8 +1048,9 @@ class TestGivingTheSchedulerItsOwnConnections:
         """Stated as a test so the hazard cannot quietly stop being true. The heartbeat needs a
         connection to say an execution is alive; without one, another instance takes it over.
 
-        INFO is captured so that a failure shows what the hunter found and did: on MySQL 26.7 on
-        GitHub's runners one of the three was not taken over, and nothing else said why."""
+        INFO is captured so that a failure shows what the hunter found and did. That log is what
+        showed why one of the three was sometimes not taken over on GitHub's runners: the hunter
+        had picked it itself, which starting the hunter after the worker now rules out."""
         caplog.set_level(logging.INFO, logger="db_scheduler")
         taken_over, state = self._run(engine_url, share=True)
         assert taken_over == self.WORKERS, state
@@ -1105,8 +1112,11 @@ class TestClockSkewBetweenInstances:
         worker.schedule_if_not_exists(TaskInstance[Any]("t", "the-one"), SystemClock().now())
         try:
             worker.start()
-            hunter.start()
             assert started.wait(PATIENCE), "it never started"
+            # Only once the worker runs it: had the hunter picked it, its heartbeats would carry
+            # the skewed clock, the worker would see them in the future, and nothing would be
+            # taken over in either direction.
+            hunter.start()
             time.sleep(3.0)
         finally:
             release.set()
