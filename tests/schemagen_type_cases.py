@@ -17,7 +17,7 @@ from datetime import UTC, date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy.dialects.postgresql import Range
+from sqlalchemy.dialects.postgresql import BitString, Range
 
 SAME = object()
 WHEN = datetime(2026, 1, 2, 3, 4, 5, 123456, tzinfo=UTC)
@@ -135,8 +135,16 @@ POSTGRES = (
     # `WHERE` off for these three: SQLAlchemy binds a str compared with them as VARCHAR, which
     # PostgreSQL will not compare - true of a hand-written table too, so not the generator's.
     Case("money", "MONEY", "postgresql.MONEY()", "1.50", expected="$1.50", where=False),
-    Case("bit_3", "BIT(3)", "postgresql.BIT(length=3)", "101", where=False),
-    Case("varbit_8", "VARBIT(8)", "postgresql.BIT(length=8, varying=True)", "1011", where=False),
+    # A str goes in; SQLAlchemy 2.1 reads its own BitString back, a str, on both drivers.
+    Case("bit_3", "BIT(3)", "postgresql.BIT(length=3)", "101", BitString("101"), where=False),
+    Case(
+        "varbit_8",
+        "VARBIT(8)",
+        "postgresql.BIT(length=8, varying=True)",
+        "1011",
+        BitString("1011"),
+        where=False,
+    ),
     Case("tsvector", "TSVECTOR", "postgresql.TSVECTOR()", "'a' 'b'", where=False),
     Case("int4range", "INT4RANGE", "postgresql.INT4RANGE()", Range(1, 5)),
     Case(

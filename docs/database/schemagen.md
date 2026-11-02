@@ -287,7 +287,9 @@ again by `metadata.create_all`, and a value written and read back.
 - `INET` and `CIDR` values come from Python's `ipaddress` module. `Range` is
   `sqlalchemy.dialects.postgresql.Range`.
 - The `MACADDR` row also covers `MACADDR8`, `VARBIT(n)` and `TSVECTOR`. A `BIT(n)` reads as
-  `str` through psycopg and as a `BitString` through asyncpg, so its record says `Any`.
+  SQLAlchemy's `BitString`, a `str`, through either driver on SQLAlchemy 2.1; on 2.0 it reads as
+  `str` through psycopg and as asyncpg's own `BitString` through asyncpg, so its record says
+  `Any`.
 - An enum type is one made with `CREATE TYPE mood AS ENUM ('happy', 'sad')`.
 - An array of a domain reads as a `list` through asyncpg, but psycopg does not know a domain's
   array type and hands back its text, which SQLAlchemy splits into characters. So its record

@@ -39,6 +39,10 @@ dev = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.uv]
+# A release is taken only once it is 14 days old, as in the framework's pyproject.toml.
+exclude-newer = "14 days"
+
 [tool.hatch.build.targets.wheel]
 # The library is fully typed and mypy-clean; the marker is what lets a consumer see that.
 packages = ["src/db_scheduler"]

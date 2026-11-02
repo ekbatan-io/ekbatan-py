@@ -61,6 +61,13 @@ sqlite-async = ["aiosqlite>=0.20", "SQLAlchemy[asyncio]>=2.0.30"]
 avro = ["fastavro>=1.9"]
 protobuf = ["protobuf>=5.26"]
 
+[tool.uv]
+# A release is taken only once it is 14 days old: a broken or hijacked release is usually
+# found and pulled before then. uv.lock records the span, not a date, so the lock stays valid
+# as days pass; `uv lock --upgrade` moves to whatever is 14 days old on that day. A security
+# fix that is newer gets an `exclude-newer-package` line of its own.
+exclude-newer = "14 days"
+
 [tool.uv.sources]
 # The db-scheduler port lives in this repository, as `ekbatan-distributed-jobs` depends on the
 # db-scheduler artifact on the Java side. It stays a separate distribution with its own build

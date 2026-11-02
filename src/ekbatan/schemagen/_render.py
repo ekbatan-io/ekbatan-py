@@ -13,11 +13,14 @@ must not create a *table* by a view's name.
 
 from __future__ import annotations
 
+import copy
+import inspect
 import keyword
 import logging
 import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 from typing import Any
 
 from sqlalchemy import (
@@ -97,6 +100,25 @@ def _base_name(relation: Relation) -> str:
     if relation.schema is None or (relation.schema == EVENTLOG_SCHEMA and name in EVENT_TABLES):
         return name
     return f"{relation.schema}_{name}"
+
+
+def _reflect_base_type(dialect: Any, format_type: str, description: str) -> Any:
+    """PostgreSQL's spelling of a type (``character varying(10)``) as SQLAlchemy's own reflection
+    reads it, through the dialect's private ``_reflect_type`` - with no collation, and no enums
+    or domains to look a name up in.
+
+    Called by keyword where the two versions agree, because the parameters before them changed:
+    SQLAlchemy 2.0 takes two lookup tables (domains, enums), 2.1 one loader with both. Called
+    by position, 2.1 took the description for the collation, and every domain came out with
+    ``COLLATE "DOMAIN <name>"``."""
+    reflect = dialect._reflect_type
+    if "named_type_loader" in inspect.signature(reflect).parameters:
+        # A loader with nothing to load: a domain over another domain or an enum stays unread,
+        # as `{}, {}` leaves it on 2.0.
+        lookups: tuple[Any, ...] = (SimpleNamespace(enums={}, domains={}),)
+    else:
+        lookups = ({}, {})
+    return reflect(format_type, *lookups, type_description=description, collation=None)
 
 
 @dataclass
@@ -1070,11 +1092,17 @@ class _Writer:
         base: Any = domain_type.data_type
         if self.dialect is not None and hasattr(self.dialect, "_reflect_type"):
             try:
-                found = self.dialect._reflect_type(spec.base, {}, {}, f"DOMAIN {name}", None)
+                found = _reflect_base_type(self.dialect, spec.base, f"DOMAIN {name}")
             except Exception:  # a domain over another domain or an enum: reflection's own
                 found = None
             if found is not None and not isinstance(found, sqltypes.NullType):
                 base = found
+        if spec.collation is not None and getattr(base, "collation", None) is not None:
+            # SQLAlchemy 2.1 gives a reflected domain's collation to its base type as well, and
+            # a domain written with both says COLLATE twice, which PostgreSQL refuses. The
+            # collation is the domain's; the base type goes without.
+            base = copy.copy(base)
+            base.collation = None
         inner = emit_type(base, self.reflected.dialect_name)
         if inner is None:
             inner = Emitted(
