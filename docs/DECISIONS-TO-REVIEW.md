@@ -1546,7 +1546,7 @@ had CI, the website and the release from before it had a remote, never run.
 | **croniter is told to mypy as untyped (`ignore_missing_imports`)**, and its two call sites type what they hand on, instead of adding `types-croniter` | croniter ships no `py.typed`; adding a dependency, even a stub one, is the user's call | add `types-croniter` to the port's dev group |
 | **The tests that drive FastAPI, Starlette, anyio or uvicorn skip without the `examples` group; the fast job installs it**, so they run there | the group stays out of the default install on purpose - it is what keeps `src/` free of web imports - and these tests had passed locally only because a local sync had left the group installed | install the group in every job |
 | **Time limits on every job** (30 minutes, 45 for the dialect and gevent runs) | Java's CI has one; without, a hung job runs for six hours | none |
-| **Actions stay at Java's versions** (`checkout@v4`, `setup-node@v4`, `setup-uv@v5`) despite GitHub's Node 20 notice | the same as the Java repository; the notice is a warning | move to the next majors |
+| **Actions stay at Java's versions** (`checkout@v4`, `setup-node@v4`, `setup-uv@v5`) despite GitHub's Node 20 notice | the same as the Java repository; the notice is a warning | move to the next majors - done in EKB-0592-, once Java's had moved |
 | **No test-report upload on failure** | Java uploads JUnit report files; pytest prints the failures in the job's log itself | write `--junitxml` and upload it |
 | **The SIGTERM test prints the child's whole log when it fails, and waits for whole lines** | it failed on runners now and then; the whole log then showed why - the test waited for the word `running`, which the registry's own line "on SIGTERM, running jobs finish" contains, so SIGTERM could go in before the job had started. It was the test, not the framework | - |
 | **The scheduler port's takeover test waits for every takeover, up to 20 seconds, instead of sleeping 3**; the dedicated-engine case still waits its whole 3 seconds | on GitHub's runner against MySQL 26.7 the third takeover came after the 3 seconds, twice in a row; locally MySQL 26.7 and 8.4, PostgreSQL and MariaDB pass either way | a longer fixed sleep |
@@ -1615,3 +1615,30 @@ both sides; the comparison and its rules are part 2 of
 | **The ids are converted first**, ahead of the JSON columns and the times | an empty or foreign message then fails on its first field, `id`, the clearest thing to report | the order before |
 | **A Protobuf time with nanoseconds below a microsecond is refused**, not cut to the microsecond | a `datetime` cannot hold it, and cutting hands back another time; the transform writes whole microseconds, so it is not this writer's | cut it, as `ToMicroseconds` did |
 | **A decimal with no bytes is read as fastavro reads it, zero** (AP11), where Java refuses | the Avro specification does not say; the transform cannot write one; refusing would mean changing fastavro's decimal reading for the whole process | wrap fastavro's logical-type registry |
+
+## Dependencies kept current, as Java's are (EKB-0592-)
+
+The brief (the user, 2026-11-02): do for this repository what was done for the Java one - update
+the dependencies, the GitHub Actions and the website's npm packages, add Dependabot and the weekly
+dependency check - after first saying whether anything has a known vulnerability. The user's rule
+since 2026-11-01: a release is taken only once it is 14 days old. The run is in
+[DEPENDENCY-UPDATE-LEDGER.md](DEPENDENCY-UPDATE-LEDGER.md).
+
+| decision | why | the other way |
+| --- | --- | --- |
+| **The 14-day rule is written into uv**: `exclude-newer = "14 days"` in both `pyproject.toml` files | uv then keeps to it on every `uv lock`, not only when someone remembers; `uv.lock` records the span, not a date, so the lock stays valid as days pass (`uv lock --check` passes) | pass `--exclude-newer` by hand on each update |
+| **...but not in the examples' `pyproject.toml` files** | they are templates a reader copies into their own project, and they commit no lock file | add it there too |
+| **httpx2 and httpcore2 went back from 2.16.0 to 2.14.0** | 2.16.0 (21 Oct) is under 14 days old, and the rule moved them back on the first `uv lock`; they are only in the `examples` group, which tests the examples | exempt them with `exclude-newer-package` until they are 14 days old |
+| **SQLAlchemy 2.0.52 -> 2.1.5 in the lock**, the declared range (`>=2.0.30`) left alone | the newest release 14 days old; lint, the whole suite on every dialect, gevent, tracing and the scheduler port pass on it | hold the lock at 2.0 |
+| **Dependabot does not update the Python packages** (no `uv` entry), as Java's does not update Gradle's | the weekly report lists them and `uv lock --upgrade` moves them in one step; a `uv` entry would open a second, parallel stream of the same updates | add a `uv` entry |
+| **The Actions are on major tags** (`@v7`, `@v10`), as Java's are | a major tag takes each new patch release at once, even one under 14 days old; Dependabot's cooldown covers the majors it proposes | pin exact versions (`@v10.3.0`) and let Dependabot move them |
+| **Both lock files' packages are sent to GitHub by our own script** (`report.py --snapshot`, posted with `gh api`), not a third-party action | GitHub reads no `uv.lock`; the submission API takes a plain JSON file, so no new action has to be trusted | a community uv submission action |
+| **"Shipped to users" counts every extra** | a user who installs `ekbatan[codegen]` gets testcontainers and what it brings, certifi and urllib3 included | the core dependencies only |
+| **The report does not check the declared minimums** (`opentelemetry-api>=1.27` still allows the vulnerable 1.44) | a fresh install picks the newest release; raising a minimum forces every user up | raise each minimum to the first fixed release |
+| **The website's plugins moved into `processor: unified(...)`; `unist-util-visit` declared** | Astro 7.4 still ran them the old way but called it deprecated; the built site is the same either way - HTML, CSS and scripts of all 59 pages | leave them until a major removes the old way |
+| **The website builds on Node 26** | the current LTS since 28 Oct, as Java's site; Astro 7 needs 22.22 or later | stay on 22 |
+| **The schema generator calls SQLAlchemy's private `_reflect_type` in the shape the installed version expects** (2.0: two lookup tables; 2.1: one loader holding both), the description and collation by keyword | it is the reading that keeps a domain's length, which public reflection drops; 2.1 changed the parameters, and the call by position put the description in the collation | read PostgreSQL's type names ourselves |
+| **A domain's base type goes without a collation when the domain has its own** | SQLAlchemy 2.1 copies a reflected domain's collation onto its base type, and a domain written with both says COLLATE twice, which PostgreSQL refuses | - |
+| **`BIT(n)` still generates `Any`**, though on SQLAlchemy 2.1 both drivers read SQLAlchemy's `BitString`, a `str` | the declared range still allows 2.0, where asyncpg reads its own `BitString`, which is no `str` | generate `str` and require SQLAlchemy 2.1 |
+| **The type tests expect 2.1's `BitString`** and import it, so the suite needs SQLAlchemy 2.1 | the suite tests what the lock pins | expect any `str` subclass |
+| **The scheduler port's `test_sharing_an_exhausted_pool_loses_the_heartbeat` is left as it is** | it failed now and then locally on SQLAlchemy 2.0.52 as on 2.1.5 - timing, not the update | give the takeover longer |

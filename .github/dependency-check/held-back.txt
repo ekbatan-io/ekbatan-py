@@ -1,0 +1,7 @@
+# Newer releases this project does not take, on purpose. The weekly report lists them apart, with
+# the reason, and they alone don't keep the report issue open. Known vulnerabilities are reported
+# whatever this file says.
+#
+# One per line: the package (its PyPI name), the newer version held back, the reason. Both the
+# name and the version may use * as a wildcard. A version pattern stops matching once a release
+# beyond it comes out, so that release shows up again for a fresh look.

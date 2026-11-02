@@ -476,6 +476,20 @@ found were found that way, and several "passing" tests turned out to assert noth
   an example is documentation, and documentation that would not type-check is wrong.
 - **Make** supplies the one thing uv has no answer for: a dependency graph. It is how generated
   schemas are rebuilt when their migrations change and skipped when they have not.
+- **A release is taken only once it is 14 days old.** `exclude-newer = "14 days"` in both
+  `pyproject.toml` files makes uv itself keep to it (`uv.lock` records the span, not a date), the
+  website's npm lock is refreshed with `npm install --before=<14 days ago>`, and Dependabot waits
+  as long (`cooldown` in `.github/dependabot.yml`). A security fix that is newer gets an
+  `exclude-newer-package` line of its own. Update with `uv lock --upgrade`, in the root and in
+  `db-scheduler/`.
+- **Dependency check** - `.github/workflows/dependency-check.yml` runs every Monday and on each
+  push to `main` that changes a `pyproject.toml` or `uv.lock`. It looks every package pinned in
+  both lock files up on osv.dev, compares each declared dependency with its releases on PyPI,
+  and keeps one issue, "Dependency report", up to date; a newer release kept on purpose goes in
+  `.github/dependency-check/held-back.txt`, with the reason. It also sends both lock files'
+  packages to GitHub, which reads no `uv.lock` by itself, so Dependabot alerts cover them.
+  Dependabot (`.github/dependabot.yml`) updates the GitHub Actions and the website's npm
+  packages; the Python packages are moved with `uv lock --upgrade`.
 
 ```bash
 make            # lint and the fast tests

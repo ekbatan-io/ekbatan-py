@@ -1,0 +1,64 @@
+# Checks the dependencies every Monday, and on each push to main that changes them.
+#
+# 1. Sends every package pinned in uv.lock and db-scheduler/uv.lock (transitive ones included)
+#    to GitHub, so Dependabot alerts cover them: they show under Security > Dependabot. GitHub
+#    reads pip and Poetry files by itself but no uv.lock, so without this it sees none of them.
+#    It needs "Dependency graph" on in the repository settings; until then this step fails and
+#    the rest goes on.
+# 2. Writes a report - known vulnerabilities (from osv.dev) and newer releases - to the run's
+#    summary and to one open issue titled "Dependency report", kept up to date: a comment flags
+#    each newly found vulnerability, and the issue is closed when nothing is left to report.
+#    The scripts are in .github/dependency-check/.
+name: Dependency check
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays, 06:00 UTC
+  push:
+    branches: [main]
+    paths:
+      - "pyproject.toml"
+      - "uv.lock"
+      - "db-scheduler/pyproject.toml"
+      - "db-scheduler/uv.lock"
+      - ".github/dependency-check/**"
+      - ".github/workflows/dependency-check.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: dependency-check
+  cancel-in-progress: true
+
+permissions:
+  contents: write # send the dependency graph
+  issues: write # keep the report issue up to date
+
+jobs:
+  check:
+    name: Check dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # The runner's own Python is enough: the scripts use the standard library only.
+      - name: Write the report
+        run: |
+          python3 .github/dependency-check/report.py --out "$RUNNER_TEMP/report.md" \
+            --state "$RUNNER_TEMP/state.json" --snapshot "$RUNNER_TEMP/snapshot.json"
+          cat "$RUNNER_TEMP/report.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Send the dependency graph to GitHub
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh api --method POST "repos/${{ github.repository }}/dependency-graph/snapshots"
+          --input "$RUNNER_TEMP/snapshot.json"
+
+      - name: Update the report issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/dependency-check/issue.py "$RUNNER_TEMP/report.md" "$RUNNER_TEMP/state.json"
