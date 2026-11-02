@@ -485,7 +485,7 @@ wheels = [
 
 [[package]]
 name = "ekbatan"
-version = "0.1.1"
+version = "0.1.2"
 source = { editable = "." }
 dependencies = [
     { name = "ekbatan-py-db-scheduler" },
@@ -617,7 +617,7 @@ tracing = [{ name = "opentelemetry-sdk", specifier = ">=1.27" }]
 
 [[package]]
 name = "ekbatan-py-db-scheduler"
-version = "0.1.1"
+version = "0.1.2"
 source = { editable = "db-scheduler" }
 dependencies = [
     { name = "croniter" },
