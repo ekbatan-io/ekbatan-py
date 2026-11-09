@@ -44,7 +44,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.0
+      - uses: astral-sh/setup-uv@v10.3.2
         with: { enable-cache: true }
       - run: uv sync --all-extras --group examples
       # Generated modules are gitignored, as Java's `build/generated-jooq` is, and mypy
@@ -57,7 +57,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.0
+      - uses: astral-sh/setup-uv@v10.3.2
         with: { enable-cache: true }
       # The `examples` group too: the tests that drive FastAPI, Starlette, anyio and uvicorn
       # skip without it, and this is the job that runs them.
@@ -73,7 +73,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.0
+      - uses: astral-sh/setup-uv@v10.3.2
         with: { enable-cache: true }
       - run: uv sync --all-extras
       # The framework is synchronous and imports no gevent, so under monkey-patching it becomes
@@ -91,7 +91,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.0
+      - uses: astral-sh/setup-uv@v10.3.2
         with: { enable-cache: true }
       - run: uv sync --all-extras --group tracing
       - run: uv run pytest --dialects=sqlite
@@ -108,7 +108,7 @@ jobs:
         dialect: [postgres, mysql, mariadb]
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.0
+      - uses: astral-sh/setup-uv@v10.3.2
         with: { enable-cache: true }
       - run: uv sync --all-extras
       - run: uv run pytest --dialects=${{ matrix.dialect }}
@@ -126,7 +126,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.0
+      - uses: astral-sh/setup-uv@v10.3.2
         with: { enable-cache: true }
       - run: uv sync --all-extras
       - run: make test-psycopg-async
@@ -141,7 +141,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.0
+      - uses: astral-sh/setup-uv@v10.3.2
         with: { enable-cache: true }
       - run: uv sync --all-extras
       - run: uv run pytest --dialects=postgres

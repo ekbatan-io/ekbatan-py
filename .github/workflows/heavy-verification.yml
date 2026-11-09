@@ -125,7 +125,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.0
+      - uses: astral-sh/setup-uv@v10.3.2
         with: { enable-cache: true }
       # The pip ones need a Python of 3.13 or later, which uv provides; the Poetry ones need
       # `poetry`.
@@ -156,7 +156,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.0
+      - uses: astral-sh/setup-uv@v10.3.2
         with: { enable-cache: true }
       - run: uv python install
       - run: uv tool install poetry

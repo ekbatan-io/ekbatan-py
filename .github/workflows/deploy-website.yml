@@ -65,7 +65,7 @@ jobs:
         working-directory: website
       # The Python half, which `make lint` runs in CI: the docs' own links, the API every
       # snippet on both trees claims, and that no page was written into one tree only.
-      - uses: astral-sh/setup-uv@v10.3.0
+      - uses: astral-sh/setup-uv@v10.3.2
         with: { enable-cache: true }
       - run: uv sync --all-extras
       - run: uv run python scripts/links.py

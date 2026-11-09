@@ -34,7 +34,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.0
+      - uses: astral-sh/setup-uv@v10.3.2
         with: { enable-cache: true }
       - run: uv sync --all-extras
       - run: uv run ruff check .
@@ -46,7 +46,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.0
+      - uses: astral-sh/setup-uv@v10.3.2
         with: { enable-cache: true }
       - run: uv sync --all-extras
       - run: uv run pytest
@@ -73,7 +73,7 @@ jobs:
           - { name: mariadb 11.4, dialect: mariadb, image: "mariadb:11.4" }
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.0
+      - uses: astral-sh/setup-uv@v10.3.2
         with: { enable-cache: true }
       - run: uv sync --all-extras
       - run: uv run pytest tests/integration --dialects=${{ matrix.dialect }}
